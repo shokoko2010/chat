@@ -1,17 +1,13 @@
 
-
 import React, { useState, useCallback, useEffect } from 'react';
-import LoginPage from './components/LoginPage';
 import DashboardPage from './components/DashboardPage';
 import HomePage from './components/HomePage';
 import { initializeGoogleGenAI } from './services/geminiService';
 import { GoogleGenAI } from '@google/genai';
 
-// Determine simulation mode once at the module level for robustness.
 const isSimulation = window.location.protocol === 'http:';
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'home' | 'app'>('home');
   const [authStatus, setAuthStatus] = useState<'loading' | 'connected' | 'not_authorized'>(
     isSimulation ? 'connected' : 'loading'
   );
@@ -20,8 +16,25 @@ const App: React.FC = () => {
   
   const isSimulationMode = isSimulation;
 
+  const checkLoginStatus = useCallback(() => {
+    if (isSimulationMode) return;
+    try {
+      if (window.FB) {
+        window.FB.getLoginStatus((response: any) => {
+          if (response.status === 'connected') {
+            setAuthStatus('connected');
+          } else {
+            setAuthStatus('not_authorized');
+          }
+        }, true); // Force a roundtrip to Facebook
+      }
+    } catch (error) {
+      console.error("An error occurred while checking FB login status:", error);
+      setAuthStatus('not_authorized');
+    }
+  }, [isSimulationMode]);
+
   useEffect(() => {
-    // This effect runs for both modes to handle the API key.
     try {
       const storedKey = localStorage.getItem('geminiApiKey');
       if (storedKey) {
@@ -31,34 +44,12 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("Failed to access localStorage:", error);
     }
-    
-    // If we are in the home view, or simulation mode, we don't need the FB SDK logic here.
-    if (currentView === 'home') return;
-    
+
     if (isSimulationMode) {
       console.warn('RUNNING IN SIMULATION MODE ON HTTP. Facebook features are mocked.');
-      setAuthStatus('connected');
       return;
     }
 
-    // --- Real Mode Logic (HTTPS and in 'app' view) ---
-    const checkLoginStatus = () => {
-      try {
-        if (window.FB) {
-          window.FB.getLoginStatus((response: any) => {
-            if (response.status === 'connected') {
-              setAuthStatus('connected');
-            } else {
-              setAuthStatus('not_authorized');
-            }
-          });
-        }
-      } catch (error) {
-        console.error("An error occurred while checking FB login status:", error);
-        setAuthStatus('not_authorized'); // Fail safely
-      }
-    };
-    
     const handleSdkReady = () => {
       console.log("Facebook SDK ready event received. Checking login status.");
       checkLoginStatus();
@@ -84,7 +75,7 @@ const App: React.FC = () => {
       window.removeEventListener('fb-sdk-ready', handleSdkReady);
       clearTimeout(timeoutId);
     };
-  }, [currentView, isSimulationMode]);
+  }, [checkLoginStatus, isSimulationMode]);
 
 
   const handleSaveApiKey = (newKey: string) => {
@@ -99,12 +90,11 @@ const App: React.FC = () => {
     }
   };
 
-  const handleNavigateToApp = useCallback(() => {
-    setCurrentView('app');
-  }, []);
-
   const handleLogin = useCallback(() => {
-    if (isSimulationMode) return;
+    if (isSimulationMode) {
+        setAuthStatus('connected');
+        return;
+    }
     try {
       if (!window.FB) {
         console.error("Cannot login: FB SDK not available.");
@@ -128,7 +118,6 @@ const App: React.FC = () => {
   const handleLogout = useCallback(() => {
     const performLogout = () => {
         setAuthStatus('not_authorized');
-        setCurrentView('home');
     };
 
     if (isSimulationMode) {
@@ -152,15 +141,10 @@ const App: React.FC = () => {
     }
   }, [isSimulationMode]);
   
-  if (currentView === 'home') {
-    return <HomePage onLoginClick={handleNavigateToApp} />;
-  }
-
-  // --- App View ---
-  if (authStatus === 'loading' && !isSimulationMode) {
+  if (authStatus === 'loading') {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-800 text-lg font-semibold">
-        جاري الاتصال بفيسبوك...
+        جاري التحميل...
       </div>
     );
   }
@@ -176,7 +160,7 @@ const App: React.FC = () => {
           isSimulationMode={isSimulationMode}
         />
       ) : (
-        <LoginPage onLogin={handleLogin} />
+        <HomePage onLoginClick={handleLogin} />
       )}
     </div>
   );
