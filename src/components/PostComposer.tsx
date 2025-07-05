@@ -2,72 +2,150 @@ import React, { useState } from 'react';
 import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { generatePostSuggestion } from '../services/geminiService';
+import WandSparklesIcon from './icons/WandSparklesIcon';
+import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime } from '../services/geminiService';
 import { GoogleGenAI } from '@google/genai';
 
 interface PostComposerProps {
-  onPublish: () => void;
+  onPublish: () => Promise<void>;
   onSaveDraft: () => void;
   isPublishing: boolean;
   aiClient: GoogleGenAI | null;
-  
   postText: string;
   onPostTextChange: (text: string) => void;
-
-  onImageChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onImageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onImageGenerated: (file: File) => void;
   onImageRemove: () => void;
   imagePreview: string | null;
-  
   isScheduled: boolean;
   onIsScheduledChange: (checked: boolean) => void;
   scheduleDate: string;
   onScheduleDateChange: (date: string) => void;
-
   error: string;
 }
 
-const PostComposer: React.FC<PostComposerProps> = (props) => {
-  const {
-      onPublish, onSaveDraft, isPublishing, aiClient,
-      postText, onPostTextChange,
-      onImageChange, onImageRemove, imagePreview,
-      isScheduled, onIsScheduledChange,
-      scheduleDate, onScheduleDateChange,
-      error
-  } = props;
-  
-  const [aiTopic, setAiTopic] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [aiError, setAiError] = useState('');
 
-  const handleGenerateWithAI = async () => {
+const base64ToFile = (base64: string, filename: string): File => {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: 'image/jpeg' });
+  return new File([blob], filename, { type: 'image/jpeg' });
+}
+
+const formatDateTimeForInput = (date: Date) => {
+    const pad = (num: number) => num.toString().padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+
+const PostComposer: React.FC<PostComposerProps> = ({
+  onPublish,
+  onSaveDraft,
+  isPublishing,
+  aiClient,
+  postText,
+  onPostTextChange,
+  onImageChange,
+  onImageGenerated,
+  onImageRemove,
+  imagePreview,
+  isScheduled,
+  onIsScheduledChange,
+  scheduleDate,
+  onScheduleDateChange,
+  error
+}) => {
+  // AI states remain local to the composer
+  const [aiTopic, setAiTopic] = useState('');
+  const [isGeneratingText, setIsGeneratingText] = useState(false);
+  const [aiTextError, setAiTextError] = useState('');
+  const [aiImagePrompt, setAiImagePrompt] = useState('');
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [aiImageError, setAiImageError] = useState('');
+  const [isSuggestingTime, setIsSuggestingTime] = useState(false);
+  const [aiTimeError, setAiTimeError] = useState('');
+
+  const handleGenerateTextWithAI = async () => {
       if (!aiTopic.trim()) {
-          setAiError('يرجى إدخال موضوع لتوليد منشور عنه.');
+          setAiTextError('يرجى إدخال موضوع لتوليد منشور عنه.');
           return;
       }
       if (!aiClient) {
-          setAiError('يرجى إضافة مفتاح API من قائمة الإعدادات لتفعيل هذه الميزة.');
+          setAiTextError('يرجى إضافة مفتاح API من قائمة الإعدادات لتفعيل هذه الميزة.');
           return;
       }
-      setAiError('');
-      setIsGenerating(true);
+      setAiTextError('');
+      setIsGeneratingText(true);
       try {
         const suggestion = await generatePostSuggestion(aiClient, aiTopic);
         onPostTextChange(suggestion);
       } catch (e: any) {
-        setAiError(e.message || 'حدث خطأ غير متوقع.');
+        setAiTextError(e.message || 'حدث خطأ غير متوقع.');
       } finally {
-        setIsGenerating(false);
+        setIsGeneratingText(false);
       }
+  };
+
+  const handleGenerateImageWithAI = async () => {
+    if (!aiImagePrompt.trim()) {
+        setAiImageError('يرجى إدخال وصف لإنشاء الصورة.');
+        return;
+    }
+    if (!aiClient) {
+        setAiImageError('يرجى إضافة مفتاح API من قائمة الإعدادات.');
+        return;
+    }
+    setAiImageError('');
+    setIsGeneratingImage(true);
+    try {
+      const base64Bytes = await generateImageFromPrompt(aiClient, aiImagePrompt);
+      const imageFile = base64ToFile(base64Bytes, `${aiImagePrompt.substring(0, 20)}.jpeg`);
+      onImageGenerated(imageFile);
+    } catch (e: any) {
+      setAiImageError(e.message || 'حدث خطأ غير متوقع.');
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+  
+  const handleSuggestTimeWithAI = async () => {
+    if (!postText.trim()) {
+        setAiTimeError('اكتب نص المنشور أولاً لاقتراح وقت.');
+        return;
+    }
+     if (!aiClient) {
+        setAiTimeError('يرجى إضافة مفتاح API من قائمة الإعدادات.');
+        return;
+    }
+    setAiTimeError('');
+    setIsSuggestingTime(true);
+    try {
+        const suggestedDate = await getBestPostingTime(aiClient, postText);
+        onScheduleDateChange(formatDateTimeForInput(suggestedDate));
+        onIsScheduledChange(true);
+    } catch (e: any) {
+        setAiTimeError(e.message || 'حدث خطأ غير متوقع.');
+    } finally {
+        setIsSuggestingTime(false);
+    }
   };
   
   return (
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
-      <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white">إنشاء منشور</h2>
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg space-y-6">
+      <h2 className="text-2xl font-bold text-gray-800 dark:text-white">إنشاء منشور جديد</h2>
       
-      <div className="mb-4 p-4 border border-blue-200 dark:border-blue-900 rounded-lg bg-blue-50 dark:bg-gray-700/50">
+      {/* AI Text Assistant */}
+      <div className="p-4 border border-blue-200 dark:border-blue-900 rounded-lg bg-blue-50 dark:bg-gray-700/50">
           <label htmlFor="ai-topic" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            مساعد الذكاء الاصطناعي ✨
+            مساعد النصوص بالذكاء الاصطناعي ✨
           </label>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -77,14 +155,14 @@ const PostComposer: React.FC<PostComposerProps> = (props) => {
               onChange={(e) => setAiTopic(e.target.value)}
               placeholder="اكتب فكرة للمنشور، مثلاً: إطلاق منتج جديد"
               className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500"
-              disabled={isGenerating || !aiClient}
+              disabled={isGeneratingText || !aiClient}
             />
-            <Button onClick={handleGenerateWithAI} isLoading={isGenerating} disabled={!aiClient}>
+            <Button onClick={handleGenerateTextWithAI} isLoading={isGeneratingText} disabled={!aiClient}>
               <SparklesIcon className="w-5 h-5 ml-2"/>
-              {isGenerating ? 'جاري التوليد...' : 'ولّد لي نصاً'}
+              {isGeneratingText ? 'جاري التوليد...' : 'ولّد لي نصاً'}
             </Button>
           </div>
-          {aiError && <p className="text-red-500 text-sm mt-2">{aiError}</p>}
+          {aiTextError && <p className="text-red-500 text-sm mt-2">{aiTextError}</p>}
           {!aiClient && <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">ميزة الذكاء الاصطناعي معطلة. افتح الإعدادات ⚙️ لإضافة مفتاح API الخاص بك.</p>}
       </div>
 
@@ -96,11 +174,11 @@ const PostComposer: React.FC<PostComposerProps> = (props) => {
       />
 
       {imagePreview && (
-        <div className="mt-4 relative w-32">
+        <div className="relative w-40">
           <img src={imagePreview} alt="Preview" className="rounded-lg w-full h-auto" />
           <button
             onClick={onImageRemove}
-            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 leading-none"
+            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 leading-none w-6 h-6 flex items-center justify-center text-lg"
             aria-label="Remove image"
           >
             &times;
@@ -108,9 +186,38 @@ const PostComposer: React.FC<PostComposerProps> = (props) => {
         </div>
       )}
       
+      {/* AI Image Generation */}
+      <div className="p-4 border border-purple-200 dark:border-purple-900 rounded-lg bg-purple-50 dark:bg-gray-700/50">
+          <label htmlFor="ai-image-prompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            مولّد الصور بالذكاء الاصطناعي 🤖
+          </label>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              id="ai-image-prompt"
+              type="text"
+              value={aiImagePrompt}
+              onChange={(e) => setAiImagePrompt(e.target.value)}
+              placeholder="وصف الصورة، مثلاً: رائد فضاء يقرأ على المريخ"
+              className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-purple-500 focus:border-purple-500"
+              disabled={isGeneratingImage || !aiClient}
+            />
+            <Button 
+                onClick={handleGenerateImageWithAI} 
+                isLoading={isGeneratingImage} 
+                disabled={!aiClient}
+                className="bg-purple-600 hover:bg-purple-700 focus:ring-purple-500"
+            >
+              <PhotoIcon className="w-5 h-5 ml-2"/>
+              {isGeneratingImage ? 'جاري الإنشاء...' : 'إنشاء صورة'}
+            </Button>
+          </div>
+          {aiImageError && <p className="text-red-500 text-sm mt-2">{aiImageError}</p>}
+      </div>
+      
       {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
 
-      <div className="mt-4 p-4 border rounded-lg dark:border-gray-700">
+      {/* Scheduling */}
+      <div className="p-4 border rounded-lg dark:border-gray-700">
         <div className="flex items-center">
             <input 
                 id="schedule-checkbox"
@@ -124,18 +231,28 @@ const PostComposer: React.FC<PostComposerProps> = (props) => {
             </label>
         </div>
         {isScheduled && (
-            <div className="mt-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
                 <input
                     type="datetime-local"
                     value={scheduleDate}
                     onChange={e => onScheduleDateChange(e.target.value)}
-                    className="p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-auto"
+                    className="p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500"
                 />
+                 <Button 
+                    variant="secondary"
+                    onClick={handleSuggestTimeWithAI}
+                    isLoading={isSuggestingTime}
+                    disabled={!postText.trim() || !aiClient}
+                 >
+                    <WandSparklesIcon className="w-5 h-5 ml-2"/>
+                    اقترح أفضل وقت
+                </Button>
             </div>
         )}
+        {aiTimeError && <p className="text-red-500 text-sm mt-2">{aiTimeError}</p>}
       </div>
 
-      <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-4">
             <input
                 type="file"
@@ -149,16 +266,22 @@ const PostComposer: React.FC<PostComposerProps> = (props) => {
                 onClick={() => document.getElementById('imageUpload')?.click()}
             >
                 <PhotoIcon className="w-5 h-5 ml-2" />
-                أضف صورة
-            </Button>
-            <Button variant="secondary" onClick={onSaveDraft} disabled={!postText.trim() && !imagePreview}>
-              حفظ كمسودة
+                أضف صورة يدوياً
             </Button>
         </div>
         
-        <Button onClick={onPublish} isLoading={isPublishing} disabled={!postText.trim()}>
-          {isPublishing ? 'جاري العمل...' : (isScheduled ? 'جدولة الآن' : 'انشر الآن')}
-        </Button>
+        <div className="flex items-center gap-2">
+             <Button 
+                variant="secondary" 
+                onClick={onSaveDraft} 
+                disabled={isPublishing || (!postText.trim() && !imagePreview)}
+            >
+                حفظ كمسودة
+            </Button>
+            <Button onClick={onPublish} isLoading={isPublishing} disabled={!postText.trim() && !imagePreview}>
+            {isPublishing ? 'جاري العمل...' : (isScheduled ? 'جدولة الآن' : 'انشر الآن')}
+            </Button>
+        </div>
       </div>
     </div>
   );

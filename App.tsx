@@ -26,7 +26,7 @@ const App: React.FC = () => {
           } else {
             setAuthStatus('not_authorized');
           }
-        }, true); // Force a roundtrip to Facebook
+        }); // Check cached session first for speed
       }
     } catch (error) {
       console.error("An error occurred while checking FB login status:", error);

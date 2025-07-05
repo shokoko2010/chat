@@ -142,10 +142,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
     setImagePreview(null);
   }
 
+  const handleGeneratedImageSelect = (file: File) => {
+    setSelectedImage(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
   const handlePublish = useCallback(async () => {
     // Validation
-    if (!postText.trim()) {
-      setComposerError('لا يمكن نشر منشور فارغ. يرجى كتابة نص أولاً.');
+    if (!postText.trim() && !selectedImage) {
+      setComposerError('لا يمكن نشر منشور فارغ. يرجى كتابة نص أو إضافة صورة.');
       return;
     }
     if (selectedTargetIds.length === 0) {
@@ -374,6 +379,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
                 postText={postText}
                 onPostTextChange={setPostText}
                 onImageChange={handleImageChange}
+                onImageGenerated={handleGeneratedImageSelect}
                 onImageRemove={handleImageRemove}
                 imagePreview={imagePreview}
                 isScheduled={isScheduled}

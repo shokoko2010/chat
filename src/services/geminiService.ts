@@ -42,3 +42,71 @@ export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string): Pr
     throw new Error("حدث خطأ أثناء إنشاء الاقتراح. يرجى المحاولة مرة أخرى.");
   }
 };
+
+export const generateImageFromPrompt = async (ai: GoogleGenAI, prompt: string): Promise<string> => {
+  if (!prompt.trim()) {
+    throw new Error("يرجى إدخال وصف لإنشاء الصورة.");
+  }
+  try {
+    const response = await ai.models.generateImages({
+      model: 'imagen-3.0-generate-002',
+      prompt: `صورة فوتوغرافية سينمائية عالية الجودة لـ: ${prompt}`,
+      config: { numberOfImages: 1, outputMimeType: 'image/jpeg' },
+    });
+
+    if (response.generatedImages && response.generatedImages.length > 0) {
+      return response.generatedImages[0].image.imageBytes;
+    } else {
+      throw new Error("فشل إنشاء الصورة. لم يتم إرجاع أي صور.");
+    }
+  } catch (error) {
+    console.error("Error generating image:", error);
+    throw new Error("حدث خطأ أثناء إنشاء الصورة. حاول مرة أخرى.");
+  }
+};
+
+export const getBestPostingTime = async (ai: GoogleGenAI, postText: string): Promise<Date> => {
+  if (!postText.trim()) {
+    throw new Error("يرجى كتابة منشور أولاً لاقتراح أفضل وقت.");
+  }
+  try {
+    const prompt = `
+      بصفتك خبيرًا في وسائل التواصل الاجتماعي، قم بتحليل نص منشور فيسبوك التالي واقترح أفضل وقت في المستقبل لنشره لتحقيق أقصى قدر من التفاعل.
+      الوقت الحالي هو: ${new Date().toISOString()}. يجب أن يكون الوقت المقترح بعد ساعة واحدة على الأقل من الوقت الحالي وفي غضون الأسبوع القادم.
+
+      نص المنشور:
+      "${postText}"
+
+      أرجع الرد بتنسيق JSON فقط، بدون أي نص إضافي أو علامات markdown. يجب أن يحتوي كائن JSON على مفتاح واحد فقط "suggested_time_iso" بقيمة سلسلة زمنية بتنسيق ISO 8601.
+      مثال: {"suggested_time_iso": "2024-08-25T17:00:00.000Z"}
+    `;
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-preview-04-17',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    let jsonStr = response.text.trim();
+    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
+    const match = jsonStr.match(fenceRegex);
+    if (match && match[2]) {
+      jsonStr = match[2].trim();
+    }
+    
+    const data = JSON.parse(jsonStr);
+
+    if (data && data.suggested_time_iso) {
+      const suggestedDate = new Date(data.suggested_time_iso);
+      if (suggestedDate.getTime() > Date.now()) {
+        return suggestedDate;
+      }
+    }
+    throw new Error("لم يتمكن الذكاء الاصطناعي من اقتراح وقت صالح.");
+
+  } catch (error) {
+    console.error("Error suggesting post time:", error);
+    throw new Error("حدث خطأ أثناء اقتراح وقت النشر.");
+  }
+};
