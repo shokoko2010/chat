@@ -58,7 +58,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
         );
     });
 
-    const fetchGroups = new Promise<Target[]>((resolve, reject) => {
+    const fetchGroups = new Promise<Target[]>((resolve) => {
         window.FB.api(
             '/me/groups?fields=id,name,picture{url}', 
             (response: any) => {
