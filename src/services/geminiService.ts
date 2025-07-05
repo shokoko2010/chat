@@ -33,7 +33,7 @@ export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string): Pr
       contents: prompt,
     });
 
-    return response.text;
+    return response.text ?? '';
   } catch (error) {
     console.error("Error generating post suggestion:", error);
     if (error instanceof Error && error.message.includes('API key not valid')) {
