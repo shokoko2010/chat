@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import LoginPage from './components/LoginPage';
 import DashboardPage from './components/DashboardPage';
+import HomePage from './components/HomePage';
 import { initializeGoogleGenAI } from './services/geminiService';
 import { GoogleGenAI } from '@google/genai';
 
@@ -10,6 +11,7 @@ import { GoogleGenAI } from '@google/genai';
 const isSimulation = window.location.protocol === 'http:';
 
 const App: React.FC = () => {
+  const [currentView, setCurrentView] = useState<'home' | 'app'>('home');
   const [authStatus, setAuthStatus] = useState<'loading' | 'connected' | 'not_authorized'>(
     isSimulation ? 'connected' : 'loading'
   );
@@ -30,13 +32,16 @@ const App: React.FC = () => {
       console.error("Failed to access localStorage:", error);
     }
     
-    // If we are in simulation mode, we are done with this effect.
+    // If we are in the home view, or simulation mode, we don't need the FB SDK logic here.
+    if (currentView === 'home') return;
+    
     if (isSimulationMode) {
       console.warn('RUNNING IN SIMULATION MODE ON HTTP. Facebook features are mocked.');
+      setAuthStatus('connected');
       return;
     }
 
-    // --- Real Mode Logic (HTTPS) ---
+    // --- Real Mode Logic (HTTPS and in 'app' view) ---
     const checkLoginStatus = () => {
       try {
         if (window.FB) {
@@ -79,7 +84,7 @@ const App: React.FC = () => {
       window.removeEventListener('fb-sdk-ready', handleSdkReady);
       clearTimeout(timeoutId);
     };
-  }, [isSimulationMode]);
+  }, [currentView, isSimulationMode]);
 
 
   const handleSaveApiKey = (newKey: string) => {
@@ -93,6 +98,10 @@ const App: React.FC = () => {
       }
     }
   };
+
+  const handleNavigateToApp = useCallback(() => {
+    setCurrentView('app');
+  }, []);
 
   const handleLogin = useCallback(() => {
     if (isSimulationMode) return;
@@ -117,25 +126,37 @@ const App: React.FC = () => {
   }, [isSimulationMode]);
 
   const handleLogout = useCallback(() => {
+    const performLogout = () => {
+        setAuthStatus('not_authorized');
+        setCurrentView('home');
+    };
+
     if (isSimulationMode) {
-      setAuthStatus('not_authorized');
+      performLogout();
       return;
     }
+    
     try {
       if (!window.FB) {
         console.error("Cannot logout: FB SDK not available.");
+        performLogout();
         return;
       }
       setAuthStatus('loading');
       window.FB.logout(() => {
-        setAuthStatus('not_authorized');
+        performLogout();
       });
     } catch (error) {
       console.error("An error occurred during FB.logout:", error);
-      setAuthStatus('not_authorized');
+      performLogout();
     }
   }, [isSimulationMode]);
+  
+  if (currentView === 'home') {
+    return <HomePage onLoginClick={handleNavigateToApp} />;
+  }
 
+  // --- App View ---
   if (authStatus === 'loading' && !isSimulationMode) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-800 text-lg font-semibold">

@@ -1,11 +1,13 @@
 
-
 import React, { useState, useEffect, useCallback } from 'react';
-import { Target } from '../types';
+import { Target, ScheduledPost } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import TargetList from './GroupList';
 import SettingsModal from './SettingsModal';
+import ContentCalendar from './ContentCalendar';
+import PencilSquareIcon from './icons/PencilSquareIcon';
+import CalendarIcon from './icons/CalendarIcon';
 import { GoogleGenAI } from '@google/genai';
 
 interface DashboardPageProps {
@@ -23,7 +25,15 @@ const MOCK_TARGETS: Target[] = [
     { id: '3', name: 'مطبخ الشيف', type: 'page', access_token: 'DUMMY_TOKEN_3', picture: { data: { url: 'https://via.placeholder.com/150/8B4513/FFFFFF?text=Cooking' } } },
 ];
 
+const MOCK_SCHEDULED_POSTS: ScheduledPost[] = [
+    { id: 'post1', text: 'تخفيضات نهاية الأسبوع تبدأ غداً! استعدوا لأقوى العروض 🛍️', scheduledAt: new Date(new Date().setDate(new Date().getDate() + 2)), targets: [MOCK_TARGETS[0], MOCK_TARGETS[2]], imageUrl: 'https://via.placeholder.com/400x300/FFD700/000000?text=Sale' },
+    { id: 'post2', text: 'وصفة جديدة على مدونتنا اليوم: كيكة الشوكولاتة الغنية 🍰', scheduledAt: new Date(new Date().setDate(new Date().getDate() + 4)), targets: [MOCK_TARGETS[3]] },
+    { id: 'post3', text: 'ما هي لغة البرمجة التي تتعلمها حالياً؟ شاركنا في التعليقات! 💻', scheduledAt: new Date(new Date().setDate(new Date().getDate() + 4)), targets: [MOCK_TARGETS[1]] },
+];
+
+
 const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, currentApiKey, onSaveApiKey, isSimulationMode }) => {
+  const [view, setView] = useState<'composer' | 'calendar'>('composer');
   const [targets, setTargets] = useState<Target[]>([]);
   const [targetsLoading, setTargetsLoading] = useState(true);
   const [targetsError, setTargetsError] = useState<string | null>(null);
@@ -33,10 +43,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'partial', message: string} | null>(null);
   const [targetSelectionError, setTargetSelectionError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
+
 
   useEffect(() => {
     if (isSimulationMode) {
         setTargets(MOCK_TARGETS);
+        setScheduledPosts(MOCK_SCHEDULED_POSTS);
         setTargetsLoading(false);
         return;
     }
@@ -63,7 +76,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
             '/me/groups?fields=id,name,picture{url},permissions', 
             (response: any) => {
                 if (response && !response.error) {
-                    // Filter to include only groups where the user is an admin
                     const adminGroups = response.data.filter((group: any) => 
                         group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
                     );
@@ -100,11 +112,22 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
     setNotification(null);
 
     const action = scheduleAt ? 'جدولة' : 'نشر';
+    const selectedTargetsData = targets.filter(t => selectedTargetIds.includes(t.id));
 
     if (isSimulationMode) {
         console.log(`SIMULATING: Action=${action}, Text=${text}, Image=${image?.name}, Schedule=${scheduleAt}, Targets=${selectedTargetIds.join(', ')}`);
         setTimeout(() => {
             setIsPublishing(false);
+            if(scheduleAt) {
+                 const newPost: ScheduledPost = {
+                    id: `sim_${Date.now()}`,
+                    text,
+                    scheduledAt: scheduleAt,
+                    targets: selectedTargetsData,
+                    imageUrl: image ? URL.createObjectURL(image) : undefined,
+                };
+                setScheduledPosts(prev => [...prev, newPost]);
+            }
             setNotification({ type: 'success', message: `تمت محاكاة ${action} المنشور بنجاح إلى ${selectedTargetIds.length} من الصفحات/المجموعات.` });
             setSelectedTargetIds([]);
             setTimeout(() => setNotification(null), 8000);
@@ -112,8 +135,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
         return;
     }
 
-    const selectedTargetsData = targets.filter(t => selectedTargetIds.includes(t.id));
-    
     const publishPromises = selectedTargetsData.map(target => {
         let apiPath: string;
         let apiParams: any;
@@ -174,6 +195,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
     if (successfulPosts > 0 && failedPosts === 0) {
         message = `تم ${action} المنشور بنجاح إلى ${successfulPosts} من الصفحات/المجموعات.`;
         type = 'success';
+         if(scheduleAt) {
+            const newPost: ScheduledPost = {
+                id: `post_${Date.now()}`,
+                text,
+                scheduledAt: scheduleAt,
+                targets: selectedTargetsData,
+                imageUrl: image ? URL.createObjectURL(image) : undefined,
+            };
+            setScheduledPosts(prev => [...prev, newPost]);
+        }
     } else if (successfulPosts > 0 && failedPosts > 0) {
         message = `تم ${action} المنشور إلى ${successfulPosts}، وفشل في ${failedPosts}.`;
         type = 'partial';
@@ -212,29 +243,61 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
       />
       <main className="p-4 sm:p-8">
         {notification && (
-            <div className={`p-4 mb-6 rounded-lg ${getNotificationBgColor()}`}>
+            <div className={`p-4 mb-6 rounded-lg shadow-md transition-all duration-300 ${getNotificationBgColor()}`}>
                 {notification.message}
             </div>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <PostComposer 
-              onPublish={handlePublish} 
-              isPublishing={isPublishing}
-              aiClient={aiClient}
-            />
-          </div>
-          <div>
-            <TargetList
-              targets={targets}
-              isLoading={targetsLoading}
-              loadingError={targetsError}
-              selectedTargetIds={selectedTargetIds}
-              onSelectionChange={setSelectedTargetIds}
-              selectionError={targetSelectionError}
-            />
-          </div>
+
+        <div className="mb-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex space-x-4 -mb-px">
+                <button
+                    onClick={() => setView('composer')}
+                    className={`inline-flex items-center gap-2 px-4 py-3 border-b-2 font-semibold text-sm transition-colors ${
+                        view === 'composer' 
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    }`}
+                >
+                    <PencilSquareIcon className="w-5 h-5" />
+                    إنشاء منشور
+                </button>
+                 <button
+                    onClick={() => setView('calendar')}
+                    className={`inline-flex items-center gap-2 px-4 py-3 border-b-2 font-semibold text-sm transition-colors ${
+                        view === 'calendar' 
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    }`}
+                >
+                    <CalendarIcon className="w-5 h-5" />
+                    تقويم المحتوى
+                </button>
+            </div>
         </div>
+
+        {view === 'composer' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2">
+              <PostComposer 
+                onPublish={handlePublish} 
+                isPublishing={isPublishing}
+                aiClient={aiClient}
+              />
+            </div>
+            <div>
+              <TargetList
+                targets={targets}
+                isLoading={targetsLoading}
+                loadingError={targetsError}
+                selectedTargetIds={selectedTargetIds}
+                onSelectionChange={setSelectedTargetIds}
+                selectionError={targetSelectionError}
+              />
+            </div>
+          </div>
+        ) : (
+          <ContentCalendar posts={scheduledPosts} />
+        )}
       </main>
       <SettingsModal 
         isOpen={isSettingsOpen}

@@ -16,3 +16,11 @@ export interface Target {
     }
   };
 }
+
+export interface ScheduledPost {
+  id: string;
+  text: string;
+  imageUrl?: string;
+  scheduledAt: Date;
+  targets: Target[];
+}
