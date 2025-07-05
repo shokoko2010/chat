@@ -54,7 +54,7 @@ export const generateImageFromPrompt = async (ai: GoogleGenAI, prompt: string): 
       config: { numberOfImages: 1, outputMimeType: 'image/jpeg' },
     });
 
-    if (response.generatedImages && response.generatedImages.length > 0) {
+    if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image && response.generatedImages[0].image.imageBytes) {
       return response.generatedImages[0].image.imageBytes;
     } else {
       throw new Error("فشل إنشاء الصورة. لم يتم إرجاع أي صور.");
@@ -88,7 +88,12 @@ export const getBestPostingTime = async (ai: GoogleGenAI, postText: string): Pro
       },
     });
 
-    let jsonStr = response.text.trim();
+    const text = response.text;
+    if (!text) {
+        throw new Error("لم يتمكن الذكاء الاصطناعي من اقتراح وقت صالح (استجابة فارغة).");
+    }
+
+    let jsonStr = text.trim();
     const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
     const match = jsonStr.match(fenceRegex);
     if (match && match[2]) {
