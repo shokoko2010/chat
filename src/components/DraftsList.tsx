@@ -2,7 +2,6 @@ import React from 'react';
 import { Draft } from '../types';
 import Button from './ui/Button';
 import TrashIcon from './icons/TrashIcon';
-import PhotoIcon from './icons/PhotoIcon';
 
 interface DraftsListProps {
   drafts: Draft[];

@@ -68,7 +68,53 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
         setTargetsLoading(false);
         return;
     }
-    // ... (fetch logic remains the same)
+
+    setTargetsLoading(true);
+    setTargetsError(null);
+    
+    const fetchPages = new Promise<Target[]>((resolve, reject) => {
+        window.FB.api(
+            '/me/accounts?fields=id,name,access_token,picture{url}', 
+            (response: any) => {
+                if (response && !response.error) {
+                    const pagesData = response.data.map((page: any) => ({ ...page, type: 'page' as 'page' }));
+                    resolve(pagesData);
+                } else {
+                    reject(response?.error?.message || 'فشل في جلب الصفحات.');
+                }
+            }
+        );
+    });
+
+    const fetchGroups = new Promise<Target[]>((resolve) => {
+        window.FB.api(
+            '/me/groups?fields=id,name,picture{url},permissions', 
+            (response: any) => {
+                if (response && !response.error) {
+                    const adminGroups = response.data.filter((group: any) => 
+                        group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
+                    );
+                    const groupsData = adminGroups.map((group: any) => ({ ...group, type: 'group' as 'group' }));
+                    resolve(groupsData);
+                } else {
+                    console.warn("Could not fetch groups:", response?.error);
+                    resolve([]); 
+                }
+            }
+        );
+    });
+
+    Promise.all([fetchPages, fetchGroups])
+        .then(([pagesData, groupsData]) => {
+            setTargets([...pagesData, ...groupsData]);
+        })
+        .catch(error => {
+            console.error("Error fetching data from Facebook:", error);
+            setTargetsError(typeof error === 'string' ? error : 'حدث خطأ فادح عند الاتصال بفيسبوك.');
+        })
+        .finally(() => {
+            setTargetsLoading(false);
+        });
   }, [isSimulationMode]);
 
   const clearComposer = useCallback(() => {
@@ -143,11 +189,91 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
         return;
     }
 
-    // Real publish logic... (omitted for brevity, remains the same as before)
-    // On success:
-    // if (activeDraftId) { setDrafts(prev => prev.filter(d => d.id !== activeDraftId)); }
-    // clearComposer();
-    // setNotification({ ... });
+    const selectedTargetsData = targets.filter(t => selectedTargetIds.includes(t.id));
+    
+    const publishPromises = selectedTargetsData.map(target => {
+        let apiPath: string;
+        let apiParams: any;
+
+        if (selectedImage) {
+            apiPath = `/${target.id}/photos`;
+            const formData = new FormData();
+            if (target.type === 'page') {
+              formData.append('access_token', target.access_token!);
+            }
+            formData.append('source', selectedImage);
+            if (postText) formData.append('caption', postText);
+            if (scheduleAt) {
+                formData.append('scheduled_publish_time', String(Math.floor(scheduleAt.getTime() / 1000)));
+                formData.append('published', 'false');
+            }
+            apiParams = formData;
+        } else { // Text only post
+            apiPath = `/${target.id}/feed`;
+            apiParams = {
+                message: postText,
+            };
+            if (target.type === 'page') {
+                apiParams.access_token = target.access_token;
+            }
+            if (scheduleAt) {
+                apiParams.scheduled_publish_time = Math.floor(scheduleAt.getTime() / 1000);
+                apiParams.published = false;
+            }
+        }
+        
+        return new Promise((resolve, reject) => {
+            window.FB.api(apiPath, 'POST', apiParams, (response: any) => {
+                if (response && !response.error) {
+                    resolve({ targetName: target.name, success: true, response });
+                } else {
+                    const errorMsg = response?.error?.message || 'Unknown error';
+                    if (target.type === 'group' && errorMsg.includes('(#200) Requires installed app')) {
+                       reject({ targetName: target.name, success: false, error: { ...response.error, message: `فشل النشر: يجب تثبيت التطبيق في إعدادات مجموعة "${target.name}".` } });
+                    } else {
+                       reject({ targetName: target.name, success: false, error: response.error });
+                    }
+                }
+            });
+        });
+    });
+
+    const results = await Promise.allSettled(publishPromises);
+    
+    setIsPublishing(false);
+    
+    const successfulPosts = results.filter(r => r.status === 'fulfilled').length;
+    const failedPosts = results.length - successfulPosts;
+
+    let message = '';
+    let type: 'success' | 'error' | 'partial' = 'error';
+
+    if (successfulPosts > 0 && failedPosts === 0) {
+        message = `تم ${action} المنشور بنجاح إلى ${successfulPosts} من الصفحات/المجموعات.`;
+        type = 'success';
+        if (activeDraftId) {
+            setDrafts(prev => prev.filter(d => d.id !== activeDraftId));
+        }
+        clearComposer();
+    } else if (successfulPosts > 0 && failedPosts > 0) {
+        message = `تم ${action} المنشور إلى ${successfulPosts}، وفشل في ${failedPosts}.`;
+        type = 'partial';
+    } else {
+        message = `فشل ${action} المنشور في كل الأهداف (${failedPosts}). يرجى التحقق من الصلاحيات وتثبيت التطبيق في المجموعات.`;
+        type = 'error';
+    }
+    
+    results.forEach(r => {
+        if (r.status === 'rejected') {
+            console.error("Post failed:", r.reason);
+        }
+    });
+    
+    setNotification({ type, message });
+    if(type === 'success') {
+      setSelectedTargetIds([]);
+    }
+    setTimeout(() => setNotification(null), 8000);
 
   }, [postText, selectedImage, selectedTargetIds, targets, isSimulationMode, isScheduled, scheduleDate, activeDraftId, clearComposer]);
 

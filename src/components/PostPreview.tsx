@@ -1,5 +1,4 @@
 import React from 'react';
-import PhotoIcon from './icons/PhotoIcon';
 
 interface PostPreviewProps {
   postText: string;
