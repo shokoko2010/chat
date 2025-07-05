@@ -24,3 +24,11 @@ export interface ScheduledPost {
   scheduledAt: Date;
   targets: Target[];
 }
+
+export interface Draft {
+  id: string;
+  text: string;
+  imageFile: File | null;
+  imagePreview: string | null;
+  selectedTargetIds: string[];
+}

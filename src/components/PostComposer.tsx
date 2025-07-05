@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
@@ -7,61 +6,39 @@ import { generatePostSuggestion } from '../services/geminiService';
 import { GoogleGenAI } from '@google/genai';
 
 interface PostComposerProps {
-  onPublish: (text: string, image: File | null, scheduleAt: Date | null) => Promise<void>;
+  onPublish: () => void;
+  onSaveDraft: () => void;
   isPublishing: boolean;
   aiClient: GoogleGenAI | null;
+  
+  postText: string;
+  onPostTextChange: (text: string) => void;
+
+  onImageChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onImageRemove: () => void;
+  imagePreview: string | null;
+  
+  isScheduled: boolean;
+  onIsScheduledChange: (checked: boolean) => void;
+  scheduleDate: string;
+  onScheduleDateChange: (date: string) => void;
+
+  error: string;
 }
 
-const PostComposer: React.FC<PostComposerProps> = ({ onPublish, isPublishing, aiClient }) => {
-  const [postText, setPostText] = useState('');
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+const PostComposer: React.FC<PostComposerProps> = (props) => {
+  const {
+      onPublish, onSaveDraft, isPublishing, aiClient,
+      postText, onPostTextChange,
+      onImageChange, onImageRemove, imagePreview,
+      isScheduled, onIsScheduledChange,
+      scheduleDate, onScheduleDateChange,
+      error
+  } = props;
+  
   const [aiTopic, setAiTopic] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState('');
   const [aiError, setAiError] = useState('');
-  
-  const [isScheduled, setIsScheduled] = useState(false);
-  const [scheduleDate, setScheduleDate] = useState('');
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedImage(file);
-      setImagePreview(URL.createObjectURL(file));
-    }
-  };
-
-  const handlePublishClick = () => {
-    if (!postText.trim()) {
-      setError('لا يمكن نشر منشور فارغ. يرجى كتابة نص أولاً.');
-      return;
-    }
-    
-    let scheduleAt: Date | null = null;
-    if (isScheduled) {
-        if (!scheduleDate) {
-            setError('يرجى تحديد تاريخ ووقت للجدولة.');
-            return;
-        }
-        const scheduleDateTime = new Date(scheduleDate);
-        const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
-        if(scheduleDateTime < tenMinutesFromNow) {
-            setError('يجب أن يكون وقت الجدولة بعد 10 دقائق من الآن على الأقل.');
-            return;
-        }
-        scheduleAt = scheduleDateTime;
-    }
-
-    setError('');
-    onPublish(postText, selectedImage, scheduleAt).then(() => {
-        setPostText('');
-        setSelectedImage(null);
-        setImagePreview(null);
-        setIsScheduled(false);
-        setScheduleDate('');
-    });
-  };
 
   const handleGenerateWithAI = async () => {
       if (!aiTopic.trim()) {
@@ -76,7 +53,7 @@ const PostComposer: React.FC<PostComposerProps> = ({ onPublish, isPublishing, ai
       setIsGenerating(true);
       try {
         const suggestion = await generatePostSuggestion(aiClient, aiTopic);
-        setPostText(suggestion);
+        onPostTextChange(suggestion);
       } catch (e: any) {
         setAiError(e.message || 'حدث خطأ غير متوقع.');
       } finally {
@@ -86,7 +63,7 @@ const PostComposer: React.FC<PostComposerProps> = ({ onPublish, isPublishing, ai
   
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
-      <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white">إنشاء منشور جديد</h2>
+      <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white">إنشاء منشور</h2>
       
       <div className="mb-4 p-4 border border-blue-200 dark:border-blue-900 rounded-lg bg-blue-50 dark:bg-gray-700/50">
           <label htmlFor="ai-topic" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -113,7 +90,7 @@ const PostComposer: React.FC<PostComposerProps> = ({ onPublish, isPublishing, ai
 
       <textarea
         value={postText}
-        onChange={(e) => setPostText(e.target.value)}
+        onChange={(e) => onPostTextChange(e.target.value)}
         placeholder="بماذا تفكر؟ اكتب منشورك هنا..."
         className="w-full h-48 p-3 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition"
       />
@@ -122,11 +99,9 @@ const PostComposer: React.FC<PostComposerProps> = ({ onPublish, isPublishing, ai
         <div className="mt-4 relative w-32">
           <img src={imagePreview} alt="Preview" className="rounded-lg w-full h-auto" />
           <button
-            onClick={() => {
-              setSelectedImage(null);
-              setImagePreview(null);
-            }}
+            onClick={onImageRemove}
             className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 leading-none"
+            aria-label="Remove image"
           >
             &times;
           </button>
@@ -141,7 +116,7 @@ const PostComposer: React.FC<PostComposerProps> = ({ onPublish, isPublishing, ai
                 id="schedule-checkbox"
                 type="checkbox" 
                 checked={isScheduled}
-                onChange={e => setIsScheduled(e.target.checked)}
+                onChange={e => onIsScheduledChange(e.target.checked)}
                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
             />
             <label htmlFor="schedule-checkbox" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -153,7 +128,7 @@ const PostComposer: React.FC<PostComposerProps> = ({ onPublish, isPublishing, ai
                 <input
                     type="datetime-local"
                     value={scheduleDate}
-                    onChange={e => setScheduleDate(e.target.value)}
+                    onChange={e => onScheduleDateChange(e.target.value)}
                     className="p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-auto"
                 />
             </div>
@@ -167,7 +142,7 @@ const PostComposer: React.FC<PostComposerProps> = ({ onPublish, isPublishing, ai
                 id="imageUpload"
                 className="hidden"
                 accept="image/*"
-                onChange={handleImageChange}
+                onChange={onImageChange}
             />
             <Button
                 variant="secondary"
@@ -176,9 +151,12 @@ const PostComposer: React.FC<PostComposerProps> = ({ onPublish, isPublishing, ai
                 <PhotoIcon className="w-5 h-5 ml-2" />
                 أضف صورة
             </Button>
+            <Button variant="secondary" onClick={onSaveDraft} disabled={!postText.trim() && !imagePreview}>
+              حفظ كمسودة
+            </Button>
         </div>
         
-        <Button onClick={handlePublishClick} isLoading={isPublishing} disabled={!postText.trim()}>
+        <Button onClick={onPublish} isLoading={isPublishing} disabled={!postText.trim()}>
           {isPublishing ? 'جاري العمل...' : (isScheduled ? 'جدولة الآن' : 'انشر الآن')}
         </Button>
       </div>
