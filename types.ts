@@ -5,10 +5,11 @@ declare global {
   }
 }
 
-export interface Page {
+export interface Target {
   id: string;
   name: string;
-  access_token: string;
+  type: 'page' | 'group';
+  access_token?: string; // Optional: Pages have this, groups use user token
   picture: {
     data: {
       url: string;

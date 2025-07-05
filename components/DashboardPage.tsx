@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Page } from '../types';
+import { Target } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
-import PageList from './GroupList';
+import TargetList from './GroupList';
 import SettingsModal from './SettingsModal';
 import { GoogleGenAI } from '@google/genai';
 
@@ -15,84 +15,110 @@ interface DashboardPageProps {
   isSimulationMode: boolean;
 }
 
-const MOCK_PAGES: Page[] = [
-    { id: '1', name: 'صفحة تجريبية 1', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/4B79A1/FFFFFF?text=Page1' } } },
-    { id: '2', name: 'متجر الأزياء العصرية', access_token: 'DUMMY_TOKEN_2', picture: { data: { url: 'https://via.placeholder.com/150/C154C1/FFFFFF?text=Fashion' } } },
-    { id: '3', name: 'مطبخ الشيف', access_token: 'DUMMY_TOKEN_3', picture: { data: { url: 'https://via.placeholder.com/150/8B4513/FFFFFF?text=Cooking' } } },
+const MOCK_TARGETS: Target[] = [
+    { id: '1', name: 'صفحة تجريبية 1', type: 'page', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/4B79A1/FFFFFF?text=Page1' } } },
+    { id: '101', name: 'مجموعة المطورين التجريبية', type: 'group', picture: { data: { url: 'https://via.placeholder.com/150/228B22/FFFFFF?text=Group1' } } },
+    { id: '2', name: 'متجر الأزياء العصرية', type: 'page', access_token: 'DUMMY_TOKEN_2', picture: { data: { url: 'https://via.placeholder.com/150/C154C1/FFFFFF?text=Fashion' } } },
+    { id: '3', name: 'مطبخ الشيف', type: 'page', access_token: 'DUMMY_TOKEN_3', picture: { data: { url: 'https://via.placeholder.com/150/8B4513/FFFFFF?text=Cooking' } } },
 ];
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, currentApiKey, onSaveApiKey, isSimulationMode }) => {
-  const [pages, setPages] = useState<Page[]>([]);
-  const [pagesLoading, setPagesLoading] = useState(true);
-  const [pagesError, setPagesError] = useState<string | null>(null);
+  const [targets, setTargets] = useState<Target[]>([]);
+  const [targetsLoading, setTargetsLoading] = useState(true);
+  const [targetsError, setTargetsError] = useState<string | null>(null);
   
-  const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
+  const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
   const [isPublishing, setIsPublishing] = useState(false);
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'partial', message: string} | null>(null);
-  const [pageSelectionError, setPageSelectionError] = useState<string | null>(null);
+  const [targetSelectionError, setTargetSelectionError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (isSimulationMode) {
-        setPages(MOCK_PAGES);
-        setPagesLoading(false);
+        setTargets(MOCK_TARGETS);
+        setTargetsLoading(false);
         return;
     }
 
-    setPagesLoading(true);
-    setPagesError(null);
-    try {
+    setTargetsLoading(true);
+    setTargetsError(null);
+    
+    const fetchPages = new Promise<Target[]>((resolve, reject) => {
         window.FB.api(
             '/me/accounts?fields=id,name,access_token,picture{url}', 
             (response: any) => {
                 if (response && !response.error) {
-                    setPages(response.data);
+                    const pagesData = response.data.map((page: any) => ({ ...page, type: 'page' as 'page' }));
+                    resolve(pagesData);
                 } else {
-                    setPagesError(response?.error?.message || 'فشل في جلب الصفحات. حاول تسجيل الخروج والدخول مرة أخرى.');
-                    console.error(response?.error);
+                    reject(response?.error?.message || 'فشل في جلب الصفحات.');
                 }
-                setPagesLoading(false);
             }
         );
-    } catch(e) {
-        setPagesError('حدث خطأ فادح عند الاتصال بفيسبوك.');
-        setPagesLoading(false);
-    }
+    });
+
+    const fetchGroups = new Promise<Target[]>((resolve, reject) => {
+        window.FB.api(
+            '/me/groups?fields=id,name,picture{url}', 
+            (response: any) => {
+                if (response && !response.error) {
+                    const groupsData = response.data.map((group: any) => ({ ...group, type: 'group' as 'group' }));
+                    resolve(groupsData);
+                } else {
+                    console.warn("Could not fetch groups:", response?.error);
+                    resolve([]); 
+                }
+            }
+        );
+    });
+
+    Promise.all([fetchPages, fetchGroups])
+        .then(([pagesData, groupsData]) => {
+            setTargets([...pagesData, ...groupsData]);
+        })
+        .catch(error => {
+            console.error("Error fetching data from Facebook:", error);
+            setTargetsError(typeof error === 'string' ? error : 'حدث خطأ فادح عند الاتصال بفيسبوك.');
+        })
+        .finally(() => {
+            setTargetsLoading(false);
+        });
   }, [isSimulationMode]);
 
   const handlePublish = useCallback(async (text: string, image: File | null, scheduleAt: Date | null) => {
-    if (selectedPageIds.length === 0) {
-        setPageSelectionError('يجب اختيار صفحة واحدة على الأقل للنشر فيها.');
+    if (selectedTargetIds.length === 0) {
+        setTargetSelectionError('يجب اختيار صفحة أو مجموعة واحدة على الأقل للنشر فيها.');
         return;
     }
-    setPageSelectionError(null);
+    setTargetSelectionError(null);
     setIsPublishing(true);
     setNotification(null);
 
     const action = scheduleAt ? 'جدولة' : 'نشر';
 
     if (isSimulationMode) {
-        console.log(`SIMULATING: Action=${action}, Text=${text}, Image=${image?.name}, Schedule=${scheduleAt}, Pages=${selectedPageIds.join(', ')}`);
+        console.log(`SIMULATING: Action=${action}, Text=${text}, Image=${image?.name}, Schedule=${scheduleAt}, Targets=${selectedTargetIds.join(', ')}`);
         setTimeout(() => {
             setIsPublishing(false);
-            setNotification({ type: 'success', message: `تمت محاكاة ${action} المنشور بنجاح إلى ${selectedPageIds.length} صفحة.` });
-            setSelectedPageIds([]);
+            setNotification({ type: 'success', message: `تمت محاكاة ${action} المنشور بنجاح إلى ${selectedTargetIds.length} من الصفحات/المجموعات.` });
+            setSelectedTargetIds([]);
             setTimeout(() => setNotification(null), 8000);
         }, 1500);
         return;
     }
 
-    const selectedPagesData = pages.filter(p => selectedPageIds.includes(p.id));
+    const selectedTargetsData = targets.filter(t => selectedTargetIds.includes(t.id));
     
-    const publishPromises = selectedPagesData.map(page => {
-        const pageAccessToken = page.access_token;
+    const publishPromises = selectedTargetsData.map(target => {
         let apiPath: string;
         let apiParams: any;
 
         if (image) {
-            apiPath = `/${page.id}/photos`;
+            apiPath = `/${target.id}/photos`;
             const formData = new FormData();
-            formData.append('access_token', pageAccessToken);
+            if (target.type === 'page') {
+              formData.append('access_token', target.access_token!);
+            }
             formData.append('source', image);
             if (text) formData.append('caption', text);
             if (scheduleAt) {
@@ -101,11 +127,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
             }
             apiParams = formData;
         } else { // Text only post
-            apiPath = `/${page.id}/feed`;
+            apiPath = `/${target.id}/feed`;
             apiParams = {
                 message: text,
-                access_token: pageAccessToken
             };
+            if (target.type === 'page') {
+                apiParams.access_token = target.access_token;
+            }
             if (scheduleAt) {
                 apiParams.scheduled_publish_time = Math.floor(scheduleAt.getTime() / 1000);
                 apiParams.published = false;
@@ -115,9 +143,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
         return new Promise((resolve, reject) => {
             window.FB.api(apiPath, 'POST', apiParams, (response: any) => {
                 if (response && !response.error) {
-                    resolve({ pageName: page.name, success: true, response });
+                    resolve({ targetName: target.name, success: true, response });
                 } else {
-                    reject({ pageName: page.name, success: false, error: response.error });
+                    const errorMsg = response?.error?.message || 'Unknown error';
+                    if (target.type === 'group' && errorMsg.includes('(#200) Requires installed app')) {
+                       reject({ targetName: target.name, success: false, error: { ...response.error, message: `فشل النشر: يجب تثبيت التطبيق في إعدادات مجموعة "${target.name}".` } });
+                    } else {
+                       reject({ targetName: target.name, success: false, error: response.error });
+                    }
                 }
             });
         });
@@ -134,23 +167,27 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
     let type: 'success' | 'error' | 'partial' = 'error';
 
     if (successfulPosts > 0 && failedPosts === 0) {
-        message = `تم ${action} المنشور بنجاح إلى ${successfulPosts} صفحة.`;
+        message = `تم ${action} المنشور بنجاح إلى ${successfulPosts} من الصفحات/المجموعات.`;
         type = 'success';
     } else if (successfulPosts > 0 && failedPosts > 0) {
-        message = `تم ${action} المنشور إلى ${successfulPosts} صفحة، وفشل في ${failedPosts} صفحة.`;
+        message = `تم ${action} المنشور إلى ${successfulPosts}، وفشل في ${failedPosts}.`;
         type = 'partial';
     } else {
-        message = `فشل ${action} المنشور في كل الصفحات (${failedPosts}). يرجى التحقق من الصلاحيات.`;
+        message = `فشل ${action} المنشور في كل الأهداف (${failedPosts}). يرجى التحقق من الصلاحيات وتثبيت التطبيق في المجموعات.`;
         type = 'error';
     }
     
-    console.error("Failed posts details:", results.filter(r => r.status === 'rejected'));
+    results.forEach(r => {
+        if (r.status === 'rejected') {
+            console.error("Post failed:", r.reason);
+        }
+    });
     
     setNotification({ type, message });
-    setSelectedPageIds([]);
+    setSelectedTargetIds([]);
     setTimeout(() => setNotification(null), 8000);
 
-  }, [selectedPageIds, pages, isSimulationMode]);
+  }, [selectedTargetIds, targets, isSimulationMode]);
   
   const getNotificationBgColor = () => {
     if (!notification) return '';
@@ -183,13 +220,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
             />
           </div>
           <div>
-            <PageList
-              pages={pages}
-              isLoading={pagesLoading}
-              loadingError={pagesError}
-              selectedPageIds={selectedPageIds}
-              onSelectionChange={setSelectedPageIds}
-              selectionError={pageSelectionError}
+            <TargetList
+              targets={targets}
+              isLoading={targetsLoading}
+              loadingError={targetsError}
+              selectedTargetIds={selectedTargetIds}
+              onSelectionChange={setSelectedTargetIds}
+              selectionError={targetSelectionError}
             />
           </div>
         </div>
