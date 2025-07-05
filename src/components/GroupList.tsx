@@ -49,7 +49,21 @@ const TargetList: React.FC<TargetListProps> = ({
     }
 
     if (targets.length === 0) {
-        return <p className="text-center text-gray-500 dark:text-gray-400">لم يتم العثور على أي صفحات أو مجموعات تديرها. تأكد من منح الإذن اللازم.</p>
+        return (
+            <div className="text-center text-gray-500 dark:text-gray-400 p-4 border-2 border-dashed rounded-lg">
+                <h3 className="font-semibold text-lg text-gray-700 dark:text-gray-300 mb-2">لم يتم العثور على أي وجهات</h3>
+                <p className="text-sm">لم نعثر على صفحات تديرها، أو أنك لم تقم بتثبيت التطبيق في أي مجموعات بعد.</p>
+                <div className="mt-4 text-right bg-gray-100 dark:bg-gray-700 p-3 rounded-md">
+                    <p className="font-bold text-gray-800 dark:text-gray-200">لإدارة المجموعات:</p>
+                    <ol className="list-decimal list-inside text-sm space-y-1 mt-1">
+                        <li>يجب أن تكون مسؤولاً (Admin) في المجموعة.</li>
+                        <li>اذهب إلى إعدادات المجموعة على فيسبوك.</li>
+                        <li>ابحث عن "التطبيقات" (Apps) وأضف هذا التطبيق.</li>
+                    </ol>
+                    <p className="text-xs mt-2 text-gray-600 dark:text-gray-400">هذا إجراء مطلوب من فيسبوك لجميع تطبيقات النشر في المجموعات.</p>
+                </div>
+            </div>
+        );
     }
 
     return (
