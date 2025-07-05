@@ -57,12 +57,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
         );
     });
 
-    const fetchGroups = new Promise<Target[]>((resolve, reject) => {
+    const fetchGroups = new Promise<Target[]>((resolve) => {
         window.FB.api(
-            '/me/groups?fields=id,name,picture{url}', 
+            '/me/groups?fields=id,name,picture{url},permissions', 
             (response: any) => {
                 if (response && !response.error) {
-                    const groupsData = response.data.map((group: any) => ({ ...group, type: 'group' as 'group' }));
+                    const adminGroups = response.data.filter((group: any) => 
+                        group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
+                    );
+                    const groupsData = adminGroups.map((group: any) => ({ ...group, type: 'group' as 'group' }));
                     resolve(groupsData);
                 } else {
                     console.warn("Could not fetch groups:", response?.error);

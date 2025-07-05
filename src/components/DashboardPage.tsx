@@ -60,13 +60,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
 
     const fetchGroups = new Promise<Target[]>((resolve) => {
         window.FB.api(
-            '/me/groups?fields=id,name,picture{url}', 
+            '/me/groups?fields=id,name,picture{url},permissions', 
             (response: any) => {
                 if (response && !response.error) {
-                    const groupsData = response.data.map((group: any) => ({ ...group, type: 'group' as 'group' }));
+                    // Filter to include only groups where the user is an admin
+                    const adminGroups = response.data.filter((group: any) => 
+                        group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
+                    );
+                    const groupsData = adminGroups.map((group: any) => ({ ...group, type: 'group' as 'group' }));
                     resolve(groupsData);
                 } else {
-                    console.warn("Could not fetch groups:", response?.error);
+                    console.warn("Could not fetch groups. The user may have denied permission.", response?.error);
                     resolve([]); 
                 }
             }
