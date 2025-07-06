@@ -1,9 +1,4 @@
 
-
-
-
-
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics, BulkPostItem, ContentPlanRequest, ContentPlanItem } from '../types';
 import Header from './Header';
@@ -23,7 +18,7 @@ import ChartBarIcon from './icons/ChartBarIcon';
 import QueueListIcon from './icons/QueueListIcon';
 import BrainCircuitIcon from './icons/BrainCircuitIcon';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, analyzePageForContentPlan } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan } from '../services/geminiService';
 
 interface DashboardPageProps {
   onLogout: () => void;
