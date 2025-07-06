@@ -1,9 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Declare process to satisfy TypeScript in environments without @types/node
-declare const process: any;
-
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
