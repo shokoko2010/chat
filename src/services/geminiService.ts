@@ -2,20 +2,11 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-export const initializeGoogleGenAI = (apiKey: string): GoogleGenAI | null => {
-  if (!apiKey) {
-    console.warn("API key is empty. Gemini client not initialized.");
-    return null;
-  }
-  try {
-    return new GoogleGenAI({ apiKey });
-  } catch (error) {
-    console.error("Failed to initialize GoogleGenAI:", error);
-    return null;
-  }
-};
+// Initialize the client once. The API KEY is expected to be in the environment variables.
+const aiClient = new GoogleGenAI({ apiKey: process.env.API_KEY! });
 
-export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string): Promise<string> => {
+
+export const generatePostSuggestion = async (topic: string): Promise<string> => {
   try {
     const prompt = `
     أنت خبير في التسويق عبر وسائل التواصل الاجتماعي.
@@ -28,7 +19,7 @@ export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string): Pr
     - لا تضع عنوانًا للمنشور، ابدأ مباشرة بالمحتوى.
     `;
 
-    const response = await ai.models.generateContent({
+    const response = await aiClient.models.generateContent({
       model: 'gemini-2.5-flash-preview-04-17',
       contents: prompt,
     });
@@ -36,19 +27,17 @@ export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string): Pr
     return response.text ?? '';
   } catch (error) {
     console.error("Error generating post suggestion:", error);
-    if (error instanceof Error && error.message.includes('API key not valid')) {
-        throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
-    }
+    // User no longer needs to be notified about API keys.
     throw new Error("حدث خطأ أثناء إنشاء الاقتراح. يرجى المحاولة مرة أخرى.");
   }
 };
 
-export const generateImageFromPrompt = async (ai: GoogleGenAI, prompt: string): Promise<string> => {
+export const generateImageFromPrompt = async (prompt: string): Promise<string> => {
   if (!prompt.trim()) {
     throw new Error("يرجى إدخال وصف لإنشاء الصورة.");
   }
   try {
-    const response = await ai.models.generateImages({
+    const response = await aiClient.models.generateImages({
       model: 'imagen-3.0-generate-002',
       prompt: `صورة فوتوغرافية سينمائية عالية الجودة لـ: ${prompt}`,
       config: { numberOfImages: 1, outputMimeType: 'image/jpeg' },
@@ -65,7 +54,7 @@ export const generateImageFromPrompt = async (ai: GoogleGenAI, prompt: string): 
   }
 };
 
-export const getBestPostingTime = async (ai: GoogleGenAI, postText: string): Promise<Date> => {
+export const getBestPostingTime = async (postText: string): Promise<Date> => {
   if (!postText.trim()) {
     throw new Error("يرجى كتابة منشور أولاً لاقتراح أفضل وقت.");
   }
@@ -80,7 +69,7 @@ export const getBestPostingTime = async (ai: GoogleGenAI, postText: string): Pro
       أرجع الرد بتنسيق JSON فقط، بدون أي نص إضافي أو علامات markdown. يجب أن يحتوي كائن JSON على مفتاح واحد فقط "suggested_time_iso" بقيمة سلسلة زمنية بتنسيق ISO 8601.
       مثال: {"suggested_time_iso": "2024-08-25T17:00:00.000Z"}
     `;
-    const response = await ai.models.generateContent({
+    const response = await aiClient.models.generateContent({
       model: 'gemini-2.5-flash-preview-04-17',
       contents: prompt,
       config: {

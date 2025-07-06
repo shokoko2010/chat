@@ -1,9 +1,9 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import TargetList from './GroupList';
-import SettingsModal from './SettingsModal';
 import ContentCalendar from './ContentCalendar';
 import PostPreview from './PostPreview';
 import DraftsList from './DraftsList';
@@ -12,13 +12,9 @@ import PencilSquareIcon from './icons/PencilSquareIcon';
 import CalendarIcon from './icons/CalendarIcon';
 import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
 import ChartBarIcon from './icons/ChartBarIcon';
-import { GoogleGenAI } from '@google/genai';
 
 interface DashboardPageProps {
   onLogout: () => void;
-  aiClient: GoogleGenAI | null;
-  currentApiKey: string | null;
-  onSaveApiKey: (key: string) => void;
   isSimulationMode: boolean;
 }
 
@@ -39,7 +35,7 @@ const MOCK_PUBLISHED_POSTS: PublishedPost[] = [
 ];
 
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, currentApiKey, onSaveApiKey, isSimulationMode }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMode }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics'>('composer');
   
   // Targets state
@@ -61,7 +57,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
   const [targetSelectionError, setTargetSelectionError] = useState<string | null>(null);
   
   // Other state
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
@@ -395,8 +390,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
   return (
     <div className="min-h-screen fade-in">
       <Header 
-        onLogout={onLogout} 
-        onSettingsClick={() => setIsSettingsOpen(true)}
+        onLogout={onLogout}
         isSimulationMode={isSimulationMode}
       />
       <main className="p-4 sm:p-8">
@@ -438,7 +432,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
                 onPublish={handlePublish}
                 onSaveDraft={handleSaveDraft}
                 isPublishing={isPublishing}
-                aiClient={aiClient}
                 postText={postText}
                 onPostTextChange={setPostText}
                 onImageChange={handleImageChange}
@@ -467,12 +460,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, aiClient, curre
         {view === 'analytics' && <PublishedPostsList posts={publishedPosts} onFetchAnalytics={handleFetchAnalytics} />}
 
       </main>
-      <SettingsModal 
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        onSave={onSaveApiKey}
-        currentApiKey={currentApiKey}
-      />
     </div>
   );
 };

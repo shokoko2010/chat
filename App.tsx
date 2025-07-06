@@ -2,8 +2,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import DashboardPage from './src/components/DashboardPage';
 import HomePage from './src/components/HomePage';
-import { initializeGoogleGenAI } from './src/services/geminiService';
-import { GoogleGenAI } from '@google/genai';
 
 const isSimulation = window.location.protocol === 'http:';
 
@@ -11,8 +9,6 @@ const App: React.FC = () => {
   const [authStatus, setAuthStatus] = useState<'loading' | 'connected' | 'not_authorized'>(
     isSimulation ? 'connected' : 'loading'
   );
-  const [apiKey, setApiKey] = useState<string | null>(null);
-  const [aiClient, setAiClient] = useState<GoogleGenAI | null>(null);
   
   const isSimulationMode = isSimulation;
 
@@ -35,16 +31,6 @@ const App: React.FC = () => {
   }, [isSimulationMode]);
 
   useEffect(() => {
-    try {
-      const storedKey = localStorage.getItem('geminiApiKey');
-      if (storedKey) {
-        setApiKey(storedKey);
-        setAiClient(initializeGoogleGenAI(storedKey));
-      }
-    } catch (error) {
-      console.error("Failed to access localStorage:", error);
-    }
-
     if (isSimulationMode) {
       console.warn('RUNNING IN SIMULATION MODE ON HTTP. Facebook features are mocked.');
       return;
@@ -77,18 +63,6 @@ const App: React.FC = () => {
     };
   }, [checkLoginStatus, isSimulationMode]);
 
-
-  const handleSaveApiKey = (newKey: string) => {
-    if (newKey) {
-      setApiKey(newKey);
-      setAiClient(initializeGoogleGenAI(newKey));
-      try {
-        localStorage.setItem('geminiApiKey', newKey);
-      } catch (error) {
-        console.error("Failed to save to localStorage:", error);
-      }
-    }
-  };
 
   const handleLogin = useCallback(() => {
     if (isSimulationMode) {
@@ -154,9 +128,6 @@ const App: React.FC = () => {
       {authStatus === 'connected' ? (
         <DashboardPage
           onLogout={handleLogout}
-          aiClient={aiClient}
-          currentApiKey={apiKey}
-          onSaveApiKey={handleSaveApiKey}
           isSimulationMode={isSimulationMode}
         />
       ) : (

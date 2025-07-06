@@ -1,16 +1,15 @@
+
 import React, { useState } from 'react';
 import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import WandSparklesIcon from './icons/WandSparklesIcon';
 import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime } from '../services/geminiService';
-import { GoogleGenAI } from '@google/genai';
 
 interface PostComposerProps {
   onPublish: () => Promise<void>;
   onSaveDraft: () => void;
   isPublishing: boolean;
-  aiClient: GoogleGenAI | null;
   postText: string;
   onPostTextChange: (text: string) => void;
   onImageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -50,7 +49,6 @@ const PostComposer: React.FC<PostComposerProps> = ({
   onPublish,
   onSaveDraft,
   isPublishing,
-  aiClient,
   postText,
   onPostTextChange,
   onImageChange,
@@ -78,14 +76,10 @@ const PostComposer: React.FC<PostComposerProps> = ({
           setAiTextError('يرجى إدخال موضوع لتوليد منشور عنه.');
           return;
       }
-      if (!aiClient) {
-          setAiTextError('يرجى إضافة مفتاح API من قائمة الإعدادات لتفعيل هذه الميزة.');
-          return;
-      }
       setAiTextError('');
       setIsGeneratingText(true);
       try {
-        const suggestion = await generatePostSuggestion(aiClient, aiTopic);
+        const suggestion = await generatePostSuggestion(aiTopic);
         onPostTextChange(suggestion);
       } catch (e: any) {
         setAiTextError(e.message || 'حدث خطأ غير متوقع.');
@@ -99,14 +93,10 @@ const PostComposer: React.FC<PostComposerProps> = ({
         setAiImageError('يرجى إدخال وصف لإنشاء الصورة.');
         return;
     }
-    if (!aiClient) {
-        setAiImageError('يرجى إضافة مفتاح API من قائمة الإعدادات.');
-        return;
-    }
     setAiImageError('');
     setIsGeneratingImage(true);
     try {
-      const base64Bytes = await generateImageFromPrompt(aiClient, aiImagePrompt);
+      const base64Bytes = await generateImageFromPrompt(aiImagePrompt);
       const imageFile = base64ToFile(base64Bytes, `${aiImagePrompt.substring(0, 20)}.jpeg`);
       onImageGenerated(imageFile);
     } catch (e: any) {
@@ -121,14 +111,10 @@ const PostComposer: React.FC<PostComposerProps> = ({
         setAiTimeError('اكتب نص المنشور أولاً لاقتراح وقت.');
         return;
     }
-     if (!aiClient) {
-        setAiTimeError('يرجى إضافة مفتاح API من قائمة الإعدادات.');
-        return;
-    }
     setAiTimeError('');
     setIsSuggestingTime(true);
     try {
-        const suggestedDate = await getBestPostingTime(aiClient, postText);
+        const suggestedDate = await getBestPostingTime(postText);
         onScheduleDateChange(formatDateTimeForInput(suggestedDate));
         onIsScheduledChange(true);
     } catch (e: any) {
@@ -155,15 +141,14 @@ const PostComposer: React.FC<PostComposerProps> = ({
               onChange={(e) => setAiTopic(e.target.value)}
               placeholder="اكتب فكرة للمنشور، مثلاً: إطلاق منتج جديد"
               className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500"
-              disabled={isGeneratingText || !aiClient}
+              disabled={isGeneratingText}
             />
-            <Button onClick={handleGenerateTextWithAI} isLoading={isGeneratingText} disabled={!aiClient}>
+            <Button onClick={handleGenerateTextWithAI} isLoading={isGeneratingText}>
               <SparklesIcon className="w-5 h-5 ml-2"/>
               {isGeneratingText ? 'جاري التوليد...' : 'ولّد لي نصاً'}
             </Button>
           </div>
           {aiTextError && <p className="text-red-500 text-sm mt-2">{aiTextError}</p>}
-          {!aiClient && <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">ميزة الذكاء الاصطناعي معطلة. افتح الإعدادات ⚙️ لإضافة مفتاح API الخاص بك.</p>}
       </div>
 
       <textarea
@@ -199,12 +184,11 @@ const PostComposer: React.FC<PostComposerProps> = ({
               onChange={(e) => setAiImagePrompt(e.target.value)}
               placeholder="وصف الصورة، مثلاً: رائد فضاء يقرأ على المريخ"
               className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-purple-500 focus:border-purple-500"
-              disabled={isGeneratingImage || !aiClient}
+              disabled={isGeneratingImage}
             />
             <Button 
                 onClick={handleGenerateImageWithAI} 
-                isLoading={isGeneratingImage} 
-                disabled={!aiClient}
+                isLoading={isGeneratingImage}
                 className="bg-purple-600 hover:bg-purple-700 focus:ring-purple-500"
             >
               <PhotoIcon className="w-5 h-5 ml-2"/>
@@ -242,7 +226,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
                     variant="secondary"
                     onClick={handleSuggestTimeWithAI}
                     isLoading={isSuggestingTime}
-                    disabled={!postText.trim() || !aiClient}
+                    disabled={!postText.trim()}
                  >
                     <WandSparklesIcon className="w-5 h-5 ml-2"/>
                     اقترح أفضل وقت
