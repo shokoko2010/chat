@@ -15,8 +15,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
   useEffect(() => {
     if (currentApiKey) {
       setApiKey(currentApiKey);
+    } else {
+      setApiKey('');
     }
-  }, [currentApiKey]);
+  }, [currentApiKey, isOpen]);
 
   if (!isOpen) {
     return null;

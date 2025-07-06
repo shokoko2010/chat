@@ -1,12 +1,14 @@
 import React from 'react';
 import Button from './ui/Button';
+import SettingsIcon from './icons/SettingsIcon';
 
 interface HeaderProps {
   onLogout: () => void;
+  onSettingsClick: () => void;
   isSimulationMode: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ onLogout, isSimulationMode }) => {
+const Header: React.FC<HeaderProps> = ({ onLogout, onSettingsClick, isSimulationMode }) => {
   return (
     <header className="bg-white dark:bg-gray-800 shadow-md p-4 flex justify-between items-center relative">
       <div className="flex items-center gap-4">
@@ -20,6 +22,13 @@ const Header: React.FC<HeaderProps> = ({ onLogout, isSimulationMode }) => {
         )}
       </div>
       <div className="flex items-center gap-2">
+         <button 
+          onClick={onSettingsClick} 
+          className="p-2 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          aria-label="الإعدادات"
+        >
+          <SettingsIcon className="w-6 h-6" />
+        </button>
         <Button onClick={onLogout} variant="secondary">
           تسجيل الخروج
         </Button>

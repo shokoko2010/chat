@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics } from '../types';
 import Header from './Header';
@@ -8,14 +10,19 @@ import ContentCalendar from './ContentCalendar';
 import PostPreview from './PostPreview';
 import DraftsList from './DraftsList';
 import PublishedPostsList from './PublishedPostsList';
+import SettingsModal from './SettingsModal';
 import PencilSquareIcon from './icons/PencilSquareIcon';
 import CalendarIcon from './icons/CalendarIcon';
 import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
 import ChartBarIcon from './icons/ChartBarIcon';
+import { GoogleGenAI } from '@google/genai';
 
 interface DashboardPageProps {
   onLogout: () => void;
   isSimulationMode: boolean;
+  aiClient: GoogleGenAI | null;
+  currentApiKey: string | null;
+  onSaveApiKey: (key: string) => void;
 }
 
 const MOCK_TARGETS: Target[] = [
@@ -35,7 +42,7 @@ const MOCK_PUBLISHED_POSTS: PublishedPost[] = [
 ];
 
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMode }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMode, aiClient, currentApiKey, onSaveApiKey }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics'>('composer');
   
   // Targets state
@@ -61,6 +68,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -392,6 +400,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
       <Header 
         onLogout={onLogout}
         isSimulationMode={isSimulationMode}
+        onSettingsClick={() => setIsSettingsOpen(true)}
       />
       <main className="p-4 sm:p-8">
         {notification && (
@@ -429,6 +438,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
             </div>
             <div className="lg:col-span-3 space-y-8">
               <PostComposer 
+                aiClient={aiClient}
                 onPublish={handlePublish}
                 onSaveDraft={handleSaveDraft}
                 isPublishing={isPublishing}
@@ -443,6 +453,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
                 scheduleDate={scheduleDate}
                 onScheduleDateChange={setScheduleDate}
                 error={composerError}
+                selectedTargetIds={selectedTargetIds}
               />
               <TargetList
                 targets={targets}
@@ -460,6 +471,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
         {view === 'analytics' && <PublishedPostsList posts={publishedPosts} onFetchAnalytics={handleFetchAnalytics} />}
 
       </main>
+      <SettingsModal 
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={onSaveApiKey}
+        currentApiKey={currentApiKey}
+      />
     </div>
   );
 };

@@ -2,6 +2,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import DashboardPage from './components/DashboardPage';
 import HomePage from './components/HomePage';
+import { GoogleGenAI } from '@google/genai';
+import { initializeGoogleGenAI } from './services/geminiService';
+
 
 const isSimulation = window.location.protocol === 'http:';
 
@@ -10,6 +13,19 @@ const App: React.FC = () => {
     isSimulation ? 'connected' : 'loading'
   );
   
+  const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('geminiApiKey'));
+  const [aiClient, setAiClient] = useState<GoogleGenAI | null>(null);
+
+  useEffect(() => {
+    setAiClient(initializeGoogleGenAI(apiKey ?? ''));
+  }, [apiKey]);
+
+  const handleSaveApiKey = (newKey: string) => {
+    localStorage.setItem('geminiApiKey', newKey);
+    setApiKey(newKey);
+  };
+
+
   const isSimulationMode = isSimulation;
 
   const checkLoginStatus = useCallback(() => {
@@ -22,7 +38,7 @@ const App: React.FC = () => {
           } else {
             setAuthStatus('not_authorized');
           }
-        }); // Check cached session first for speed
+        }); 
       }
     } catch (error) {
       console.error("An error occurred while checking FB login status:", error);
@@ -129,6 +145,9 @@ const App: React.FC = () => {
         <DashboardPage
           onLogout={handleLogout}
           isSimulationMode={isSimulationMode}
+          aiClient={aiClient}
+          currentApiKey={apiKey}
+          onSaveApiKey={handleSaveApiKey}
         />
       ) : (
         <HomePage onLoginClick={handleLogin} />
