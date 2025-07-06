@@ -57,14 +57,21 @@ export const generateImageFromPrompt = async (ai: GoogleGenAI, prompt: string): 
     if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image && response.generatedImages[0].image.imageBytes) {
       return response.generatedImages[0].image.imageBytes;
     } else {
-      throw new Error("فشل إنشاء الصورة. لم يتم إرجاع أي صور.");
+      console.error("Image generation failed, API did not return an image.", response);
+      throw new Error("فشل إنشاء الصورة. قد يكون السبب هو حظر المحتوى لأسباب تتعلق بالسلامة أو مشكلة أخرى في الاستجابة.");
     }
   } catch (error) {
     console.error("Error generating image:", error);
-     if (error instanceof Error && error.message.includes('API key not valid')) {
-        throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
+    let detailedMessage = "حاول مرة أخرى.";
+    if (error instanceof Error) {
+        if (error.message.includes('API key not valid')) {
+            throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
+        }
+        // Surface the actual error from the API to help debug configuration issues.
+        detailedMessage = error.message;
     }
-    throw new Error("حدث خطأ أثناء إنشاء الصورة. حاول مرة أخرى.");
+    // Provide a more informative error message to the user.
+    throw new Error(`حدث خطأ أثناء إنشاء الصورة. السبب: ${detailedMessage}. يرجى التحقق من تفعيل الفوترة وواجهة Vertex AI API في مشروع Google Cloud.`);
   }
 };
 
