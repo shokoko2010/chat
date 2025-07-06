@@ -3,7 +3,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 // Initialize the client once. The API KEY is expected to be in the environment variables.
-const aiClient = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+const aiClient = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
 
 
 export const generatePostSuggestion = async (topic: string): Promise<string> => {
