@@ -2,8 +2,10 @@
 
 
 
+
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics, BulkPostItem } from '../types';
+import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics, BulkPostItem, ContentPlanRequest, ContentPlanItem } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import TargetList from './GroupList';
@@ -13,13 +15,15 @@ import DraftsList from './DraftsList';
 import PublishedPostsList from './PublishedPostsList';
 import SettingsModal from './SettingsModal';
 import BulkSchedulerPage from './BulkSchedulerPage'; 
+import ContentPlannerPage from './ContentPlannerPage';
 import PencilSquareIcon from './icons/PencilSquareIcon';
 import CalendarIcon from './icons/CalendarIcon';
 import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
 import ChartBarIcon from './icons/ChartBarIcon';
 import QueueListIcon from './icons/QueueListIcon';
+import BrainCircuitIcon from './icons/BrainCircuitIcon';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan } from '../services/geminiService';
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -56,7 +60,7 @@ const formatDateTimeForInput = (date: Date) => {
 };
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMode, aiClient, currentApiKey, onSaveApiKey }) => {
-  const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk'>('composer');
+  const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner'>('composer');
   
   // Targets state
   const [targets, setTargets] = useState<Target[]>([]);
@@ -86,6 +90,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
   // Bulk scheduler state
   const [bulkPosts, setBulkPosts] = useState<BulkPostItem[]>([]);
   const [isSchedulingAll, setIsSchedulingAll] = useState(false);
+
+  // AI Planner state
+  const [contentPlan, setContentPlan] = useState<ContentPlanItem[] | null>(null);
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
 
 
   // Load initial data
@@ -531,6 +540,33 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
     });
 
   };
+
+  // --- AI PLANNER HANDLERS ---
+  const handleGeneratePlan = useCallback(async (request: ContentPlanRequest) => {
+    if (!aiClient) {
+      setPlanError("يرجى إضافة مفتاح API من قائمة الإعدادات لتفعيل هذه الميزة.");
+      return;
+    }
+    setPlanError(null);
+    setIsGeneratingPlan(true);
+    try {
+      const plan = await generateContentPlan(aiClient, request);
+      setContentPlan(plan);
+    } catch (e: any) {
+      setPlanError(e.message || "حدث خطأ غير متوقع عند إنشاء الخطة.");
+      setContentPlan(null);
+    } finally {
+      setIsGeneratingPlan(false);
+    }
+  }, [aiClient]);
+  
+  const handleStartPostFromPlan = (planItem: ContentPlanItem) => {
+    clearComposer();
+    setPostText(planItem.postSuggestion);
+    setView('composer');
+    setNotification({ type: 'success', message: 'تم تحميل اقتراح المنشور. يمكنك الآن تعديله ونشره.' });
+    setTimeout(() => setNotification(null), 5000);
+  };
   
   const getNotificationBgColor = () => {
     if (!notification) return '';
@@ -598,6 +634,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
                 aiClient={aiClient}
                 onGenerateDescription={handleGenerateBulkDescription}
             />;
+        case 'planner':
+            return <ContentPlannerPage 
+                aiClient={aiClient}
+                onGeneratePlan={handleGeneratePlan}
+                isGenerating={isGeneratingPlan}
+                plan={contentPlan}
+                error={planError}
+                onStartPost={handleStartPostFromPlan}
+            />;
         case 'calendar':
             return <ContentCalendar posts={scheduledPosts} />;
         case 'drafts':
@@ -630,6 +675,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
                 </button>
                  <button onClick={() => setView('bulk')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'bulk' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <QueueListIcon className="w-5 h-5" /> الجدولة المجمعة <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-300 text-xs font-bold px-2 py-0.5 rounded-full">{bulkPosts.length}</span>
+                </button>
+                <button onClick={() => setView('planner')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'planner' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                    <BrainCircuitIcon className="w-5 h-5" /> المخطط الذكي
                 </button>
                 <button onClick={() => setView('drafts')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'drafts' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <ArchiveBoxIcon className="w-5 h-5" /> المسودات <span className="bg-gray-200 dark:bg-gray-700 text-xs font-bold px-2 py-0.5 rounded-full">{drafts.length}</span>

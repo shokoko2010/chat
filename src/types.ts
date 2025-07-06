@@ -63,3 +63,19 @@ export interface BulkPostItem {
   error?: string; // For per-item validation errors
   isGeneratingDescription?: boolean;
 }
+
+// Types for AI Content Planner
+export interface ContentPlanRequest {
+  pageType: string;
+  audience: string;
+  goals: string;
+  tone: string;
+}
+
+export interface ContentPlanItem {
+  day: string; // e.g., "الاثنين"
+  theme: string; // e.g., "نصيحة الأسبوع"
+  postSuggestion: string; // The full suggested post text
+  contentType: string; // e.g., "صورة عالية الجودة", "سؤال تفاعلي"
+  cta: string; // e.g., "ما رأيكم؟ شاركونا في التعليقات!"
+}
