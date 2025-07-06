@@ -1,16 +1,12 @@
 /// <reference types="vite/client" />
 
 /**
- * Augments the NodeJS.ProcessEnv interface to include environment variables
- * defined in the Vite configuration. This provides type-safe access
- * to `process.env` variables throughout the application.
+ * Augments the NodeJS.ProcessEnv interface to include custom environment variables.
+ * This resolves TypeScript errors for `process.env.API_KEY` by adding it to the
+ * existing type definitions provided by Node or other libraries, avoiding redeclaration conflicts.
  */
 declare namespace NodeJS {
   interface ProcessEnv {
-    /**
-     * The API key for the Google Gemini API.
-     * This is injected at build time by Vite.
-     */
     API_KEY: string;
   }
 }
