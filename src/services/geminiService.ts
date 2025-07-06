@@ -2,6 +2,8 @@
 
 
 
+
+
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { ContentPlanRequest, ContentPlanItem } from "../types";
 
@@ -243,5 +245,69 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: ContentPlanR
         throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
     }
     throw new Error("حدث خطأ أثناء إنشاء خطة المحتوى.");
+  }
+};
+
+
+export const analyzePageForContentPlan = async (ai: GoogleGenAI, pageName: string, pageType: 'page' | 'group'): Promise<Partial<ContentPlanRequest>> => {
+  try {
+    const prompt = `
+      أنت خبير استراتيجي في التسويق الرقمي.
+      بناءً على اسم ونوع صفحة فيسبوك التالية، قم بتحليل واقتراح استراتيجية محتوى أولية.
+
+      - اسم الصفحة: "${pageName}"
+      - نوعها: "${pageType === 'page' ? 'صفحة عامة' : 'مجموعة'}"
+
+      المطلوب:
+      قم بإرجاع كائن JSON فقط، بدون أي نص إضافي أو علامات markdown.
+      يجب أن يحتوي الكائن على المفاتيح التالية:
+      - "pageType": (string) وصف موجز لنوع العمل أو الصفحة (مثال: "متجر إلكتروني للملابس", "مدونة تقنية", "مطعم مأكولات بحرية").
+      - "audience": (string) وصف للجمهور المستهدف المحتمل (مثال: "الشباب المهتمون بالموضة", "المطورون والمبرمجون", "العائلات ومحبو الطعام").
+      - "goals": (string) الأهداف التسويقية الرئيسية المقترحة (مثال: "زيادة الوعي بالعلامة التجارية وبيع المنتجات", "بناء مجتمع تفاعلي", "جذب الحجوزات").
+      - "tone": (string) النبرة الأنسب للمحتوى من بين هذه الخيارات ["ودود ومرح", "احترافي ورسمي", "تعليمي وملهم", "مثير للحماس والطاقة"]. اختر الأنسب.
+
+      مثال على الإجابة:
+      {
+        "pageType": "مقهى ومحمصة بن",
+        "audience": "طلاب الجامعات والموظفون عن بعد ومحبو القهوة",
+        "goals": "زيادة عدد زوار المقهى وبناء ولاء للعلامة التجارية",
+        "tone": "ودود ومرح"
+      }
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-preview-04-17',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("لم يتمكن الذكاء الاصطناعي من تحليل الصفحة (استجابة فارغة).");
+    }
+
+    let jsonStr = text.trim();
+    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
+    const match = jsonStr.match(fenceRegex);
+    if (match && match[2]) {
+      jsonStr = match[2].trim();
+    }
+
+    const analysis = JSON.parse(jsonStr);
+    
+    if (analysis && analysis.pageType && analysis.audience) {
+      return analysis;
+    }
+
+    throw new Error("فشل التحليل في إعادة البيانات بالتنسيق المطلوب.");
+
+  } catch (error) {
+    console.error("Error analyzing page for content plan:", error);
+    if (error instanceof Error && error.message.includes('API key not valid')) {
+        throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
+    }
+    throw new Error("حدث خطأ أثناء تحليل الصفحة.");
   }
 };

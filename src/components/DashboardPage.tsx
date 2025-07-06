@@ -23,7 +23,7 @@ import ChartBarIcon from './icons/ChartBarIcon';
 import QueueListIcon from './icons/QueueListIcon';
 import BrainCircuitIcon from './icons/BrainCircuitIcon';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, analyzePageForContentPlan } from '../services/geminiService';
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -642,6 +642,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
                 plan={contentPlan}
                 error={planError}
                 onStartPost={handleStartPostFromPlan}
+                targets={targets}
             />;
         case 'calendar':
             return <ContentCalendar posts={scheduledPosts} />;
