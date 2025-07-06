@@ -2,12 +2,37 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// Initialize the client once. The API KEY is expected to be in the environment variables.
-const aiClient = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
+let aiClient: GoogleGenAI | null = null;
+
+/**
+ * Lazily initializes and returns the GoogleGenAI client.
+ * Throws an error if the API key is missing or initialization fails.
+ */
+const getAiClient = (): GoogleGenAI => {
+    if (aiClient) {
+        return aiClient;
+    }
+
+    const apiKey = import.meta.env.VITE_API_KEY;
+    if (!apiKey) {
+        console.error("VITE_API_KEY is not set. AI features will be disabled.");
+        throw new Error("مفتاح API الخاص بالذكاء الاصطناعي غير مُعد. يرجى التأكد من إضافته.");
+    }
+
+    try {
+        aiClient = new GoogleGenAI({ apiKey });
+        return aiClient;
+    } catch (error) {
+        console.error("Failed to initialize GoogleGenAI:", error);
+        aiClient = null; // Reset on failure
+        throw new Error("فشل في تهيئة مساعد الذكاء الاصطناعي. قد يكون المفتاح غير صالح.");
+    }
+};
 
 
 export const generatePostSuggestion = async (topic: string): Promise<string> => {
   try {
+    const client = getAiClient();
     const prompt = `
     أنت خبير في التسويق عبر وسائل التواصل الاجتماعي.
     مهمتك هي كتابة منشور جذاب لصفحة فيسبوك حول الموضوع التالي: "${topic}".
@@ -19,7 +44,7 @@ export const generatePostSuggestion = async (topic: string): Promise<string> => 
     - لا تضع عنوانًا للمنشور، ابدأ مباشرة بالمحتوى.
     `;
 
-    const response = await aiClient.models.generateContent({
+    const response = await client.models.generateContent({
       model: 'gemini-2.5-flash-preview-04-17',
       contents: prompt,
     });
@@ -27,8 +52,8 @@ export const generatePostSuggestion = async (topic: string): Promise<string> => 
     return response.text ?? '';
   } catch (error) {
     console.error("Error generating post suggestion:", error);
-    if (error instanceof Error && /API key/i.test(error.message)) {
-        throw new Error("فشل التحقق من مفتاح API. تأكد من إعداده بشكل صحيح في بيئة التشغيل.");
+    if (error instanceof Error) {
+        throw error;
     }
     throw new Error("حدث خطأ أثناء إنشاء الاقتراح. يرجى المحاولة مرة أخرى.");
   }
@@ -39,7 +64,8 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string> =
     throw new Error("يرجى إدخال وصف لإنشاء الصورة.");
   }
   try {
-    const response = await aiClient.models.generateImages({
+    const client = getAiClient();
+    const response = await client.models.generateImages({
       model: 'imagen-3.0-generate-002',
       prompt: `صورة فوتوغرافية سينمائية عالية الجودة لـ: ${prompt}`,
       config: { numberOfImages: 1, outputMimeType: 'image/jpeg' },
@@ -52,8 +78,8 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string> =
     }
   } catch (error) {
     console.error("Error generating image:", error);
-    if (error instanceof Error && /API key/i.test(error.message)) {
-        throw new Error("فشل التحقق من مفتاح API. تأكد من إعداده بشكل صحيح في بيئة التشغيل.");
+    if (error instanceof Error) {
+        throw error;
     }
     throw new Error("حدث خطأ أثناء إنشاء الصورة. حاول مرة أخرى.");
   }
@@ -64,6 +90,7 @@ export const getBestPostingTime = async (postText: string): Promise<Date> => {
     throw new Error("يرجى كتابة منشور أولاً لاقتراح أفضل وقت.");
   }
   try {
+    const client = getAiClient();
     const prompt = `
       بصفتك خبيرًا في وسائل التواصل الاجتماعي، قم بتحليل نص منشور فيسبوك التالي واقترح أفضل وقت في المستقبل لنشره لتحقيق أقصى قدر من التفاعل.
       الوقت الحالي هو: ${new Date().toISOString()}. يجب أن يكون الوقت المقترح بعد ساعة واحدة على الأقل من الوقت الحالي وفي غضون الأسبوع القادم.
@@ -74,7 +101,7 @@ export const getBestPostingTime = async (postText: string): Promise<Date> => {
       أرجع الرد بتنسيق JSON فقط، بدون أي نص إضافي أو علامات markdown. يجب أن يحتوي كائن JSON على مفتاح واحد فقط "suggested_time_iso" بقيمة سلسلة زمنية بتنسيق ISO 8601.
       مثال: {"suggested_time_iso": "2024-08-25T17:00:00.000Z"}
     `;
-    const response = await aiClient.models.generateContent({
+    const response = await client.models.generateContent({
       model: 'gemini-2.5-flash-preview-04-17',
       contents: prompt,
       config: {
@@ -106,8 +133,8 @@ export const getBestPostingTime = async (postText: string): Promise<Date> => {
 
   } catch (error) {
     console.error("Error suggesting post time:", error);
-    if (error instanceof Error && /API key/i.test(error.message)) {
-        throw new Error("فشل التحقق من مفتاح API. تأكد من إعداده بشكل صحيح في بيئة التشغيل.");
+    if (error instanceof Error) {
+        throw error;
     }
     throw new Error("حدث خطأ أثناء اقتراح وقت النشر.");
   }
