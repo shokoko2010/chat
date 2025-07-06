@@ -27,7 +27,9 @@ export const generatePostSuggestion = async (topic: string): Promise<string> => 
     return response.text ?? '';
   } catch (error) {
     console.error("Error generating post suggestion:", error);
-    // User no longer needs to be notified about API keys.
+    if (error instanceof Error && /API key/i.test(error.message)) {
+        throw new Error("فشل التحقق من مفتاح API. تأكد من إعداده بشكل صحيح في بيئة التشغيل.");
+    }
     throw new Error("حدث خطأ أثناء إنشاء الاقتراح. يرجى المحاولة مرة أخرى.");
   }
 };
@@ -50,6 +52,9 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string> =
     }
   } catch (error) {
     console.error("Error generating image:", error);
+    if (error instanceof Error && /API key/i.test(error.message)) {
+        throw new Error("فشل التحقق من مفتاح API. تأكد من إعداده بشكل صحيح في بيئة التشغيل.");
+    }
     throw new Error("حدث خطأ أثناء إنشاء الصورة. حاول مرة أخرى.");
   }
 };
@@ -101,6 +106,9 @@ export const getBestPostingTime = async (postText: string): Promise<Date> => {
 
   } catch (error) {
     console.error("Error suggesting post time:", error);
+    if (error instanceof Error && /API key/i.test(error.message)) {
+        throw new Error("فشل التحقق من مفتاح API. تأكد من إعداده بشكل صحيح في بيئة التشغيل.");
+    }
     throw new Error("حدث خطأ أثناء اقتراح وقت النشر.");
   }
 };
