@@ -1,4 +1,5 @@
 
+
 declare global {
   interface Window {
     FB: any;
@@ -50,4 +51,15 @@ export interface PublishedPost {
   imagePreview: string | null;
   publishedAt: Date;
   analytics: PostAnalytics;
+}
+
+export interface BulkPostItem {
+  id: string;
+  imageFile: File;
+  imagePreview: string;
+  text: string;
+  scheduleDate: string; // ISO string format
+  targetIds: string[]; // Array of selected target IDs
+  error?: string; // For per-item validation errors
+  isGeneratingDescription?: boolean;
 }

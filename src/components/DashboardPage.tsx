@@ -1,8 +1,9 @@
 
 
 
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics } from '../types';
+import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics, BulkPostItem } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import TargetList from './GroupList';
@@ -11,11 +12,14 @@ import PostPreview from './PostPreview';
 import DraftsList from './DraftsList';
 import PublishedPostsList from './PublishedPostsList';
 import SettingsModal from './SettingsModal';
+import BulkSchedulerPage from './BulkSchedulerPage'; 
 import PencilSquareIcon from './icons/PencilSquareIcon';
 import CalendarIcon from './icons/CalendarIcon';
 import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
 import ChartBarIcon from './icons/ChartBarIcon';
+import QueueListIcon from './icons/QueueListIcon';
 import { GoogleGenAI } from '@google/genai';
+import { generateDescriptionForImage } from '../services/geminiService';
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -41,9 +45,18 @@ const MOCK_PUBLISHED_POSTS: PublishedPost[] = [
     { id: 'mock_post_2', pageId: '2', pageName: 'متجر الأزياء العصرية', pageAvatarUrl: 'https://via.placeholder.com/150/C154C1/FFFFFF?text=Fashion', text: 'مجموعة جديدة من الفساتين وصلت! 👗', imagePreview: null, publishedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), analytics: { loading: false, lastUpdated: null } }
 ];
 
+const formatDateTimeForInput = (date: Date) => {
+    const pad = (num: number) => num.toString().padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMode, aiClient, currentApiKey, onSaveApiKey }) => {
-  const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics'>('composer');
+  const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk'>('composer');
   
   // Targets state
   const [targets, setTargets] = useState<Target[]>([]);
@@ -69,6 +82,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
   const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Bulk scheduler state
+  const [bulkPosts, setBulkPosts] = useState<BulkPostItem[]>([]);
+  const [isSchedulingAll, setIsSchedulingAll] = useState(false);
+
 
   // Load initial data
   useEffect(() => {
@@ -384,6 +402,136 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
      setTimeout(() => setNotification(null), 4000);
   };
   
+  // --- BULK SCHEDULER HANDLERS ---
+  const handleBulkAddPosts = (files: FileList) => {
+    const newPosts: BulkPostItem[] = Array.from(files).map((file, index) => {
+        const scheduleTime = new Date(Date.now() + (index + 1) * 2 * 60 * 60 * 1000); // Stagger by 2 hours
+        return {
+            id: `bulk_${Date.now()}_${index}`,
+            imageFile: file,
+            imagePreview: URL.createObjectURL(file),
+            text: '',
+            scheduleDate: formatDateTimeForInput(scheduleTime),
+            targetIds: [],
+        };
+    });
+    setBulkPosts(prev => [...prev, ...newPosts]);
+  };
+
+  const handleBulkPostUpdate = (id: string, updates: Partial<BulkPostItem>) => {
+    setBulkPosts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+  };
+
+  const handleBulkPostRemove = (id: string) => {
+    setBulkPosts(prev => prev.filter(p => p.id !== id));
+  };
+  
+  const handleGenerateBulkDescription = useCallback(async (id: string) => {
+    if (!aiClient) return;
+    const post = bulkPosts.find(p => p.id === id);
+    if (!post) return;
+
+    handleBulkPostUpdate(id, { isGeneratingDescription: true });
+    try {
+      const description = await generateDescriptionForImage(aiClient, post.imageFile);
+      handleBulkPostUpdate(id, { text: description });
+    } catch (error: any) {
+      handleBulkPostUpdate(id, { error: error.message || "Failed to generate description" });
+    } finally {
+      handleBulkPostUpdate(id, { isGeneratingDescription: false });
+    }
+  }, [aiClient, bulkPosts]);
+
+  const handleScheduleAllBulk = async () => {
+    setIsSchedulingAll(true);
+    setNotification(null);
+
+    // --- Validation ---
+    let validationError = false;
+    const validatedPosts = bulkPosts.map(p => {
+        if (p.targetIds.length === 0 || !p.scheduleDate) {
+            validationError = true;
+            return { ...p, error: 'يرجى تحديد وجهة وتاريخ للنشر.' };
+        }
+        return { ...p, error: undefined };
+    });
+
+    setBulkPosts(validatedPosts);
+
+    if (validationError) {
+        setNotification({ type: 'error', message: 'بعض المنشورات غير مكتملة. يرجى مراجعة الحقول المطلوبة.' });
+        setIsSchedulingAll(false);
+        return;
+    }
+    
+    if (isSimulationMode) {
+        console.log("Simulating bulk schedule:", bulkPosts);
+        setTimeout(() => {
+            setIsSchedulingAll(false);
+            setNotification({ type: 'success', message: `تمت محاكاة جدولة ${bulkPosts.length} منشورات بنجاح.` });
+            setBulkPosts([]);
+        }, 2000);
+        return;
+    }
+
+    // --- API Calls ---
+    const allPromises = bulkPosts.flatMap(post => {
+        const scheduleAt = new Date(post.scheduleDate);
+        return post.targetIds.map(targetId => {
+            const target = targets.find(t => t.id === targetId);
+            if (!target) return Promise.reject({ targetName: 'Unknown', error: { message: 'Target not found' }});
+
+            const apiPath = `/${target.id}/photos`;
+            const formData = new FormData();
+            if (target.type === 'page') {
+                formData.append('access_token', target.access_token!);
+            }
+            formData.append('source', post.imageFile);
+            if (post.text) formData.append('caption', post.text);
+            formData.append('scheduled_publish_time', String(Math.floor(scheduleAt.getTime() / 1000)));
+            formData.append('published', 'false');
+
+            return new Promise((resolve, reject) => {
+                window.FB.api(apiPath, 'POST', formData, (response: any) => {
+                     if (response && !response.error) {
+                        resolve({ targetName: target.name, success: true });
+                    } else {
+                        const errorMsg = response?.error?.message || 'Unknown error';
+                        if (target.type === 'group' && errorMsg.includes('(#200) Requires installed app')) {
+                           reject({ targetName: target.name, success: false, error: { ...response.error, message: `فشل النشر: يجب تثبيت التطبيق في إعدادات مجموعة "${target.name}".` } });
+                        } else {
+                           reject({ targetName: target.name, success: false, error: response.error });
+                        }
+                    }
+                });
+            });
+        });
+    });
+    
+    const results = await Promise.allSettled(allPromises);
+
+    setIsSchedulingAll(false);
+    
+    const successfulSchedules = results.filter(r => r.status === 'fulfilled').length;
+    const failedSchedules = results.length - successfulSchedules;
+    
+    if (successfulSchedules > 0 && failedSchedules === 0) {
+        setNotification({ type: 'success', message: `تمت جدولة ${successfulSchedules} منشورات بنجاح.` });
+        setBulkPosts([]);
+    } else if (successfulSchedules > 0 && failedSchedules > 0) {
+        setNotification({ type: 'partial', message: `تمت جدولة ${successfulSchedules} بنجاح، وفشل ${failedSchedules}.` });
+    } else {
+        setNotification({ type: 'error', message: `فشلت جدولة كل المنشورات (${failedSchedules}).` });
+    }
+
+    results.forEach(r => {
+        if (r.status === 'rejected') {
+            console.error("Schedule failed:", r.reason);
+        }
+    });
+
+  };
+  
   const getNotificationBgColor = () => {
     if (!notification) return '';
     switch(notification.type) {
@@ -394,6 +542,72 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
   }
 
   const firstSelectedTarget = targets.find(t => t.id === selectedTargetIds[0]);
+
+  const renderActiveView = () => {
+    switch (view) {
+        case 'composer':
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                    <div className="lg:col-span-2">
+                        <PostPreview
+                            postText={postText}
+                            imagePreview={imagePreview}
+                            pageName={firstSelectedTarget?.name}
+                            pageAvatar={firstSelectedTarget?.picture.data.url}
+                        />
+                    </div>
+                    <div className="lg:col-span-3 space-y-8">
+                        <PostComposer
+                            aiClient={aiClient}
+                            onPublish={handlePublish}
+                            onSaveDraft={handleSaveDraft}
+                            isPublishing={isPublishing}
+                            postText={postText}
+                            onPostTextChange={setPostText}
+                            onImageChange={handleImageChange}
+                            onImageGenerated={handleGeneratedImageSelect}
+                            onImageRemove={handleImageRemove}
+                            imagePreview={imagePreview}
+                            isScheduled={isScheduled}
+                            onIsScheduledChange={setIsScheduled}
+                            scheduleDate={scheduleDate}
+                            onScheduleDateChange={setScheduleDate}
+                            error={composerError}
+                            selectedTargetIds={selectedTargetIds}
+                        />
+                        <TargetList
+                            targets={targets}
+                            isLoading={targetsLoading}
+                            loadingError={null}
+                            selectedTargetIds={selectedTargetIds}
+                            onSelectionChange={setSelectedTargetIds}
+                            selectionError={targetSelectionError}
+                        />
+                    </div>
+                </div>
+            );
+        case 'bulk':
+            return <BulkSchedulerPage 
+                bulkPosts={bulkPosts}
+                onAddPosts={handleBulkAddPosts}
+                onUpdatePost={handleBulkPostUpdate}
+                onRemovePost={handleBulkPostRemove}
+                onScheduleAll={handleScheduleAllBulk}
+                isSchedulingAll={isSchedulingAll}
+                targets={targets}
+                aiClient={aiClient}
+                onGenerateDescription={handleGenerateBulkDescription}
+            />;
+        case 'calendar':
+            return <ContentCalendar posts={scheduledPosts} />;
+        case 'drafts':
+            return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;
+        case 'analytics':
+            return <PublishedPostsList posts={publishedPosts} onFetchAnalytics={handleFetchAnalytics} />;
+        default:
+            return null;
+    }
+  }
 
   return (
     <div className="min-h-screen fade-in">
@@ -410,65 +624,26 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
         )}
 
         <div className="mb-6 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex space-x-4 -mb-px">
-                <button onClick={() => setView('composer')} className={`inline-flex items-center gap-2 px-4 py-3 border-b-2 font-semibold text-sm transition-colors ${view === 'composer' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+            <div className="flex space-x-1 sm:space-x-4 -mb-px overflow-x-auto">
+                <button onClick={() => setView('composer')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'composer' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <PencilSquareIcon className="w-5 h-5" /> إنشاء منشور
                 </button>
-                <button onClick={() => setView('drafts')} className={`inline-flex items-center gap-2 px-4 py-3 border-b-2 font-semibold text-sm transition-colors ${view === 'drafts' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                 <button onClick={() => setView('bulk')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'bulk' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                    <QueueListIcon className="w-5 h-5" /> الجدولة المجمعة <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-300 text-xs font-bold px-2 py-0.5 rounded-full">{bulkPosts.length}</span>
+                </button>
+                <button onClick={() => setView('drafts')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'drafts' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <ArchiveBoxIcon className="w-5 h-5" /> المسودات <span className="bg-gray-200 dark:bg-gray-700 text-xs font-bold px-2 py-0.5 rounded-full">{drafts.length}</span>
                 </button>
-                <button onClick={() => setView('calendar')} className={`inline-flex items-center gap-2 px-4 py-3 border-b-2 font-semibold text-sm transition-colors ${view === 'calendar' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                <button onClick={() => setView('calendar')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'calendar' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <CalendarIcon className="w-5 h-5" /> تقويم المحتوى
                 </button>
-                 <button onClick={() => setView('analytics')} className={`inline-flex items-center gap-2 px-4 py-3 border-b-2 font-semibold text-sm transition-colors ${view === 'analytics' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                 <button onClick={() => setView('analytics')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'analytics' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <ChartBarIcon className="w-5 h-5" /> التحليلات
                 </button>
             </div>
         </div>
 
-        {view === 'composer' && (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-            <div className="lg:col-span-2">
-              <PostPreview 
-                 postText={postText}
-                 imagePreview={imagePreview}
-                 pageName={firstSelectedTarget?.name}
-                 pageAvatar={firstSelectedTarget?.picture.data.url}
-              />
-            </div>
-            <div className="lg:col-span-3 space-y-8">
-              <PostComposer 
-                aiClient={aiClient}
-                onPublish={handlePublish}
-                onSaveDraft={handleSaveDraft}
-                isPublishing={isPublishing}
-                postText={postText}
-                onPostTextChange={setPostText}
-                onImageChange={handleImageChange}
-                onImageGenerated={handleGeneratedImageSelect}
-                onImageRemove={handleImageRemove}
-                imagePreview={imagePreview}
-                isScheduled={isScheduled}
-                onIsScheduledChange={setIsScheduled}
-                scheduleDate={scheduleDate}
-                onScheduleDateChange={setScheduleDate}
-                error={composerError}
-                selectedTargetIds={selectedTargetIds}
-              />
-              <TargetList
-                targets={targets}
-                isLoading={targetsLoading}
-                loadingError={null}
-                selectedTargetIds={selectedTargetIds}
-                onSelectionChange={setSelectedTargetIds}
-                selectionError={targetSelectionError}
-              />
-            </div>
-          </div>
-        )}
-        {view === 'calendar' && <ContentCalendar posts={scheduledPosts} />}
-        {view === 'drafts' && <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />}
-        {view === 'analytics' && <PublishedPostsList posts={publishedPosts} onFetchAnalytics={handleFetchAnalytics} />}
+        {renderActiveView()}
 
       </main>
       <SettingsModal 

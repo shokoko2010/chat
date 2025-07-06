@@ -1,6 +1,19 @@
 
 
-import { GoogleGenAI } from "@google/genai";
+
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+
+const fileToGenerativePart = async (file: File) => {
+  const base64EncodedDataPromise = new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+    reader.readAsDataURL(file);
+  });
+  return {
+    inlineData: { data: await base64EncodedDataPromise, mimeType: file.type },
+  };
+}
+
 
 export const initializeGoogleGenAI = (apiKey: string): GoogleGenAI | null => {
   if (!apiKey) {
@@ -126,5 +139,37 @@ export const getBestPostingTime = async (ai: GoogleGenAI, postText: string): Pro
         throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
     }
     throw new Error("حدث خطأ أثناء اقتراح وقت النشر.");
+  }
+};
+
+export const generateDescriptionForImage = async (ai: GoogleGenAI, imageFile: File): Promise<string> => {
+  try {
+    const imagePart = await fileToGenerativePart(imageFile);
+    const textPart = {
+      text: `
+      أنت خبير في التسويق عبر وسائل التواصل الاجتماعي.
+      مهمتك هي كتابة وصف جذاب وموجز كمنشور لفيسبوك بناءً على الصورة المرفقة.
+      يجب أن يكون الوصف:
+      - باللغة العربية.
+      - ودود ومحفز للنقاش.
+      - يحتوي على سؤال أو دعوة للتفاعل (call to action) مرتبطة بالصورة.
+      - يستخدم 2-3 إيموجي مناسبة بشكل طبيعي.
+      - لا يزيد عن 3-4 أسطر.
+      - ابدأ مباشرة بالمحتوى، لا تضع عنوانًا مثل "وصف:".
+      `,
+    };
+    
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-preview-04-17',
+      contents: { parts: [imagePart, textPart] },
+    });
+    
+    return response.text ?? '';
+  } catch (error) {
+    console.error("Error generating description for image:", error);
+    if (error instanceof Error && error.message.includes('API key not valid')) {
+        throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
+    }
+    throw new Error("حدث خطأ أثناء إنشاء الوصف.");
   }
 };
