@@ -1,7 +1,7 @@
 
 
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { StrategyRequest, ContentPlanItem, PostAnalytics, PageProfile } from "../types";
+import { StrategyRequest, ContentPlanItem, PostAnalytics, PageProfile, PerformanceSummaryData } from "../types";
 
 const fileToGenerativePart = async (file: File) => {
   const base64EncodedDataPromise = new Promise<string>((resolve) => {
@@ -400,79 +400,6 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
 };
 
 
-export const analyzePageForContentPlan = async (ai: GoogleGenAI, pageName: string, pageType: 'page' | 'group' | 'instagram'): Promise<Partial<StrategyRequest>> => {
-  try {
-    let typeForPrompt: string;
-    if (pageType === 'instagram') {
-      typeForPrompt = 'حساب انستجرام للأعمال';
-    } else if (pageType === 'group') {
-      typeForPrompt = 'مجموعة';
-    } else {
-      typeForPrompt = 'صفحة عامة';
-    }
-    
-    const prompt = `
-      أنت خبير استراتيجي في التسويق الرقمي.
-      بناءً على اسم ونوع صفحة فيسبوك التالية، قم بتحليل واقتراح استراتيجية محتوى أولية.
-
-      - اسم الصفحة: "${pageName}"
-      - نوعها: "${typeForPrompt}"
-
-      المطلوب:
-      قم بإرجاع كائن JSON فقط، بدون أي نص إضافي أو علامات markdown.
-      يجب أن يحتوي الكائن على المفاتيح التالية:
-      - "pageType": (string) وصف موجز لنوع العمل أو الصفحة (مثال: "متجر إلكتروني للملابس", "مدونة تقنية", "مطعم مأكولات بحرية").
-      - "audience": (string) وصف للجمهور المستهدف المحتمل (مثال: "الشباب المهتمون بالموضة", "المطورون والمبرمجون", "العائلات ومحبو الطعام").
-      - "goals": (string) الأهداف التسويقية الرئيسية المقترحة (مثال: "زيادة الوعي بالعلامة التجارية وبيع المنتجات", "بناء مجتمع تفاعلي", "جذب الحجوزات").
-      - "tone": (string) النبرة الأنسب للمحتوى من بين هذه الخيارات ["ودود ومرح", "احترافي ورسمي", "تعليمي وملهم", "مثير للحماس والطاقة"]. اختر الأنسب.
-
-      مثال على الإجابة:
-      {
-        "pageType": "مقهى ومحمصة بن",
-        "audience": "طلاب الجامعات والموظفون عن بعد ومحبو القهوة",
-        "goals": "زيادة عدد زوار المقهى وبناء ولاء للعلامة التجارية",
-        "tone": "ودود ومرح"
-      }
-    `;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-04-17',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-      },
-    });
-
-    const text = response.text;
-    if (!text) {
-      throw new Error("لم يتمكن الذكاء الاصطناعي من تحليل الصفحة (استجابة فارغة).");
-    }
-
-    let jsonStr = text.trim();
-    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
-    const match = jsonStr.match(fenceRegex);
-    if (match && match[2]) {
-      jsonStr = match[2].trim();
-    }
-
-    const analysis = JSON.parse(jsonStr);
-    
-    if (analysis && analysis.pageType && analysis.audience) {
-      return analysis;
-    }
-
-    throw new Error("فشل التحليل في إعادة البيانات بالتنسيق المطلوب.");
-
-  } catch (error) {
-    console.error("Error analyzing page for content plan:", error);
-    if (error instanceof Error && error.message.includes('API key not valid')) {
-        throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
-    }
-    throw new Error("حدث خطأ أثناء تحليل الصفحة.");
-  }
-};
-
-
 export const generatePostInsights = async (
   ai: GoogleGenAI, 
   postText: string, 
@@ -549,4 +476,46 @@ export const generatePostInsights = async (
     }
     throw new Error("حدث خطأ أثناء إنشاء تحليل المنشور.");
   }
+};
+
+export const generatePerformanceSummary = async (
+  ai: GoogleGenAI,
+  summaryData: PerformanceSummaryData,
+  pageProfile: PageProfile,
+  period: '7d' | '30d'
+): Promise<string> => {
+    const pageContext = createPageContext(pageProfile);
+    const topPostsText = summaryData.topPosts.map((p, i) => `${i+1}. "${p.text.substring(0, 50)}..." (تفاعل: ${(p.analytics.likes ?? 0) + (p.analytics.comments ?? 0) + (p.analytics.shares ?? 0)})`).join('\n');
+    const periodText = period === '7d' ? 'الـ 7 أيام الماضية' : 'الـ 30 يومًا الماضية';
+
+    const prompt = `
+    ${pageContext}
+    أنت خبير ومحلل بيانات تسويقية. مهمتك هي تحليل الأداء العام لصفحة على وسائل التواصل الاجتماعي وتقديم ملخص تنفيذي موجز وذكي باللغة العربية.
+
+    بيانات الأداء لفترة ${periodText}:
+    - إجمالي الوصول (Reach): ${summaryData.totalReach}
+    - إجمالي التفاعل (Engagement): ${summaryData.totalEngagement}
+    - معدل التفاعل (Engagement Rate): ${(summaryData.engagementRate * 100).toFixed(2)}%
+    - عدد المنشورات: ${summaryData.postCount}
+    - أفضل المنشورات أداءً:
+    ${topPostsText}
+
+    المطلوب:
+    اكتب فقرة واحدة فقط (2-4 جمل) تلخص هذا الأداء.
+    - ابدأ ببيان عام (مثال: "أداء هذا الأسبوع كان قويًا...")
+    - اشرح السبب المحتمل وراء الأداء الجيد أو الضعيف بناءً على البيانات (مثال: "يبدو أن المنشورات التي تحتوي على أسئلة مباشرة تحقق أعلى تفاعل").
+    - اختتم بتوصية استراتيجية واضحة وقابلة للتنفيذ للخطوة التالية (مثال: "نوصي بالتركيز على إنشاء المزيد من محتوى الفيديو القصير").
+    - يجب أن يكون التحليل متوافقًا مع "سياق الصفحة/العمل" المقدم.
+    `;
+    
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-preview-04-17',
+            contents: prompt,
+        });
+        return response.text ?? 'لم يتمكن الذكاء الاصطناعي من إنشاء الملخص.';
+    } catch(error) {
+        console.error("Error generating performance summary:", error);
+        throw new Error("حدث خطأ أثناء إنشاء ملخص الأداء.");
+    }
 };

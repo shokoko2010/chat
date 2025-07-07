@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile } from '../types';
+import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import PostPreview from './PostPreview';
-import PublishedPostsList from './PublishedPostsList';
+import AnalyticsPage from './AnalyticsPage';
 import DraftsList from './DraftsList';
 import ContentCalendar from './ContentCalendar';
 import BulkSchedulerPage from './BulkSchedulerPage';
 import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePostInsights, analyzePageForProfile } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePostInsights, analyzePageForProfile, generatePerformanceSummary } from '../services/geminiService';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
@@ -52,8 +52,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [pageProfile, setPageProfile] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '' });
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
-  const [publishedPostsLoading, setPublishedPostsLoading] = useState(true);
   
   // Bulk Scheduler State
   const [bulkPosts, setBulkPosts] = useState<BulkPostItem[]>([]);
@@ -69,6 +67,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [isAnalyzingProfile, setIsAnalyzingProfile] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
+
+  // Analytics State
+  const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
+  const [publishedPostsLoading, setPublishedPostsLoading] = useState(true);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<'7d' | '30d'>('30d');
+  const [performanceSummaryText, setPerformanceSummaryText] = useState('');
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
 
   const linkedInstagramTarget = useMemo(() => {
@@ -205,13 +210,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       setPublishedPosts([{
         id: 'mock_post_1', pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url,
         text: 'هذا منشور تجريبي تم جلبه لهذه الصفحة.', imagePreview: 'https://via.placeholder.com/400x300/CCCCCC/FFFFFF?text=Published',
-        publishedAt: new Date(Date.now() - 24 * 60 * 60 * 1000), analytics: { likes: 12, comments: 3, shares: 1, loading: false, lastUpdated: new Date(), isGeneratingInsights: false, }
+        publishedAt: new Date(Date.now() - 24 * 60 * 60 * 1000), analytics: { likes: 12, comments: 3, shares: 1, reach: 150, loading: false, lastUpdated: new Date(), isGeneratingInsights: false, }
       }]);
       return;
     }
     
     window.FB.api(
-      `/${managedTarget.id}/published_posts?fields=id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares`,
+      `/${managedTarget.id}/published_posts?fields=id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}`,
       (response: any) => {
         if (response && response.data) {
           const fetchedPosts: PublishedPost[] = response.data.map((post: any) => ({
@@ -219,6 +224,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
             analytics: {
               likes: post.likes?.summary?.total_count ?? 0, comments: post.comments?.summary?.total_count ?? 0, shares: post.shares?.count ?? 0,
+              reach: post.insights?.data?.[0]?.values?.[0]?.value ?? 0,
               loading: false, lastUpdated: new Date(), isGeneratingInsights: false
             }
           }));
@@ -250,6 +256,55 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   }, [pageProfile, drafts, scheduledPosts, contentPlan, managedTarget.id]);
 
+  const filteredPosts = useMemo(() => {
+    const now = new Date();
+    const daysToFilter = analyticsPeriod === '7d' ? 7 : 30;
+    const cutoffDate = new Date(now.setDate(now.getDate() - daysToFilter));
+    return publishedPosts.filter(p => new Date(p.publishedAt) >= cutoffDate);
+  }, [publishedPosts, analyticsPeriod]);
+
+  const summaryData: PerformanceSummaryData | null = useMemo(() => {
+    if (filteredPosts.length === 0) return null;
+
+    const summary = filteredPosts.reduce((acc, post) => {
+        const engagement = (post.analytics.likes ?? 0) + (post.analytics.comments ?? 0) + (post.analytics.shares ?? 0);
+        acc.totalReach += post.analytics.reach ?? 0;
+        acc.totalEngagement += engagement;
+        return acc;
+    }, { totalReach: 0, totalEngagement: 0 });
+
+    const topPosts = [...filteredPosts].sort((a, b) => {
+        const engagementA = (a.analytics.likes ?? 0) + (a.analytics.comments ?? 0) + (a.analytics.shares ?? 0);
+        const engagementB = (b.analytics.likes ?? 0) + (b.analytics.comments ?? 0) + (b.analytics.shares ?? 0);
+        return engagementB - engagementA;
+    }).slice(0, 3);
+
+    return {
+        totalReach: summary.totalReach,
+        totalEngagement: summary.totalEngagement,
+        engagementRate: summary.totalReach > 0 ? summary.totalEngagement / summary.totalReach : 0,
+        topPosts,
+        postCount: filteredPosts.length
+    };
+  }, [filteredPosts]);
+
+  useEffect(() => {
+    if (summaryData && aiClient) {
+        const generateSummary = async () => {
+            setIsGeneratingSummary(true);
+            try {
+                const summaryText = await generatePerformanceSummary(aiClient, summaryData, pageProfile, analyticsPeriod);
+                setPerformanceSummaryText(summaryText);
+            } catch (e: any) {
+                console.error("Error generating performance summary:", e);
+                setPerformanceSummaryText("حدث خطأ أثناء إنشاء الملخص.");
+            } finally {
+                setIsGeneratingSummary(false);
+            }
+        };
+        generateSummary();
+    }
+  }, [summaryData, aiClient, pageProfile, analyticsPeriod]);
 
   const showNotification = (type: 'success' | 'error' | 'partial', message: string) => {
     setNotification({ type, message });
@@ -572,7 +627,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       setPublishedPosts(updatedPosts);
       
       window.FB.api(
-        `/${postId}?fields=likes.summary(true),comments.summary(true),shares`,
+        `/${postId}?fields=likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}`,
         (response: any) => {
            const newUpdatedPosts = [...publishedPosts];
            if(response && !response.error){
@@ -581,6 +636,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 likes: response.likes?.summary?.total_count ?? 0,
                 comments: response.comments?.summary?.total_count ?? 0,
                 shares: response.shares?.count ?? 0,
+                reach: response.insights?.data?.[0]?.values?.[0]?.value ?? 0,
                 lastUpdated: new Date(),
               }
            } else {
@@ -701,8 +757,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         case 'calendar':
             return <ContentCalendar posts={scheduledPosts} />;
         case 'analytics':
-             return <PublishedPostsList posts={publishedPosts} isLoading={publishedPostsLoading}
-                onFetchAnalytics={handleFetchPostAnalytics} onGenerateInsights={handleGeneratePostInsights} />;
+             return <AnalyticsPage
+                period={analyticsPeriod}
+                onPeriodChange={setAnalyticsPeriod}
+                summaryData={summaryData}
+                aiSummary={performanceSummaryText}
+                isGeneratingSummary={isGeneratingSummary}
+                posts={filteredPosts}
+                isLoading={publishedPostsLoading}
+                onFetchAnalytics={handleFetchPostAnalytics}
+                onGenerateInsights={handleGeneratePostInsights}
+              />;
         default: return null;
     }
   }

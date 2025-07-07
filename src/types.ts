@@ -50,6 +50,7 @@ export interface PostAnalytics {
   likes?: number;
   comments?: number;
   shares?: number;
+  reach?: number; // Added reach metric
   loading: boolean;
   lastUpdated: Date | null;
   // New AI fields
@@ -71,6 +72,14 @@ export interface PublishedPost {
   imagePreview: string | null;
   publishedAt: Date;
   analytics: PostAnalytics;
+}
+
+export interface PerformanceSummaryData {
+    totalReach: number;
+    totalEngagement: number;
+    engagementRate: number;
+    topPosts: PublishedPost[];
+    postCount: number;
 }
 
 export interface WeeklyScheduleSettings {
