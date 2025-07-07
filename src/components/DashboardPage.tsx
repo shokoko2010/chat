@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, ContentPlanRequest } from '../types';
 import Header from './Header';
@@ -82,19 +81,20 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   // Load data from localStorage when managedTarget changes
   useEffect(() => {
     const dataKey = `zex-pages-data-${managedTarget.id}`;
-    const savedData = localStorage.getItem(dataKey);
-    if (savedData) {
-      const parsed = JSON.parse(savedData);
-      setDrafts(parsed.drafts || []);
-      setScheduledPosts(parsed.scheduledPosts ? parsed.scheduledPosts.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt)})) : []);
-      setContentPlan(parsed.contentPlan || null);
-      setBulkPosts(parsed.bulkPosts ? parsed.bulkPosts.map((p: BulkPostItem) => ({...p, imageFile: new File([], p.imageFile.name)})) : []);
-    } else {
-      setDrafts([]);
-      setScheduledPosts([]);
-      setContentPlan(null);
-      setBulkPosts([]);
+    let savedData;
+    try {
+        savedData = JSON.parse(localStorage.getItem(dataKey) || '{}');
+    } catch(e) {
+        console.error("Failed to parse saved data, resetting.", e);
+        savedData = {};
     }
+
+    setDrafts(savedData.drafts || []);
+    setScheduledPosts(savedData.scheduledPosts ? savedData.scheduledPosts.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt)})) : []);
+    setContentPlan(savedData.contentPlan || null);
+    // For bulk posts, we only restore serializable data. The File object needs to be recreated.
+    setBulkPosts(savedData.bulkPosts ? savedData.bulkPosts.map((p: BulkPostItem) => ({...p, imageFile: new File([], p.imageFile.name)})) : []);
+
 
     // Reset composer and session-based state
     clearComposer();
@@ -137,11 +137,23 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   
   // Save data to localStorage whenever it changes
   useEffect(() => {
-    const dataKey = `zex-pages-data-${managedTarget.id}`;
-    // Don't save File objects to local storage directly
-    const serializableBulkPosts = bulkPosts.map(({imageFile, ...rest}) => rest);
-    const dataToStore = { drafts, scheduledPosts, contentPlan, bulkPosts: serializableBulkPosts };
-    localStorage.setItem(dataKey, JSON.stringify(dataToStore));
+    try {
+        const dataKey = `zex-pages-data-${managedTarget.id}`;
+        // Don't save File objects to local storage directly, just their metadata
+        const serializableDrafts = drafts.map(({ imageFile, ...rest }) => ({...rest, imageFile: imageFile ? {name: imageFile.name} : null }));
+        const serializableBulkPosts = bulkPosts.map(({imageFile, ...rest}) => ({...rest, imageFile: {name: imageFile.name}}));
+        const serializableScheduledPosts = scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: imageFile ? {name: imageFile.name} : null }));
+
+        const dataToStore = { 
+            drafts: serializableDrafts, 
+            scheduledPosts: serializableScheduledPosts,
+            contentPlan, 
+            bulkPosts: serializableBulkPosts 
+        };
+        localStorage.setItem(dataKey, JSON.stringify(dataToStore));
+    } catch(e) {
+        console.error("Could not save data to localStorage:", e);
+    }
   }, [drafts, scheduledPosts, contentPlan, bulkPosts, managedTarget.id]);
 
 
@@ -354,18 +366,47 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
   // --- Start Bulk Logic ---
   const handleAddBulkPosts = (files: FileList) => {
-      const newPosts: BulkPostItem[] = Array.from(files).map(file => {
-          const now = new Date();
-          now.setDate(now.getDate() + bulkPosts.length + 1); // Stagger posts
+      if (files.length === 0) return;
+
+      // 1. Find the latest scheduled date from all existing posts
+      const allScheduledDates = [
+          ...scheduledPosts.map(p => new Date(p.scheduledAt).getTime()),
+          ...bulkPosts.map(p => {
+              const d = new Date(p.scheduleDate);
+              return isNaN(d.getTime()) ? 0 : d.getTime();
+          })
+      ].filter(t => t > 0);
+
+      let lastScheduleDate = new Date(); // Today
+      if (allScheduledDates.length > 0) {
+          lastScheduleDate = new Date(Math.max(...allScheduledDates));
+      }
+
+      // 2. Determine the start date for new scheduling (day after the last one, or tomorrow)
+      const startDate = new Date(lastScheduleDate);
+      startDate.setDate(startDate.getDate() + 1);
+      startDate.setHours(10, 0, 0, 0); // Default time: 10:00 AM
+
+      // 3. Calculate the interval over a 28-day period
+      const numberOfNewPosts = files.length;
+      const schedulingPeriodDays = 28;
+      const intervalMilliseconds = (schedulingPeriodDays * 24 * 60 * 60 * 1000) / numberOfNewPosts;
+
+      // 4. Create new bulk post items with distributed dates
+      const newPosts: BulkPostItem[] = Array.from(files).map((file, index) => {
+          const scheduleTimestamp = startDate.getTime() + (index * intervalMilliseconds);
+          const scheduledDateForPost = new Date(scheduleTimestamp);
+
           return {
-              id: `bulk_${Date.now()}_${Math.random()}`,
+              id: `bulk_${Date.now()}_${Math.random()}_${index}`,
               imageFile: file,
               imagePreview: URL.createObjectURL(file),
               text: '',
-              scheduleDate: formatDateTimeForInput(now),
+              scheduleDate: formatDateTimeForInput(scheduledDateForPost),
               targetIds: [managedTarget.id],
           };
       });
+
       setBulkPosts(prev => [...prev, ...newPosts]);
   };
 
