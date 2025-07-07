@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { ScheduledPost } from '../types';
 import PhotoIcon from './icons/PhotoIcon';
+import BellIcon from './icons/BellIcon'; // Import the new icon
 
 interface ContentCalendarProps {
     posts: ScheduledPost[];
@@ -83,11 +84,12 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts }) => {
                             </div>
                             <div className="mt-1 space-y-2">
                                 {postsForDay.map(post => (
-                                    <div key={post.id} className="bg-white dark:bg-gray-700 p-2 rounded-md shadow-sm border-l-4 border-blue-500">
+                                    <div key={post.id} className={`p-2 rounded-md shadow-sm border-l-4 ${post.isReminder ? 'border-yellow-500' : 'border-blue-500'} bg-white dark:bg-gray-700`}>
                                         <p className="text-xs font-medium text-gray-800 dark:text-gray-100 truncate">{post.text}</p>
                                         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
                                             <span className="font-semibold">{new Date(post.scheduledAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
                                             <div className="flex items-center gap-1">
+                                                {post.isReminder && <span title="تذكير لنشر انستجرام"><BellIcon className="w-4 h-4 text-yellow-500" /></span>}
                                                 {post.imageUrl && <PhotoIcon className="w-4 h-4" />}
                                                 <div className="flex -space-x-2 overflow-hidden">
                                                     {post.targets.slice(0, 3).map(t => <img key={t.id} className="inline-block h-5 w-5 rounded-full ring-2 ring-white dark:ring-gray-700" src={t.picture.data.url} alt={t.name}/>)}

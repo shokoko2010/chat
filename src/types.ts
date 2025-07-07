@@ -9,25 +9,28 @@ declare global {
 export interface Target {
   id: string;
   name: string;
-  type: 'page' | 'group';
-  access_token?: string; // Optional: Pages have this, groups use user token
+  type: 'page' | 'group' | 'instagram';
+  access_token?: string; 
   picture: {
     data: {
       url: string;
     }
   };
+  parentPageId?: string;
 }
 
 export interface ScheduledPost {
   id: string;
   text: string;
   imageUrl?: string;
+  imageFile?: File; // For reminder re-publishing
   scheduledAt: Date;
   targets: Target[];
+  isReminder?: boolean; // To identify Instagram reminders
 }
 
 export interface Draft {
-  id: string;
+  id:string;
   text: string;
   imageFile: File | null;
   imagePreview: string | null;
@@ -40,6 +43,14 @@ export interface PostAnalytics {
   shares?: number;
   loading: boolean;
   lastUpdated: Date | null;
+  // New AI fields
+  aiSummary?: string;
+  sentiment?: {
+    positive: number;
+    negative: number;
+    neutral: number;
+  };
+  isGeneratingInsights?: boolean;
 }
 
 export interface PublishedPost {

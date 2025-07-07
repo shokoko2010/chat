@@ -1,11 +1,6 @@
 
-
-
-
-
-
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { ContentPlanRequest, ContentPlanItem } from "../types";
+import { ContentPlanRequest, ContentPlanItem, PostAnalytics } from "../types";
 
 const fileToGenerativePart = async (file: File) => {
   const base64EncodedDataPromise = new Promise<string>((resolve) => {
@@ -249,14 +244,23 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: ContentPlanR
 };
 
 
-export const analyzePageForContentPlan = async (ai: GoogleGenAI, pageName: string, pageType: 'page' | 'group'): Promise<Partial<ContentPlanRequest>> => {
+export const analyzePageForContentPlan = async (ai: GoogleGenAI, pageName: string, pageType: 'page' | 'group' | 'instagram'): Promise<Partial<ContentPlanRequest>> => {
   try {
+    let typeForPrompt: string;
+    if (pageType === 'instagram') {
+      typeForPrompt = 'حساب انستجرام للأعمال';
+    } else if (pageType === 'group') {
+      typeForPrompt = 'مجموعة';
+    } else {
+      typeForPrompt = 'صفحة عامة';
+    }
+    
     const prompt = `
       أنت خبير استراتيجي في التسويق الرقمي.
       بناءً على اسم ونوع صفحة فيسبوك التالية، قم بتحليل واقتراح استراتيجية محتوى أولية.
 
       - اسم الصفحة: "${pageName}"
-      - نوعها: "${pageType === 'page' ? 'صفحة عامة' : 'مجموعة'}"
+      - نوعها: "${typeForPrompt}"
 
       المطلوب:
       قم بإرجاع كائن JSON فقط، بدون أي نص إضافي أو علامات markdown.
@@ -309,5 +313,84 @@ export const analyzePageForContentPlan = async (ai: GoogleGenAI, pageName: strin
         throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
     }
     throw new Error("حدث خطأ أثناء تحليل الصفحة.");
+  }
+};
+
+
+export const generatePostInsights = async (
+  ai: GoogleGenAI, 
+  postText: string, 
+  analytics: PostAnalytics, 
+  comments: {message: string}[]
+): Promise<{ performanceSummary: string, sentiment: { positive: number, negative: number, neutral: number } }> => {
+  try {
+    const commentsSample = comments.map(c => c.message).join('\n- ');
+    const prompt = `
+      أنت خبير تحليل وسائل التواصل الاجتماعي. مهمتك هي تحليل أداء منشور فيسبوك وتعليقاته وتقديم رؤى قابلة للتنفيذ باللغة العربية.
+
+      تفاصيل المنشور:
+      - النص: "${postText || '(منشور يحتوي على صورة فقط)'}"
+      - عدد الإعجابات: ${analytics.likes ?? 0}
+      - عدد التعليقات: ${analytics.comments ?? 0}
+      - عدد المشاركات: ${analytics.shares ?? 0}
+
+      عينة من التعليقات (أول 25 تعليق):
+      - ${commentsSample}
+
+      المطلوب:
+      أرجع ردك ككائن JSON فقط، بدون أي نص إضافي أو علامات markdown.
+      يجب أن يحتوي كائن JSON على المفاتيح التالية:
+      1.  "performanceSummary": (string) ملخص موجز ومتبصر (2-3 جمل) باللغة العربية حول أداء هذا المنشور. اشرح لماذا تعتقد أنه حقق هذا الأداء (مثلاً، هل السؤال المطروح كان جيدًا؟ هل الصورة كانت جذابة؟). إذا أمكن، قارن أداءه بشكل عام (مثلاً، "أداء أعلى من المتوسط"، "تفاعل جيد").
+      2.  "sentiment": (object) كائن يمثل تحليل المشاعر في التعليقات. يجب أن يحتوي على ثلاثة مفاتيح:
+          - "positive": (number) نسبة مئوية (من 0.0 إلى 1.0) للتعليقات الإيجابية.
+          - "negative": (number) نسبة مئوية (من 0.0 إلى 1.0) للتعليقات السلبية.
+          - "neutral": (number) نسبة مئوية (من 0.0 إلى 1.0) للتعليقات المحايدة.
+          (يجب أن يكون مجموع النسب الثلاثة يساوي 1.0)
+
+      مثال على الإجابة:
+      {
+        "performanceSummary": "حقق هذا المنشور تفاعلاً ممتازًا، خاصة في عدد التعليقات، مما يشير إلى أن السؤال المباشر للجمهور كان ناجحًا جدًا في إثارة النقاش. استخدام الإيموجي أضاف لمسة ودية وشجع على المشاركة.",
+        "sentiment": {
+          "positive": 0.85,
+          "negative": 0.05,
+          "neutral": 0.10
+        }
+      }
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-preview-04-17',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+    
+    const text = response.text;
+    if (!text) {
+        throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء التحليل (استجابة فارغة).");
+    }
+
+    let jsonStr = text.trim();
+    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
+    const match = jsonStr.match(fenceRegex);
+    if (match && match[2]) {
+      jsonStr = match[2].trim();
+    }
+    
+    const data = JSON.parse(jsonStr);
+
+    if (data && data.performanceSummary && data.sentiment) {
+      return data;
+    }
+
+    throw new Error("فشل الذكاء الاصطناعي في إنشاء التحليل بالتنسيق المطلوب.");
+
+  } catch (error) {
+    console.error("Error generating post insights:", error);
+    if (error instanceof Error && error.message.includes('API key not valid')) {
+        throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
+    }
+    throw new Error("حدث خطأ أثناء إنشاء تحليل المنشور.");
   }
 };

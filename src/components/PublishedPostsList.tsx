@@ -1,15 +1,19 @@
 
-import React from 'react';
+
+import React, { useState } from 'react';
 import { PublishedPost } from '../types';
 import Button from './ui/Button';
 import HandThumbUpIcon from './icons/HandThumbUpIcon';
 import ChatBubbleOvalLeftEllipsisIcon from './icons/ChatBubbleOvalLeftEllipsisIcon';
 import ShareIcon from './icons/ShareIcon';
 import ArrowPathIcon from './icons/ArrowPathIcon';
+import LightBulbIcon from './icons/LightBulbIcon';
+import PostInsights from './PostInsights';
 
 interface PublishedPostsListProps {
   posts: PublishedPost[];
   onFetchAnalytics: (postId: string) => void;
+  onGenerateInsights: (postId: string) => void;
 }
 
 const StatCard: React.FC<{ icon: React.ReactNode, value?: number, label: string }> = ({ icon, value, label }) => (
@@ -20,7 +24,23 @@ const StatCard: React.FC<{ icon: React.ReactNode, value?: number, label: string 
     </div>
 );
 
-const PublishedPostsList: React.FC<PublishedPostsListProps> = ({ posts, onFetchAnalytics }) => {
+const PublishedPostsList: React.FC<PublishedPostsListProps> = ({ posts, onFetchAnalytics, onGenerateInsights }) => {
+  const [openInsightsPostId, setOpenInsightsPostId] = useState<string | null>(null);
+
+  const toggleInsights = (postId: string) => {
+    if (openInsightsPostId === postId) {
+      setOpenInsightsPostId(null);
+    } else {
+      const post = posts.find(p => p.id === postId);
+      // If insights are not yet generated, generate them. Also check if there's no summary yet, to allow re-generation.
+      if (post && !post.analytics.aiSummary && !post.analytics.isGeneratingInsights) {
+        onGenerateInsights(postId);
+      }
+      setOpenInsightsPostId(postId);
+    }
+  };
+
+
   if (posts.length === 0) {
     return (
       <div className="text-center text-gray-500 dark:text-gray-400 p-8 border-2 border-dashed rounded-lg fade-in">
@@ -63,14 +83,27 @@ const PublishedPostsList: React.FC<PublishedPostsListProps> = ({ posts, onFetchA
                     <StatCard icon={<ChatBubbleOvalLeftEllipsisIcon className="w-5 h-5 text-gray-500" />} value={post.analytics.comments} label="تعليق" />
                     <StatCard icon={<ShareIcon className="w-5 h-5 text-green-500" />} value={post.analytics.shares} label="مشاركة" />
                 </div>
-                <Button 
-                    variant="secondary"
-                    onClick={() => onFetchAnalytics(post.id)}
-                    isLoading={post.analytics.loading}
-                >
-                    <ArrowPathIcon className="w-5 h-5 ml-2" />
-                    تحديث الإحصائيات
-                </Button>
+                <div className="flex items-center gap-2">
+                     <Button
+                        variant="secondary"
+                        onClick={() => toggleInsights(post.id)}
+                        isLoading={post.analytics.isGeneratingInsights}
+                        disabled={post.analytics.loading || post.analytics.comments === 0}
+                        title={post.analytics.comments === 0 ? "لا يمكن تحليل منشور بدون تعليقات" : ""}
+                    >
+                        <LightBulbIcon className="w-5 h-5 ml-2" />
+                        {post.analytics.isGeneratingInsights ? 'جاري التحليل...' : (openInsightsPostId === post.id ? 'إخفاء التحليل' : 'عرض التحليل')}
+                    </Button>
+                    <Button 
+                        variant="secondary"
+                        onClick={() => onFetchAnalytics(post.id)}
+                        isLoading={post.analytics.loading}
+                        disabled={post.analytics.isGeneratingInsights}
+                    >
+                        <ArrowPathIcon className="w-5 h-5 ml-2" />
+                        تحديث الإحصائيات
+                    </Button>
+                </div>
             </div>
              {post.analytics.lastUpdated && 
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
@@ -78,6 +111,12 @@ const PublishedPostsList: React.FC<PublishedPostsListProps> = ({ posts, onFetchA
                 </p>
             }
           </div>
+           {openInsightsPostId === post.id && (
+                <PostInsights
+                    summary={post.analytics.aiSummary}
+                    sentiment={post.analytics.sentiment}
+                />
+            )}
         </div>
       ))}
     </div>

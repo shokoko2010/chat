@@ -1,6 +1,5 @@
 
 
-
 import React, { useState } from 'react';
 import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
@@ -8,6 +7,7 @@ import SparklesIcon from './icons/SparklesIcon';
 import WandSparklesIcon from './icons/WandSparklesIcon';
 import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime } from '../services/geminiService';
 import { GoogleGenAI } from '@google/genai';
+import { Target } from '../types';
 
 interface PostComposerProps {
   onPublish: () => Promise<void>;
@@ -25,6 +25,7 @@ interface PostComposerProps {
   onScheduleDateChange: (date: string) => void;
   error: string;
   aiClient: GoogleGenAI | null;
+  targets: Target[];
   selectedTargetIds: string[];
 }
 
@@ -66,6 +67,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   onScheduleDateChange,
   error,
   aiClient,
+  targets,
   selectedTargetIds
 }) => {
   // AI states remain local to the composer
@@ -77,6 +79,9 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const [aiImageError, setAiImageError] = useState('');
   const [isSuggestingTime, setIsSuggestingTime] = useState(false);
   const [aiTimeError, setAiTimeError] = useState('');
+  
+  const selectedTargets = targets.filter(t => selectedTargetIds.includes(t.id));
+  const hasInstagramTarget = selectedTargets.some(t => t.type === 'instagram');
 
   const handleGenerateTextWithAI = async () => {
       if (!aiClient) {
@@ -148,6 +153,14 @@ const PostComposer: React.FC<PostComposerProps> = ({
       ميزة الذكاء الاصطناعي معطلة. افتح الإعدادات ⚙️ لإضافة مفتاح API الخاص بك.
     </p>
   ) : null;
+  
+  const getPublishButtonText = () => {
+    if (isPublishing) return 'جاري العمل...';
+    if (isScheduled) {
+        return hasInstagramTarget ? 'حفظ كتذكير' : 'جدولة الآن';
+    }
+    return 'انشر الآن';
+  };
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg space-y-6">
@@ -197,6 +210,12 @@ const PostComposer: React.FC<PostComposerProps> = ({
         </div>
       )}
       
+      {hasInstagramTarget && !imagePreview && (
+        <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 rounded-md text-sm">
+          <b>ملاحظة:</b> منشورات انستجرام تتطلب وجود صورة. يرجى إضافة صورة للمتابعة.
+        </div>
+      )}
+      
       {/* AI Image Generation */}
       <div className="p-4 border border-purple-200 dark:border-purple-900 rounded-lg bg-purple-50 dark:bg-gray-700/50">
           <label htmlFor="ai-image-prompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -239,9 +258,14 @@ const PostComposer: React.FC<PostComposerProps> = ({
                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
             />
             <label htmlFor="schedule-checkbox" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                جدولة المنشور
+                {hasInstagramTarget ? 'جدولة كتذكير' : 'جدولة المنشور'}
             </label>
         </div>
+        {hasInstagramTarget && isScheduled && (
+            <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">
+                <b>ملاحظة:</b> لا تدعم واجهة انستجرام الجدولة التلقائية. سيتم حفظ هذا المنشور كتذكير، وستظهر لك بطاقة "جاهز للنشر" في الوقت المحدد لتنشره بنقرة واحدة.
+            </p>
+        )}
         {isScheduled && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
                 <input
@@ -291,8 +315,8 @@ const PostComposer: React.FC<PostComposerProps> = ({
             >
                 حفظ كمسودة
             </Button>
-            <Button onClick={onPublish} isLoading={isPublishing} disabled={(!postText.trim() && !imagePreview) || selectedTargetIds.length === 0}>
-            {isPublishing ? 'جاري العمل...' : (isScheduled ? 'جدولة الآن' : 'انشر الآن')}
+            <Button onClick={onPublish} isLoading={isPublishing} disabled={(!postText.trim() && !imagePreview) || selectedTargetIds.length === 0 || (hasInstagramTarget && !imagePreview)}>
+              {getPublishButtonText()}
             </Button>
         </div>
       </div>

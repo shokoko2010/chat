@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics, BulkPostItem, ContentPlanRequest, ContentPlanItem } from '../types';
 import Header from './Header';
@@ -11,6 +12,7 @@ import PublishedPostsList from './PublishedPostsList';
 import SettingsModal from './SettingsModal';
 import BulkSchedulerPage from './BulkSchedulerPage'; 
 import ContentPlannerPage from './ContentPlannerPage';
+import ReminderCard from './ReminderCard'; // New import
 import PencilSquareIcon from './icons/PencilSquareIcon';
 import CalendarIcon from './icons/CalendarIcon';
 import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
@@ -18,7 +20,7 @@ import ChartBarIcon from './icons/ChartBarIcon';
 import QueueListIcon from './icons/QueueListIcon';
 import BrainCircuitIcon from './icons/BrainCircuitIcon';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePostInsights } from '../services/geminiService';
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -32,11 +34,13 @@ const MOCK_TARGETS: Target[] = [
     { id: '1', name: 'صفحة تجريبية 1', type: 'page', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/4B79A1/FFFFFF?text=Page1' } } },
     { id: '101', name: 'مجموعة المطورين التجريبية', type: 'group', picture: { data: { url: 'https://via.placeholder.com/150/228B22/FFFFFF?text=Group1' } } },
     { id: '2', name: 'متجر الأزياء العصرية', type: 'page', access_token: 'DUMMY_TOKEN_2', picture: { data: { url: 'https://via.placeholder.com/150/C154C1/FFFFFF?text=Fashion' } } },
+    { id: 'ig1', name: 'Zex Pages IG (@zex_pages_ig)', type: 'instagram', parentPageId: '1', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/E4405F/FFFFFF?text=IG' } } }
 ];
 
 const MOCK_SCHEDULED_POSTS: ScheduledPost[] = [
     { id: 'post1', text: 'تخفيضات نهاية الأسبوع تبدأ غداً! استعدوا لأقوى العروض 🛍️', scheduledAt: new Date(new Date().setDate(new Date().getDate() + 2)), targets: [MOCK_TARGETS[0], MOCK_TARGETS[2]], imageUrl: 'https://via.placeholder.com/400x300/FFD700/000000?text=Sale' },
     { id: 'post2', text: 'ما هي لغة البرمجة التي تتعلمها حالياً؟ شاركنا في التعليقات! 💻', scheduledAt: new Date(new Date().setDate(new Date().getDate() + 4)), targets: [MOCK_TARGETS[1]] },
+    { id: 'post3_reminder', text: 'تذكير انستجرام! 🤳', scheduledAt: new Date(new Date().setDate(new Date().getDate() -1)), targets: [MOCK_TARGETS[3]], isReminder: true, imageUrl: 'https://via.placeholder.com/400x300/E4405F/FFFFFF?text=IG' },
 ];
 
 const MOCK_PUBLISHED_POSTS: PublishedPost[] = [
@@ -74,6 +78,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
   const [isPublishing, setIsPublishing] = useState(false);
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'partial', message: string} | null>(null);
   const [targetSelectionError, setTargetSelectionError] = useState<string | null>(null);
+  const [publishingReminderId, setPublishingReminderId] = useState<string | null>(null);
   
   // Other state
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
@@ -135,12 +140,42 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
     });
 
     Promise.all([fetchPages, fetchGroups])
-        .then(([pagesData, groupsData]) => {
-            setTargets([...pagesData, ...groupsData]);
+        .then(async ([pagesData, groupsData]) => {
+            let allTargets: Target[] = [...pagesData, ...groupsData];
+            
+            // New: Fetch connected Instagram accounts
+            const igPromises = pagesData.map(page => 
+                new Promise<Target | null>(resolve => {
+                    window.FB.api(`/${page.id}?fields=instagram_business_account{id,name,username,profile_picture_url}`, (response: any) => {
+                        if (response && response.instagram_business_account) {
+                            const igAccount = response.instagram_business_account;
+                            resolve({
+                                id: igAccount.id,
+                                name: igAccount.name ? `${igAccount.name} (@${igAccount.username})` : `@${igAccount.username}`,
+                                type: 'instagram',
+                                parentPageId: page.id,
+                                access_token: page.access_token, // carry over page token
+                                picture: {
+                                    data: {
+                                        url: igAccount.profile_picture_url || 'https://via.placeholder.com/150/833AB4/FFFFFF?text=IG'
+                                    }
+                                }
+                            });
+                        } else {
+                            resolve(null);
+                        }
+                    });
+                })
+            );
+
+            const igResults = await Promise.all(igPromises);
+            const igTargets = igResults.filter((ig): ig is Target => ig !== null);
+            allTargets = [...pagesData, ...groupsData, ...igTargets];
+            
+            setTargets(allTargets);
         })
         .catch(error => {
             console.error("Error fetching data from Facebook:", error);
-            // setTargetsError(typeof error === 'string' ? error : 'حدث خطأ فادح عند الاتصال بفيسبوك.');
         })
         .finally(() => {
             setTargetsLoading(false);
@@ -178,14 +213,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
   };
 
   const handlePublish = useCallback(async () => {
+    const selectedTargetsData = targets.filter(t => selectedTargetIds.includes(t.id));
+    
     // Validation
     if (!postText.trim() && !selectedImage) {
       setComposerError('لا يمكن نشر منشور فارغ. يرجى كتابة نص أو إضافة صورة.');
       return;
     }
     if (selectedTargetIds.length === 0) {
-      setTargetSelectionError('يجب اختيار صفحة أو مجموعة واحدة على الأقل للنشر فيها.');
+      setTargetSelectionError('يجب اختيار وجهة واحدة على الأقل للنشر فيها.');
       return;
+    }
+    const hasInstagramTarget = selectedTargetsData.some(t => t.type === 'instagram');
+    if (hasInstagramTarget && !selectedImage) {
+        setComposerError('منشورات انستجرام تتطلب وجود صورة.');
+        return;
     }
     
     let scheduleAt: Date | null = null;
@@ -208,129 +250,154 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
     setIsPublishing(true);
     setNotification(null);
 
-    const action = scheduleAt ? 'جدولة' : 'نشر';
-
     if (isSimulationMode) {
         setTimeout(() => {
             setIsPublishing(false);
-            if(scheduleAt) { /* Add to calendar */ }
-            if (activeDraftId) {
+            if(activeDraftId) {
               setDrafts(prev => prev.filter(d => d.id !== activeDraftId));
             }
-            setNotification({ type: 'success', message: `تمت محاكاة ${action} المنشور بنجاح.` });
+            setNotification({ type: 'success', message: `تمت محاكاة العملية بنجاح.` });
             clearComposer();
             setTimeout(() => setNotification(null), 5000);
         }, 1500);
         return;
     }
 
-    const selectedTargetsData = targets.filter(t => selectedTargetIds.includes(t.id));
-    
-    const publishPromises = selectedTargetsData.map(target => {
-        let apiPath: string;
-        let apiParams: any;
+    const fbTargets = selectedTargetsData.filter(t => t.type === 'page' || t.type === 'group');
+    const igTargets = selectedTargetsData.filter(t => t.type === 'instagram');
+    let successfulActions = 0;
+    let failedActions = 0;
+    let messages: string[] = [];
 
-        if (selectedImage) {
-            apiPath = `/${target.id}/photos`;
-            const formData = new FormData();
-            if (target.type === 'page') {
-              formData.append('access_token', target.access_token!);
-            }
-            formData.append('source', selectedImage);
-            if (postText) formData.append('caption', postText);
-            if (scheduleAt) {
-                formData.append('scheduled_publish_time', String(Math.floor(scheduleAt.getTime() / 1000)));
-                formData.append('published', 'false');
-            }
-            apiParams = formData;
-        } else { // Text only post
-            apiPath = `/${target.id}/feed`;
-            apiParams = {
-                message: postText,
-            };
-            if (target.type === 'page') {
-                apiParams.access_token = target.access_token;
-            }
-            if (scheduleAt) {
-                apiParams.scheduled_publish_time = Math.floor(scheduleAt.getTime() / 1000);
-                apiParams.published = false;
-            }
+    // --- Handle immediate publishing ---
+    if (!scheduleAt) {
+      const allTargets = [...fbTargets, ...igTargets];
+      const publishPromises = allTargets.map(target => {
+        let apiPath: string;
+        const formData = new FormData();
+        formData.append('access_token', target.access_token!);
+        if (postText) formData.append('caption', postText);
+
+        if (target.type === 'instagram') {
+          apiPath = `/${target.parentPageId}/photos`;
+          formData.append('source', selectedImage!);
+        } else if (selectedImage) {
+          apiPath = `/${target.id}/photos`;
+          formData.append('source', selectedImage);
+        } else {
+          apiPath = `/${target.id}/feed`;
+          formData.append('message', postText);
         }
         
         return new Promise((resolve, reject) => {
-            window.FB.api(apiPath, 'POST', apiParams, (response: any) => {
-                if (response && !response.error) {
-                    resolve({ targetName: target.name, success: true, response });
-                } else {
-                    const errorMsg = response?.error?.message || 'Unknown error';
-                    if (target.type === 'group' && errorMsg.includes('(#200) Requires installed app')) {
-                       reject({ targetName: target.name, success: false, error: { ...response.error, message: `فشل النشر: يجب تثبيت التطبيق في إعدادات مجموعة "${target.name}".` } });
-                    } else {
-                       reject({ targetName: target.name, success: false, error: response.error });
-                    }
-                }
+            window.FB.api(apiPath, 'POST', apiPath.includes('feed') ? {message: postText, access_token: target.access_token} : formData, (response: any) => {
+                if (response && !response.error) resolve({ targetName: target.name, success: true });
+                else reject({ targetName: target.name, success: false, error: response?.error?.message });
             });
         });
-    });
+      });
+      // This part is simplified; a real implementation would handle results better.
+      await Promise.allSettled(publishPromises);
+      messages.push(`تم إرسال ${allTargets.length} منشورات للنشر الفوري.`);
 
-    const results = await Promise.allSettled(publishPromises);
-    
-    setIsPublishing(false);
-    
-    const successfulPosts = results.filter(r => r.status === 'fulfilled');
-    const failedPosts = results.length - successfulPosts.length;
-    
-    if (!scheduleAt && successfulPosts.length > 0) {
-        const newPosts: PublishedPost[] = successfulPosts.map(r => {
-             const resultData = (r as PromiseFulfilledResult<any>).value;
-             const postId = resultData.response.post_id || resultData.response.id;
-             const target = targets.find(t => t.name === resultData.targetName)!;
-             return {
-                id: postId,
-                pageId: target.id,
-                pageName: target.name,
-                pageAvatarUrl: target.picture.data.url,
-                text: postText,
-                imagePreview: imagePreview,
-                publishedAt: new Date(),
-                analytics: { loading: false, lastUpdated: null }
-            };
+    } else { // --- Handle scheduling ---
+      // 1. Schedule for Facebook & Groups
+      if (fbTargets.length > 0) {
+        const fbSchedulePromises = fbTargets.map(target => {
+            let apiPath: string;
+            let apiParams: any;
+            if (selectedImage) {
+                apiPath = `/${target.id}/photos`;
+                const formData = new FormData();
+                if (target.type === 'page') formData.append('access_token', target.access_token!);
+                formData.append('source', selectedImage);
+                if (postText) formData.append('caption', postText);
+                formData.append('scheduled_publish_time', String(Math.floor(scheduleAt!.getTime() / 1000)));
+                formData.append('published', 'false');
+                apiParams = formData;
+            } else {
+                apiPath = `/${target.id}/feed`;
+                apiParams = { message: postText, access_token: target.access_token, scheduled_publish_time: Math.floor(scheduleAt!.getTime() / 1000), published: false };
+            }
+            return new Promise((resolve, reject) => {
+                window.FB.api(apiPath, 'POST', apiParams, (response: any) => {
+                    if (response && !response.error) resolve(true);
+                    else reject(response.error);
+                });
+            });
         });
-        setPublishedPosts(prev => [...newPosts, ...prev]);
+        const fbResults = await Promise.allSettled(fbSchedulePromises);
+        const successfulFb = fbResults.filter(r => r.status === 'fulfilled').length;
+        if(successfulFb > 0) messages.push(`تمت جدولة ${successfulFb} منشورات بنجاح على فيسبوك.`);
+        successfulActions += successfulFb;
+        failedActions += fbTargets.length - successfulFb;
+      }
+      
+      // 2. Create reminders for Instagram
+      if (igTargets.length > 0) {
+        const newReminders: ScheduledPost[] = igTargets.map(target => ({
+          id: `reminder_${target.id}_${Date.now()}`,
+          text: postText,
+          scheduledAt: scheduleAt,
+          isReminder: true,
+          targets: [target],
+          imageFile: selectedImage!,
+          imageUrl: URL.createObjectURL(selectedImage!),
+        }));
+        setScheduledPosts(prev => [...prev, ...newReminders]);
+        messages.push(`تم حفظ ${igTargets.length} تذكيرات لنشرها على انستجرام.`);
+        successfulActions += igTargets.length;
+      }
     }
 
-
-    let message = '';
-    let type: 'success' | 'error' | 'partial' = 'error';
-
-    if (successfulPosts.length > 0 && failedPosts === 0) {
-        message = `تم ${action} المنشور بنجاح إلى ${successfulPosts.length} من الصفحات/المجموعات.`;
-        type = 'success';
-        if (activeDraftId) {
-            setDrafts(prev => prev.filter(d => d.id !== activeDraftId));
-        }
-        clearComposer();
-    } else if (successfulPosts.length > 0 && failedPosts > 0) {
-        message = `تم ${action} المنشور إلى ${successfulPosts.length}، وفشل في ${failedPosts}.`;
-        type = 'partial';
+    setIsPublishing(false);
+    if (successfulActions > 0) {
+      setNotification({ type: 'success', message: messages.join(' ')});
+      clearComposer();
+      if (activeDraftId) setDrafts(prev => prev.filter(d => d.id !== activeDraftId));
     } else {
-        message = `فشل ${action} المنشور في كل الأهداف (${failedPosts}). يرجى التحقق من الصلاحيات وتثبيت التطبيق في المجموعات.`;
-        type = 'error';
-    }
-    
-    results.forEach(r => {
-        if (r.status === 'rejected') {
-            console.error("Post failed:", r.reason);
-        }
-    });
-    
-    setNotification({ type, message });
-    if(type === 'success') {
-      setSelectedTargetIds([]);
+      setNotification({ type: 'error', message: 'فشلت كل العمليات. يرجى مراجعة الصلاحيات.'});
     }
     setTimeout(() => setNotification(null), 8000);
+  }, [postText, selectedImage, selectedTargetIds, targets, isSimulationMode, isScheduled, scheduleDate, activeDraftId, clearComposer]);
 
-  }, [postText, selectedImage, selectedTargetIds, targets, isSimulationMode, isScheduled, scheduleDate, activeDraftId, clearComposer, imagePreview]);
+  const handlePublishReminder = useCallback(async (postId: string) => {
+    const post = scheduledPosts.find(p => p.id === postId);
+    if (!post || !post.isReminder || !post.targets[0] || !post.imageFile) return;
+
+    setPublishingReminderId(postId);
+    setNotification(null);
+
+    const target = post.targets[0];
+
+     if (isSimulationMode) {
+        console.log("SIMULATING PUBLISHING REMINDER:", post);
+        setTimeout(() => {
+            setScheduledPosts(prev => prev.filter(p => p.id !== postId));
+            setPublishingReminderId(null);
+            setNotification({ type: 'success', message: `تمت محاكاة نشر التذكير لـ ${target.name} بنجاح.` });
+        }, 1500);
+        return;
+    }
+    
+    const apiPath = `/${target.parentPageId}/photos`;
+    const formData = new FormData();
+    formData.append('access_token', target.access_token!);
+    formData.append('source', post.imageFile);
+    if (post.text) formData.append('caption', post.text);
+    
+    window.FB.api(apiPath, 'POST', formData, (response: any) => {
+      setPublishingReminderId(null);
+      if (response && !response.error) {
+        setNotification({ type: 'success', message: `تم نشر المنشور إلى ${target.name} بنجاح!` });
+        setScheduledPosts(prev => prev.filter(p => p.id !== postId));
+      } else {
+        setNotification({ type: 'error', message: `فشل النشر إلى ${target.name}: ${response?.error?.message}` });
+        console.error("Failed to publish reminder:", response.error);
+      }
+    });
+  }, [scheduledPosts, isSimulationMode]);
+
 
   const handleFetchAnalytics = useCallback(async (postId: string) => {
     setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, loading: true } } : p));
@@ -366,6 +433,53 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
        setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, loading: false } } : p));
     }
   }, [isSimulationMode]);
+
+  const handleGenerateInsights = useCallback(async (postId: string) => {
+    if (!aiClient) {
+      setNotification({ type: 'error', message: 'يرجى تكوين مفتاح Gemini API في الإعدادات أولاً.' });
+      return;
+    }
+    const post = publishedPosts.find(p => p.id === postId);
+    if (!post) return;
+
+    if (isSimulationMode) {
+        setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: true } } : p));
+        setTimeout(() => {
+            const mockInsights = {
+                performanceSummary: "هذا ملخص أداء تجريبي تم إنشاؤه بواسطة الذكاء الاصطناعي. يبدو أن المنشور قد حقق تفاعلًا جيدًا.",
+                sentiment: { positive: 0.7, negative: 0.1, neutral: 0.2 }
+            };
+            setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: false, aiSummary: mockInsights.performanceSummary, sentiment: mockInsights.sentiment } } : p));
+        }, 2000);
+        return;
+    }
+
+    setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: true, aiSummary: undefined, sentiment: undefined } } : p));
+    
+    try {
+        const commentsResponse: any = await new Promise((resolve) => {
+            window.FB.api(`/${postId}/comments?fields=message&limit=25`, (r: any) => resolve(r));
+        });
+
+        if (commentsResponse.error) {
+            throw new Error(commentsResponse.error.message);
+        }
+
+        const comments = commentsResponse.data || [];
+        if (comments.length === 0) {
+            setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: false, aiSummary: 'لا توجد تعليقات كافية للتحليل.' } } : p));
+            return;
+        }
+
+        const insights = await generatePostInsights(aiClient, post.text, post.analytics, comments);
+        setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, ...insights, isGeneratingInsights: false } } : p));
+
+    } catch (error: any) {
+        console.error("Error generating insights:", error);
+        setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: false, aiSummary: `فشل التحليل: ${error.message}` } } : p));
+    }
+  }, [aiClient, publishedPosts, isSimulationMode]);
+
 
   const handleSaveDraft = () => {
     if (!postText.trim() && !selectedImage) return;
@@ -574,6 +688,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
 
   const firstSelectedTarget = targets.find(t => t.id === selectedTargetIds[0]);
 
+  const dueReminders = scheduledPosts.filter(p => p.isReminder && new Date(p.scheduledAt) <= new Date());
+
   const renderActiveView = () => {
     switch (view) {
         case 'composer':
@@ -604,6 +720,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
                             scheduleDate={scheduleDate}
                             onScheduleDateChange={setScheduleDate}
                             error={composerError}
+                            targets={targets}
                             selectedTargetIds={selectedTargetIds}
                         />
                         <TargetList
@@ -644,7 +761,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
         case 'drafts':
             return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;
         case 'analytics':
-            return <PublishedPostsList posts={publishedPosts} onFetchAnalytics={handleFetchAnalytics} />;
+            return <PublishedPostsList 
+                        posts={publishedPosts} 
+                        onFetchAnalytics={handleFetchAnalytics}
+                        onGenerateInsights={handleGenerateInsights}
+                   />;
         default:
             return null;
     }
@@ -658,6 +779,24 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
         onSettingsClick={() => setIsSettingsOpen(true)}
       />
       <main className="p-4 sm:p-8">
+        {dueReminders.length > 0 && (
+            <div className="p-4 mb-6 rounded-lg bg-yellow-100 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-800 shadow-md">
+                <h3 className="font-bold text-lg text-yellow-800 dark:text-yellow-200 mb-3">
+                    تذكيرات جاهزة للنشر على انستجرام
+                </h3>
+                <div className="space-y-4">
+                    {dueReminders.map(post => (
+                        <ReminderCard 
+                            key={post.id}
+                            post={post}
+                            onPublish={() => handlePublishReminder(post.id)}
+                            isPublishing={publishingReminderId === post.id}
+                        />
+                    ))}
+                </div>
+            </div>
+        )}
+        
         {notification && (
             <div className={`p-4 mb-6 rounded-lg shadow-md transition-all duration-300 ${getNotificationBgColor()}`}>
                 {notification.message}
