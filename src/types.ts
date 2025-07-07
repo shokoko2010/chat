@@ -102,19 +102,45 @@ export interface PageProfile {
   currentOffers: string;
 }
 
-// Types for AI Content Planner
-export interface ContentPlanRequest {
-  sourceType: 'profile' | 'images';
-  planDuration: 'weekly' | 'monthly';
+//--- Types for AI Content Planner ---
+
+// Base for all strategy requests
+interface BaseStrategyRequest {
+  duration: 'weekly' | 'monthly' | 'annual';
   audience: string;
   goals: string;
   tone: string;
 }
 
+export interface StandardContentRequest extends BaseStrategyRequest {
+  type: 'standard';
+  pillars: string; // e.g. "Tips, Products, Behind the Scenes"
+}
+
+export interface CampaignRequest extends BaseStrategyRequest {
+  type: 'campaign';
+  campaignName: string;
+  campaignObjective: string;
+}
+
+export interface PillarContentRequest extends BaseStrategyRequest {
+  type: 'pillar';
+  pillarTopic: string;
+}
+
+export interface ImageBasedRequest extends BaseStrategyRequest {
+  type: 'images';
+  // images are handled as a separate parameter in the service
+}
+
+// The main type for the form
+export type StrategyRequest = StandardContentRequest | CampaignRequest | PillarContentRequest | ImageBasedRequest;
+
+
 export interface ContentPlanItem {
-  day: string; // e.g., "الأسبوع 1 - الاثنين" or "الاثنين"
-  theme: string; // e.g., "نصيحة الأسبوع"
-  postSuggestion: string; // The full suggested post text
-  contentType: string; // e.g., "صورة عالية الجودة", "سؤال تفاعلي"
+  day: string; // e.g., "الأسبوع 1 - الاثنين" or "يناير"
+  theme: string; // e.g., "نصيحة الأسبوع" or "موضوع شهر يناير"
+  postSuggestion: string; // The full suggested post text or theme description
+  contentType: string; // e.g., "صورة عالية الجودة", "استطلاع رأي"
   cta: string; // e.g., "ما رأيكم؟ شاركونا في التعليقات!"
 }

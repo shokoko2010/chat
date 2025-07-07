@@ -1,7 +1,7 @@
 
 
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { ContentPlanRequest, ContentPlanItem, PostAnalytics, PageProfile } from "../types";
+import { StrategyRequest, ContentPlanItem, PostAnalytics, PageProfile } from "../types";
 
 const fileToGenerativePart = async (file: File) => {
   const base64EncodedDataPromise = new Promise<string>((resolve) => {
@@ -196,48 +196,109 @@ export const generateDescriptionForImage = async (ai: GoogleGenAI, imageFile: Fi
 };
 
 
-export const generateContentPlan = async (ai: GoogleGenAI, request: ContentPlanRequest, pageProfile?: PageProfile, images?: File[]): Promise<ContentPlanItem[]> => {
+export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequest, pageProfile?: PageProfile, images?: File[]): Promise<ContentPlanItem[]> => {
   try {
     const pageContext = createPageContext(pageProfile);
-    const durationText = request.planDuration === 'monthly' ? 'لمدة شهر واحد (4 أسابيع)' : 'لمدة 7 أيام';
-    const postCount = request.planDuration === 'monthly' ? 20 : 7; // Request more posts for monthly plan
-    let sourcePrompt: string;
     let contentParts: any[] = [];
+    
+    // --- Build Dynamic Prompt Parts ---
+    let durationText: string;
+    let postCount: number;
+    let strategyDetailsPrompt: string;
 
-    if (request.sourceType === 'images' && images && images.length > 0) {
-      sourcePrompt = `بناءً على الصور المرفقة (${images.length} صور)، قم بإنشاء خطة محتوى. لكل صورة، اقترح فكرة منشور فريدة ومناسبة.`;
-      const imageParts = await Promise.all(images.map(fileToGenerativePart));
-      contentParts.push(...imageParts);
-    } else {
-      sourcePrompt = 'بناءً على ملف تعريف الصفحة، قم بإنشاء خطة محتوى متنوعة ومتوازنة.';
+    switch(request.duration) {
+      case 'weekly': durationText = 'أسبوع واحد (7 أيام)'; postCount = 7; break;
+      case 'monthly': durationText = 'شهر واحد (4 أسابيع)'; postCount = 20; break;
+      case 'annual': durationText = 'سنة كاملة (12 شهرًا)'; postCount = 12; break; // 12 monthly themes
     }
 
-    const prompt = `
-      ${pageContext}
-      أنت خبير استراتيجي محترف للمحتوى على وسائل التواصل الاجتماعي. مهمتك هي إنشاء خطة محتوى إبداعية ومتنوعة لصفحة فيسبوك بناءً على التفاصيل التالية.
-
-      تفاصيل الطلب:
-      - أساس الاستراتيجية: ${sourcePrompt}
-      - مدة الخطة: ${durationText}.
-      - الجمهور المستهدف: ${request.audience}
-      - الأهداف: ${request.goals}
-      - النبرة المطلوبة: ${request.tone}
-
-      المطلوب:
-      أنشئ خطة محتوى تحتوي على ${postCount} فكرة منشور فريدة.
-      ${request.planDuration === 'monthly' ? 'قسّم الخطة إلى 4 أسابيع، مع تحديد থিম (موضوع) لكل أسبوع.' : ''}
-
-      الرجاء إرجاع الإجابة كـ JSON فقط، بدون أي نص إضافي أو علامات markdown.
-      يجب أن تكون الإجابة عبارة عن مصفوفة JSON، حيث كل عنصر في المصفوفة هو كائن يمثل يومًا واحدًا ويحتوي على المفاتيح التالية بالضبط:
-      - "day": (string) اليوم أو الأسبوع (مثال: "الأسبوع 1 - الاثنين" أو "السبت").
-      - "theme": (string) الفكرة العامة أو الموضوع الرئيسي (مثال: "مشاركة من وراء الكواليس").
-      - "postSuggestion": (string) نص المنشور المقترح بالكامل، يجب أن يكون جذابًا ومتوافقًا مع سياق الصفحة والطلب، ويتضمن دعوة للعمل (CTA) وإيموجيز مناسبة.
-      - "contentType": (string) نوع المحتوى المقترح (مثال: "صورة عالية الجودة"، "فيديو قصير (Reel)"، "استطلاع رأي").
-      - "cta": (string) دعوة للعمل واضحة ومختصرة (مثال: "شاركنا رأيك في التعليقات!", "اطلب الآن عبر موقعنا").
-    `;
+    switch(request.type) {
+      case 'standard':
+        strategyDetailsPrompt = `
+          - نوع الاستراتيجية: خطة محتوى قياسية.
+          - أعمدة المحتوى (Content Pillars) للتركيز عليها: ${request.pillars || 'متنوعة وشاملة'}.
+        `;
+        break;
+      case 'campaign':
+        strategyDetailsPrompt = `
+          - نوع الاستراتيجية: حملة تسويقية.
+          - اسم الحملة: ${request.campaignName || 'غير محدد'}
+          - هدف الحملة: ${request.campaignObjective || 'غير محدد'}
+        `;
+        break;
+      case 'pillar':
+        strategyDetailsPrompt = `
+          - نوع الاستراتيجية: المحتوى المحوري (Pillar Content).
+          - الموضوع المحوري الرئيسي: "${request.pillarTopic}"
+          - المطلوب: قم بإنشاء فكرة منشور محوري واحد (طويل ومفصل)، ثم أنشئ 5-6 أفكار منشورات عنقودية (أصغر ومترابطة) تدعم الموضوع الرئيسي.
+        `;
+        postCount = 7; // Override for this strategy
+        break;
+      case 'images':
+        if (images && images.length > 0) {
+          strategyDetailsPrompt = `- نوع الاستراتيجية: مبنية على الصور المرفقة (${images.length} صور). لكل صورة، اقترح فكرة منشور فريدة ومناسبة.`;
+          const imageParts = await Promise.all(images.map(fileToGenerativePart));
+          contentParts.push(...imageParts);
+        } else {
+          throw new Error("يجب توفير صور لاستراتيجية المحتوى المبنية على الصور.");
+        }
+        break;
+    }
     
-    const textPart = { text: prompt };
-    contentParts.push(textPart);
+    // --- Build Final Prompt ---
+    let mainPrompt: string;
+    
+    if (request.duration === 'annual') {
+       mainPrompt = `
+        ${pageContext}
+        أنت خبير استراتيجي محترف للمحتوى على وسائل التواصل الاجتماعي. مهمتك هي إنشاء **خطة محتوى سنوية عالية المستوى**.
+
+        تفاصيل الطلب:
+        ${strategyDetailsPrompt}
+        - مدة الخطة: ${durationText}.
+        - الجمهور المستهدف: ${request.audience}
+        - الأهداف السنوية: ${request.goals}
+        - النبرة المطلوبة: ${request.tone}
+
+        المطلوب:
+        اقترح **12 موضوعًا رئيسيًا (Theme)**، واحد لكل شهر من شهور السنة.
+        لكل موضوع، قدم شرحًا موجزًا من جملة واحدة.
+        
+        الرجاء إرجاع الإجابة كـ JSON فقط، بدون أي نص إضافي أو علامات markdown.
+        يجب أن تكون الإجابة عبارة عن مصفوفة JSON، حيث كل عنصر في المصفوفة هو كائن يمثل شهرًا واحدًا ويحتوي على المفاتيح التالية بالضبط:
+        - "day": (string) اسم الشهر (مثال: "يناير", "فبراير").
+        - "theme": (string) الموضوع الرئيسي المقترح للشهر.
+        - "postSuggestion": (string) شرح موجز للموضوع وأفكار للمحتوى خلاله.
+        - "contentType": (string) نوع المحتوى العام المقترح لهذا الشهر (مثال: "بناء الوعي", "إطلاق منتجات").
+        - "cta": (string) دعوة للعمل رئيسية للشهر (مثال: "تابعونا لتعرفوا المزيد").
+       `;
+    } else { // Weekly or Monthly
+      mainPrompt = `
+        ${pageContext}
+        أنت خبير استراتيجي محترف للمحتوى على وسائل التواصل الاجتماعي. مهمتك هي إنشاء خطة محتوى إبداعية ومتنوعة لصفحة فيسبوك بناءً على التفاصيل التالية.
+
+        تفاصيل الطلب:
+        ${strategyDetailsPrompt}
+        - مدة الخطة: ${durationText}.
+        - الجمهور المستهدف: ${request.audience}
+        - الأهداف: ${request.goals}
+        - النبرة المطلوبة: ${request.tone}
+
+        المطلوب:
+        أنشئ خطة محتوى تحتوي على ${postCount} فكرة منشور فريدة.
+        ${request.duration === 'monthly' ? 'قسّم الخطة إلى 4 أسابيع، مع تحديد থিম (موضوع) لكل أسبوع.' : ''}
+
+        الرجاء إرجاع الإجابة كـ JSON فقط، بدون أي نص إضافي أو علامات markdown.
+        يجب أن تكون الإجابة عبارة عن مصفوفة JSON، حيث كل عنصر في المصفوفة هو كائن يمثل يومًا واحدًا ويحتوي على المفاتيح التالية بالضبط:
+        - "day": (string) اليوم أو الأسبوع (مثال: "الأسبوع 1 - الاثنين" أو "السبت").
+        - "theme": (string) الفكرة العامة أو الموضوع الرئيسي (مثال: "مشاركة من وراء الكواليس").
+        - "postSuggestion": (string) نص المنشور المقترح بالكامل، يجب أن يكون جذابًا ومتوافقًا مع سياق الصفحة والطلب، ويتضمن دعوة للعمل (CTA) وإيموجيز مناسبة.
+        - "contentType": (string) نوع المحتوى المقترح (مثال: "صورة عالية الجودة"، "فيديو قصير (Reel)"، "استطلاع رأي").
+        - "cta": (string) دعوة للعمل واضحة ومختصرة (مثال: "شاركنا رأيك في التعليقات!", "اطلب الآن عبر موقعنا").
+      `;
+    }
+    
+    contentParts.push({ text: mainPrompt });
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-preview-04-17',
@@ -277,7 +338,7 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: ContentPlanR
 };
 
 
-export const analyzePageForContentPlan = async (ai: GoogleGenAI, pageName: string, pageType: 'page' | 'group' | 'instagram'): Promise<Partial<ContentPlanRequest>> => {
+export const analyzePageForContentPlan = async (ai: GoogleGenAI, pageName: string, pageType: 'page' | 'group' | 'instagram'): Promise<Partial<StrategyRequest>> => {
   try {
     let typeForPrompt: string;
     if (pageType === 'instagram') {

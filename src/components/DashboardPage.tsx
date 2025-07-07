@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, ContentPlanRequest, WeeklyScheduleSettings, PageProfile } from '../types';
+import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import PostPreview from './PostPreview';
@@ -438,7 +438,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setView('composer');
   };
   
-  const handleGeneratePlan = async (request: ContentPlanRequest, images?: File[]) => {
+  const handleGeneratePlan = async (request: StrategyRequest, images?: File[]) => {
     if (!aiClient) return;
     setIsGeneratingPlan(true);
     setPlanError(null);
@@ -669,8 +669,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 onReschedule={handleReschedule}
             />;
         case 'planner':
-            return <ContentPlannerPage aiClient={aiClient} isGenerating={isGeneratingPlan} error={planError} plan={contentPlan}
-                onGeneratePlan={handleGeneratePlan} onStartPost={handleStartPostFromPlan} />;
+            return <ContentPlannerPage 
+                aiClient={aiClient} 
+                isGenerating={isGeneratingPlan} 
+                error={planError} 
+                plan={contentPlan}
+                onGeneratePlan={handleGeneratePlan} 
+                onStartPost={handleStartPostFromPlan}
+                pageProfile={pageProfile}
+            />;
         case 'drafts':
             return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;
         case 'calendar':
