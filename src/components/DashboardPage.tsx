@@ -10,7 +10,7 @@ import BulkSchedulerPage from './BulkSchedulerPage';
 import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePostInsights, analyzePageForProfile, generatePerformanceSummary } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, analyzePageForProfile, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights } from '../services/geminiService';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
@@ -66,6 +66,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [contentPlan, setContentPlan] = useState<ContentPlanItem[] | null>(null);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [isAnalyzingProfile, setIsAnalyzingProfile] = useState(false);
+  const [isSchedulingStrategy, setIsSchedulingStrategy] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
 
   // Analytics State
@@ -507,6 +508,45 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   };
 
+  const handleScheduleStrategy = async () => {
+    if (!aiClient || !contentPlan) return;
+    setIsSchedulingStrategy(true);
+    setPlanError(null);
+    try {
+      const schedule = await generateOptimalSchedule(aiClient, contentPlan);
+      const newScheduledPosts: ScheduledPost[] = schedule
+        .map(item => {
+          // A simple text match to find the original item. A more robust solution might use IDs.
+          const originalPlanItem = contentPlan.find(p => p.postSuggestion === item.postSuggestion);
+          if (!originalPlanItem) return null;
+
+          return {
+            id: `scheduled_strat_${Date.now()}_${Math.random()}`,
+            text: item.postSuggestion,
+            scheduledAt: new Date(item.scheduledAt),
+            isReminder: false,
+            targetId: managedTarget.id,
+            targetInfo: {
+              name: managedTarget.name,
+              avatarUrl: managedTarget.picture.data.url,
+              type: managedTarget.type,
+            }
+          };
+        })
+        .filter((p): p is ScheduledPost => p !== null);
+
+      setScheduledPosts(prev => [...prev, ...newScheduledPosts]);
+      setContentPlan(null); // Clear the plan after scheduling
+      showNotification('success', `تمت جدولة ${newScheduledPosts.length} منشورًا بنجاح!`);
+      setView('calendar');
+    } catch (e: any) {
+      setPlanError(e.message || "فشل جدولة الاستراتيجية.");
+    } finally {
+      setIsSchedulingStrategy(false);
+    }
+  };
+
+
   const handleAnalyzeProfile = async () => {
     if (!aiClient) return;
     setIsAnalyzingProfile(true);
@@ -747,9 +787,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 onAnalyze={handleAnalyzeProfile}
                 error={planError} 
                 plan={contentPlan}
-                onGeneratePlan={handleGeneratePlan} 
+                onGeneratePlan={handleGeneratePlan}
+                onScheduleStrategy={handleScheduleStrategy}
+                isSchedulingStrategy={isSchedulingStrategy}
                 onStartPost={handleStartPostFromPlan}
-                pageProfile={pageProfile}
                 onProfileChange={setPageProfile}
             />;
         case 'drafts':

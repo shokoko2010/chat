@@ -8,6 +8,7 @@ import { GoogleGenAI } from '@google/genai';
 import BrainCircuitIcon from './icons/BrainCircuitIcon';
 import PhotoIcon from './icons/PhotoIcon';
 import CalendarCheckIcon from './icons/CalendarCheckIcon';
+import CalendarPlusIcon from './icons/CalendarPlusIcon';
 
 interface ContentPlannerPageProps {
   aiClient: GoogleGenAI | null;
@@ -17,8 +18,9 @@ interface ContentPlannerPageProps {
   error: string | null;
   plan: ContentPlanItem[] | null;
   onGeneratePlan: (request: StrategyRequest, images?: File[]) => void;
+  isSchedulingStrategy: boolean;
+  onScheduleStrategy: () => Promise<void>;
   onStartPost: (planItem: ContentPlanItem) => void;
-  pageProfile: PageProfile;
   onProfileChange: (newProfile: PageProfile) => void;
 }
 
@@ -47,8 +49,9 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   error,
   plan,
   onGeneratePlan,
+  isSchedulingStrategy,
+  onScheduleStrategy,
   onStartPost,
-  pageProfile,
   onProfileChange
 }) => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -69,15 +72,21 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   const [pillarTopic, setPillarTopic] = useState('');
   const [planImages, setPlanImages] = useState<File[]>([]);
   const [planImagePreviews, setPlanImagePreviews] = useState<string[]>([]);
+  const [monthlyPostCount, setMonthlyPostCount] = useState<8 | 12 | 16 | 30>(12);
+
   
   const [isDragging, setIsDragging] = useState(false);
   const [formError, setFormError] = useState('');
+  const [pageProfile, setPageProfileState] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '' });
+
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    onProfileChange({
+    const newProfile = {
       ...pageProfile,
       [e.target.name]: e.target.value,
-    });
+    };
+    setPageProfileState(newProfile);
+    onProfileChange(newProfile);
   };
 
   const handleGeneratePlanSubmit = (e: React.FormEvent) => {
@@ -93,7 +102,11 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
     setFormError('');
 
     let request: StrategyRequest;
-    const baseRequest = { duration: planDuration, audience, goals, tone };
+    const baseRequest: any = { duration: planDuration, audience, goals, tone };
+    
+    if (planDuration === 'monthly') {
+        baseRequest.postCount = monthlyPostCount;
+    }
 
     switch (strategyType) {
       case 'standard': request = { ...baseRequest, type: 'standard', pillars }; break;
@@ -195,6 +208,17 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
             {/* Common fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label htmlFor="audience" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الجمهور المستهدف <span className="text-red-500">*</span></label><input id="audience" type="text" value={audience} onChange={(e) => setAudience(e.target.value)} placeholder="مثال: الشباب، العائلات..." className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" /></div><div><label htmlFor="goals" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الأهداف الرئيسية <span className="text-red-500">*</span></label><input id="goals" type="text" value={goals} onChange={(e) => setGoals(e.target.value)} placeholder="مثال: زيادة المتابعين..." className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" /></div></div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label htmlFor="tone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">النبرة المفضلة</label><select id="tone" value={tone} onChange={(e) => setTone(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"><option>ودود ومرح</option><option>احترافي ورسمي</option><option>تعليمي وملهم</option><option>مثير للحماس والطاقة</option></select></div><div><label htmlFor="planDuration" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">مدة الخطة</label><select id="planDuration" value={planDuration} onChange={(e) => setPlanDuration(e.target.value as StrategyRequest['duration'])} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"><option value="weekly">أسبوعية</option><option value="monthly">شهرية</option>{strategyType !== 'occasion' && <option value="annual">سنوية (نظرة عامة)</option>}</select></div></div>
+            {planDuration === 'monthly' && (
+                <div className="fade-in">
+                    <label htmlFor="monthlyPostCount" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">كثافة المحتوى</label>
+                    <select id="monthlyPostCount" value={monthlyPostCount} onChange={(e) => setMonthlyPostCount(Number(e.target.value) as 8|12|16|30)} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700">
+                        <option value={8}>8 منشورات (قليل)</option>
+                        <option value={12}>12 منشورًا (متوسط)</option>
+                        <option value={16}>16 منشورًا (مكثف)</option>
+                        <option value={30}>30 منشورًا (يومي تقريبًا)</option>
+                    </select>
+                </div>
+            )}
           </div>
         );
       default: return null;
@@ -253,8 +277,23 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
       )}
 
       {plan && (
-        <div className="max-w-7xl mx-auto">
-          <h3 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">خطتك جاهزة!</h3>
+        <div className="max-w-7xl mx-auto space-y-6">
+          <div className="text-center">
+            <h3 className="text-2xl font-bold text-gray-800 dark:text-white">خطتك جاهزة!</h3>
+            <p className="text-gray-600 dark:text-gray-400">يمكنك البدء بإنشاء المنشورات، أو جدولة الاستراتيجية الكاملة بضغطة زر.</p>
+          </div>
+           <div className="text-center">
+                <Button
+                    size="lg"
+                    onClick={onScheduleStrategy}
+                    isLoading={isSchedulingStrategy}
+                    disabled={isSchedulingStrategy || !aiClient}
+                    className="bg-green-600 hover:bg-green-700 focus:ring-green-500"
+                >
+                    <CalendarPlusIcon className="w-6 h-6 ml-2" />
+                    {isSchedulingStrategy ? 'جاري العمل...' : 'جدولة الاستراتيجية بأفضل الأوقات'}
+                </Button>
+           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {plan.map((item, index) => (
               <ContentPlanCard key={index} item={item} onStartPost={onStartPost} />

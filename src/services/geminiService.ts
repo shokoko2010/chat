@@ -256,13 +256,13 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
     
     // --- Build Dynamic Prompt Parts ---
     let durationText: string;
-    let postCount: number;
+    let postCountText: string;
     let strategyDetailsPrompt: string;
 
     switch(request.duration) {
-      case 'weekly': durationText = 'أسبوع واحد (7 أيام)'; postCount = 7; break;
-      case 'monthly': durationText = 'شهر واحد (4 أسابيع)'; postCount = 20; break;
-      case 'annual': durationText = 'سنة كاملة (12 شهرًا)'; postCount = 12; break; // 12 monthly themes
+      case 'weekly': durationText = 'أسبوع واحد (7 أيام)'; postCountText = '7 أفكار منشورات فريدة'; break;
+      case 'monthly': durationText = 'شهر واحد (4 أسابيع)'; postCountText = `${request.postCount || 12} فكرة منشور فريدة`; break;
+      case 'annual': durationText = 'سنة كاملة (12 شهرًا)'; postCountText = '12 موضوعًا شهريًا'; break;
     }
 
     switch(request.type) {
@@ -285,7 +285,7 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
           - المناسبة: "${request.occasion}"
           - المطلوب: قم بإنشاء حملة تسويقية قصيرة ومتكاملة (3-5 أيام) حول هذه المناسبة. يجب أن تكون الحملة متوافقة تمامًا مع "سياق الصفحة/العمل" المقدم. يجب أن تتضمن الحملة منشورات متنوعة (مثلاً: تشويق، إعلان عن عرض، تفاعل، شكر).
         `;
-        postCount = 4; // Override for this strategy to get a multi-day campaign
+        postCountText = '4 أفكار منشورات فريدة'; // Override for this strategy to get a multi-day campaign
         break;
       case 'pillar':
         strategyDetailsPrompt = `
@@ -293,13 +293,14 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
           - الموضوع المحوري الرئيسي: "${request.pillarTopic}"
           - المطلوب: قم بإنشاء فكرة منشور محوري واحد (طويل ومفصل)، ثم أنشئ 5-6 أفكار منشورات عنقودية (أصغر ومترابطة) تدعم الموضوع الرئيسي.
         `;
-        postCount = 7; // Override for this strategy
+        postCountText = '7 أفكار منشورات فريدة'; // Override for this strategy
         break;
       case 'images':
         if (images && images.length > 0) {
           strategyDetailsPrompt = `- نوع الاستراتيجية: مبنية على الصور المرفقة (${images.length} صور). لكل صورة، اقترح فكرة منشور فريدة ومناسبة.`;
           const imageParts = await Promise.all(images.map(fileToGenerativePart));
           contentParts.push(...imageParts);
+          postCountText = `${images.length} فكرة منشور فريدة`;
         } else {
           throw new Error("يجب توفير صور لاستراتيجية المحتوى المبنية على الصور.");
         }
@@ -346,7 +347,7 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
         - النبرة المطلوبة: ${request.tone}
 
         المطلوب:
-        أنشئ خطة محتوى تحتوي على ${postCount} فكرة منشور فريدة.
+        أنشئ خطة محتوى تحتوي على ${postCountText}.
         ${request.duration === 'monthly' ? 'قسّم الخطة إلى 4 أسابيع، مع تحديد থيم (موضوع) لكل أسبوع.' : ''}
         ${request.type === 'occasion' ? 'قم بتسمية الأيام بشكل تسلسلي (مثال: اليوم 1: تشويق، اليوم 2: العرض الرئيسي).': ''}
 
@@ -397,6 +398,64 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
     }
     throw new Error("حدث خطأ أثناء إنشاء خطة المحتوى.");
   }
+};
+
+
+export const generateOptimalSchedule = async (ai: GoogleGenAI, plan: ContentPlanItem[]): Promise<{ postSuggestion: string, scheduledAt: string }[]> => {
+  const planText = plan.map((item, i) => `${i + 1}. ${item.postSuggestion}`).join('\n');
+  const prompt = `
+    أنت خبير استراتيجي لجدولة المحتوى على وسائل التواصل الاجتماعي.
+    مهمتك هي أخذ قائمة من منشورات المحتوى واقتراح أفضل تاريخ ووقت لنشر كل منها خلال الشهر القادم لتحقيق أقصى قدر من التفاعل والوصول.
+
+    معلومات إضافية:
+    - تاريخ اليوم هو: ${new Date().toISOString()}
+    - يجب أن تكون جميع الأوقات المقترحة في المستقبل.
+    - وزّع المنشورات بذكاء على مدار الأيام والأسابيع. تجنب تكديس المنشورات في يوم واحد ما لم يكن ذلك جزءًا من حملة واضحة (مثل التشويق ثم الإعلان).
+    - ضع في اعتبارك أوقات الذروة الشائعة (مثل الأمسيات وعطلات نهاية الأسبوع).
+
+    قائمة المنشورات المطلوب جدولتها:
+    ${planText}
+
+    المطلوب:
+    أرجع الإجابة كـ JSON فقط، بدون أي نص إضافي أو علامات markdown.
+    يجب أن تكون الإجابة عبارة عن مصفوفة JSON بنفس عدد عناصر قائمة المنشورات.
+    كل عنصر في المصفوفة يجب أن يكون كائنًا يحتوي على المفتاحين التاليين بالضبط:
+    - "postSuggestion": (string) النص الأصلي الكامل للمنشور المقترح.
+    - "scheduledAt": (string) التاريخ والوقت الأمثل المقترح للنشر بتنسيق ISO 8601.
+
+    مثال على الإجابة:
+    [
+      { "postSuggestion": "نص المنشور الأول...", "scheduledAt": "2024-09-10T19:00:00.000Z" },
+      { "postSuggestion": "نص المنشور الثاني...", "scheduledAt": "2024-09-12T17:30:00.000Z" }
+    ]
+  `;
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-preview-04-17',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+            },
+        });
+        const text = response.text;
+        if (!text) {
+            throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء جدول زمني (استجابة فارغة).");
+        }
+        let jsonStr = text.trim();
+        const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
+        const match = jsonStr.match(fenceRegex);
+        if (match && match[2]) {
+            jsonStr = match[2].trim();
+        }
+        const schedule = JSON.parse(jsonStr);
+        if (Array.isArray(schedule) && schedule.length > 0 && schedule[0].scheduledAt) {
+            return schedule;
+        }
+        throw new Error("فشل الذكاء الاصطناعي في إنشاء جدول زمني بالتنسيق المطلوب.");
+    } catch (error) {
+        console.error("Error generating optimal schedule:", error);
+        throw new Error("حدث خطأ أثناء إنشاء الجدول الزمني الأمثل.");
+    }
 };
 
 

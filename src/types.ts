@@ -119,6 +119,7 @@ interface BaseStrategyRequest {
   audience: string;
   goals: string;
   tone: string;
+  postCount?: 8 | 12 | 16 | 30;
 }
 
 export interface StandardContentRequest extends BaseStrategyRequest {
