@@ -21,6 +21,7 @@ interface ContentPlannerPageProps {
   isSchedulingStrategy: boolean;
   onScheduleStrategy: () => Promise<void>;
   onStartPost: (planItem: ContentPlanItem) => void;
+  pageProfile: PageProfile;
   onProfileChange: (newProfile: PageProfile) => void;
 }
 
@@ -52,6 +53,7 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   isSchedulingStrategy,
   onScheduleStrategy,
   onStartPost,
+  pageProfile,
   onProfileChange
 }) => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -77,16 +79,13 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   
   const [isDragging, setIsDragging] = useState(false);
   const [formError, setFormError] = useState('');
-  const [pageProfile, setPageProfileState] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '' });
 
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const newProfile = {
+    onProfileChange({
       ...pageProfile,
       [e.target.name]: e.target.value,
-    };
-    setPageProfileState(newProfile);
-    onProfileChange(newProfile);
+    });
   };
 
   const handleGeneratePlanSubmit = (e: React.FormEvent) => {
@@ -210,7 +209,7 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label htmlFor="tone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">النبرة المفضلة</label><select id="tone" value={tone} onChange={(e) => setTone(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"><option>ودود ومرح</option><option>احترافي ورسمي</option><option>تعليمي وملهم</option><option>مثير للحماس والطاقة</option></select></div><div><label htmlFor="planDuration" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">مدة الخطة</label><select id="planDuration" value={planDuration} onChange={(e) => setPlanDuration(e.target.value as StrategyRequest['duration'])} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"><option value="weekly">أسبوعية</option><option value="monthly">شهرية</option>{strategyType !== 'occasion' && <option value="annual">سنوية (نظرة عامة)</option>}</select></div></div>
             {planDuration === 'monthly' && (
                 <div className="fade-in">
-                    <label htmlFor="monthlyPostCount" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">كثافة المحتوى</label>
+                    <label htmlFor="monthlyPostCount" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">كثافة المحتوى (عدد المنشورات)</label>
                     <select id="monthlyPostCount" value={monthlyPostCount} onChange={(e) => setMonthlyPostCount(Number(e.target.value) as 8|12|16|30)} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700">
                         <option value={8}>8 منشورات (قليل)</option>
                         <option value={12}>12 منشورًا (متوسط)</option>
@@ -280,7 +279,7 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="text-center">
             <h3 className="text-2xl font-bold text-gray-800 dark:text-white">خطتك جاهزة!</h3>
-            <p className="text-gray-600 dark:text-gray-400">يمكنك البدء بإنشاء المنشورات، أو جدولة الاستراتيجية الكاملة بضغطة زر.</p>
+            <p className="text-gray-600 dark:text-gray-400">يمكنك البدء بإنشاء المنشورات، أو تحويل الاستراتيجية الكاملة إلى جدول مجمع للمراجعة النهائية.</p>
           </div>
            <div className="text-center">
                 <Button
@@ -291,7 +290,7 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
                     className="bg-green-600 hover:bg-green-700 focus:ring-green-500"
                 >
                     <CalendarPlusIcon className="w-6 h-6 ml-2" />
-                    {isSchedulingStrategy ? 'جاري العمل...' : 'جدولة الاستراتيجية بأفضل الأوقات'}
+                    {isSchedulingStrategy ? 'جاري العمل...' : 'تحويل الخطة إلى جدول مجمع'}
                 </Button>
            </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

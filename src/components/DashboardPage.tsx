@@ -514,31 +514,28 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setPlanError(null);
     try {
       const schedule = await generateOptimalSchedule(aiClient, contentPlan);
-      const newScheduledPosts: ScheduledPost[] = schedule
-        .map(item => {
-          // A simple text match to find the original item. A more robust solution might use IDs.
-          const originalPlanItem = contentPlan.find(p => p.postSuggestion === item.postSuggestion);
-          if (!originalPlanItem) return null;
+      
+      const formatDateTimeForInputValue = (date: Date) => {
+        const pad = (num: number) => num.toString().padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      };
 
-          return {
-            id: `scheduled_strat_${Date.now()}_${Math.random()}`,
-            text: item.postSuggestion,
-            scheduledAt: new Date(item.scheduledAt),
-            isReminder: false,
-            targetId: managedTarget.id,
-            targetInfo: {
-              name: managedTarget.name,
-              avatarUrl: managedTarget.picture.data.url,
-              type: managedTarget.type,
-            }
-          };
-        })
-        .filter((p): p is ScheduledPost => p !== null);
+      const defaultTargetIds = [managedTarget.id];
+      if (linkedInstagramTarget) {
+          defaultTargetIds.push(linkedInstagramTarget.id);
+      }
+      
+      const newBulkPosts: BulkPostItem[] = schedule.map(item => ({
+        id: `bulk_strat_${Date.now()}_${Math.random()}`,
+        text: item.postSuggestion,
+        scheduleDate: formatDateTimeForInputValue(new Date(item.scheduledAt)),
+        targetIds: defaultTargetIds,
+      }));
 
-      setScheduledPosts(prev => [...prev, ...newScheduledPosts]);
+      setBulkPosts(prev => [...prev, ...newBulkPosts]);
       setContentPlan(null); // Clear the plan after scheduling
-      showNotification('success', `تمت جدولة ${newScheduledPosts.length} منشورًا بنجاح!`);
-      setView('calendar');
+      showNotification('success', `تم تحويل الاستراتيجية إلى ${newBulkPosts.length} منشورًا في الجدولة المجمعة.`);
+      setView('bulk');
     } catch (e: any) {
       setPlanError(e.message || "فشل جدولة الاستراتيجية.");
     } finally {
@@ -596,7 +593,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const handleGenerateBulkDescription = async (id: string) => {
     if(!aiClient) return;
     const post = bulkPosts.find(p => p.id === id);
-    if (!post) return;
+    if (!post || !post.imageFile) return;
     
     handleUpdateBulkPost(id, { isGeneratingDescription: true });
     try {
@@ -641,7 +638,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             
             for (const target of postTargets) {
                 const isIgReminder = target.type === 'instagram';
-                await publishToTarget(target, post.text, post.imageFile, scheduleAt, isIgReminder);
+                await publishToTarget(target, post.text, post.imageFile || null, scheduleAt, isIgReminder);
             }
             successCount++;
             return { ...post, error: undefined }; // Mark as successful
@@ -791,6 +788,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 onScheduleStrategy={handleScheduleStrategy}
                 isSchedulingStrategy={isSchedulingStrategy}
                 onStartPost={handleStartPostFromPlan}
+                pageProfile={pageProfile}
                 onProfileChange={setPageProfile}
             />;
         case 'drafts':

@@ -89,8 +89,8 @@ export interface WeeklyScheduleSettings {
 
 export interface BulkPostItem {
   id:string;
-  imageFile: File;
-  imagePreview: string;
+  imageFile?: File;
+  imagePreview?: string;
   text: string;
   scheduleDate: string; // ISO string format
   targetIds: string[]; // List of target IDs to post to

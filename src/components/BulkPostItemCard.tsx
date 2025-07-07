@@ -1,9 +1,9 @@
-
 import React from 'react';
 import { BulkPostItem, Target } from '../types';
 import Button from './ui/Button';
 import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
+import PhotoIcon from './icons/PhotoIcon';
 import { GoogleGenAI } from '@google/genai';
 
 interface BulkPostItemCardProps {
@@ -33,7 +33,16 @@ const BulkPostItemCard: React.FC<BulkPostItemCardProps> = ({
     <div className={`p-5 bg-white dark:bg-gray-800 rounded-lg shadow-lg border-l-4 ${item.error ? 'border-red-500' : 'border-transparent'}`}>
       <div className="flex flex-col md:flex-row gap-6">
         <div className="md:w-1/4 flex-shrink-0">
-          <img src={item.imagePreview} alt="Post preview" className="rounded-lg w-full h-auto object-cover aspect-square" />
+          {item.imagePreview ? (
+            <img src={item.imagePreview} alt="Post preview" className="rounded-lg w-full h-auto object-cover aspect-square" />
+          ) : (
+            <div className="aspect-square bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center border border-dashed dark:border-gray-600">
+                <div className="text-center text-gray-400 dark:text-gray-500">
+                    <PhotoIcon className="w-12 h-12 mx-auto"/>
+                    <p className="text-sm mt-2">لا توجد صورة</p>
+                </div>
+            </div>
+          )}
         </div>
         <div className="flex-grow space-y-4">
           <div>
@@ -53,7 +62,8 @@ const BulkPostItemCard: React.FC<BulkPostItemCardProps> = ({
                 className="mt-1"
                 onClick={() => onGenerateDescription(item.id)}
                 isLoading={item.isGeneratingDescription}
-                disabled={!aiClient || item.isGeneratingDescription}
+                disabled={!aiClient || item.isGeneratingDescription || !item.imageFile}
+                title={!item.imageFile ? "يجب وجود صورة لتوليد وصف" : ""}
             >
                 <SparklesIcon className="w-4 h-4 ml-2" />
                 {item.isGeneratingDescription ? 'جاري التفكير...' : '✨ ولّد وصفاً'}
