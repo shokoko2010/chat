@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import DashboardPage from './components/DashboardPage';
 import HomePage from './components/HomePage';
@@ -98,7 +99,7 @@ const App: React.FC = () => {
           console.error('User cancelled login or did not fully authorize.');
           setAuthStatus('not_authorized');
         }
-      }, { scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management' });
+      }, { scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights' });
     } catch (error) {
       console.error("An error occurred during FB.login:", error);
       setAuthStatus('not_authorized');
