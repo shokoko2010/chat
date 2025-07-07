@@ -22,40 +22,34 @@ interface PageSelectorPageProps {
   onSettingsClick: () => void;
 }
 
-const TargetCard: React.FC<{ target: Target, onSelect: () => void }> = ({ target, onSelect }) => {
-  const isPage = target.type === 'page' || target.type === 'group';
-  const Icon = isPage ? FacebookIcon : InstagramIcon;
-  const color = isPage ? 'text-blue-500' : '';
-  const typeText = () => {
-    switch (target.type) {
-        case 'page': return 'صفحة فيسبوك';
-        case 'group': return 'مجموعة فيسبوك';
-        case 'instagram': return 'حساب انستجرام';
-    }
-  }
+const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void }> = ({ target, linkedInstagram, onSelect }) => {
+    const typeText = target.type === 'page' ? 'صفحة فيسبوك' : 'مجموعة فيسبوك';
 
-  return (
-    <button
-      onClick={onSelect}
-      className="w-full text-right bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col"
-    >
-      <div className="p-5 flex-grow">
-        <div className="flex items-center gap-4">
-          <img src={target.picture.data.url} alt={target.name} className="w-16 h-16 rounded-lg object-cover" />
-          <div className="flex-grow">
-            <p className="font-bold text-lg text-gray-900 dark:text-white line-clamp-2">{target.name}</p>
-          </div>
-        </div>
-      </div>
-      <div className="p-3 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-100 dark:border-gray-700/50 rounded-b-lg">
-        <span className={`text-sm font-semibold flex items-center gap-2 ${color}`}>
-            <Icon className="w-5 h-5" />
-            {typeText()}
-        </span>
-      </div>
-    </button>
-  );
+    return (
+        <button
+            onClick={onSelect}
+            className="w-full text-right bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col h-full"
+        >
+            <div className="p-5 flex-grow">
+                <div className="flex items-center gap-4">
+                    <img src={target.picture.data.url} alt={target.name} className="w-16 h-16 rounded-lg object-cover" />
+                    <div className="flex-grow">
+                        <p className="font-bold text-lg text-gray-900 dark:text-white line-clamp-2">{target.name}</p>
+                    </div>
+                </div>
+            </div>
+            <div className="p-3 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-100 dark:border-gray-700/50 rounded-b-lg flex items-center gap-2">
+                <FacebookIcon className="w-5 h-5 text-blue-600" />
+                {linkedInstagram && <InstagramIcon className="w-5 h-5" />}
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    {typeText}
+                    {linkedInstagram && ' + انستجرام'}
+                </span>
+            </div>
+        </button>
+    );
 };
+
 
 const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
   targets,
@@ -69,8 +63,6 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
   onLogout,
   onSettingsClick,
 }) => {
-  const pages = targets.filter(t => t.type === 'page' || t.type === 'group');
-  const instagramAccounts = targets.filter(t => t.type === 'instagram');
 
   const renderContent = () => {
     if (isLoading && targets.length === 0) {
@@ -96,23 +88,29 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
         </div>
       );
     }
+    
+    const instagramAccountsByParentId = new Map<string, Target>();
+    targets.filter(t => t.type === 'instagram' && t.parentPageId).forEach(ig => {
+      instagramAccountsByParentId.set(ig.parentPageId!, ig);
+    });
 
-    const renderTargetSection = (title: string, targets: Target[]) => {
-        if (targets.length === 0) return null;
-        return (
-            <>
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">{title}</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {targets.map(target => <TargetCard key={target.id} target={target} onSelect={() => onSelectTarget(target)} />)}
-                </div>
-            </>
-        )
-    }
+    const primaryTargets = targets.filter(t => t.type === 'page' || t.type === 'group');
 
     return (
         <div className="space-y-8">
-            {renderTargetSection('صفحات ومجموعات فيسبوك', pages)}
-            {renderTargetSection('حسابات انستجرام', instagramAccounts)}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {primaryTargets.map(target => {
+                    const linkedInstagram = target.type === 'page' ? instagramAccountsByParentId.get(target.id) : null;
+                    return (
+                        <TargetCard
+                            key={target.id}
+                            target={target}
+                            linkedInstagram={linkedInstagram || null}
+                            onSelect={() => onSelectTarget(target)}
+                        />
+                    );
+                })}
+            </div>
         </div>
     );
   };
@@ -139,7 +137,7 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
                 {isLoading && <p className="text-gray-500">جاري تحديث القائمة...</p>}
               </div>
               
-              {businesses && onLoadPagesFromBusiness && loadingBusinessId !== undefined && loadedBusinessIds && (
+              {businesses && businesses.length > 0 && onLoadPagesFromBusiness && loadingBusinessId !== undefined && loadedBusinessIds && (
                 <div className="mb-8">
                     <BusinessPortfolioManager 
                         businesses={businesses}
