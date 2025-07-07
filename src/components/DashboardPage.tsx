@@ -11,7 +11,6 @@ import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import { GoogleGenAI } from '@google/genai';
 import { generateDescriptionForImage, generateContentPlan, generatePostInsights } from '../services/geminiService';
-import PageProfilePage from './PageProfilePage';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
@@ -20,7 +19,7 @@ import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
 import ChartBarIcon from './icons/ChartBarIcon';
 import QueueListIcon from './icons/QueueListIcon';
 import BrainCircuitIcon from './icons/BrainCircuitIcon';
-import UserCircleIcon from './icons/UserCircleIcon';
+
 
 interface DashboardPageProps {
   managedTarget: Target;
@@ -33,7 +32,7 @@ interface DashboardPageProps {
 }
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick }) => {
-  const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'profile'>('composer');
+  const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner'>('composer');
   
   // Composer state
   const [postText, setPostText] = useState('');
@@ -676,6 +675,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 plan={contentPlan}
                 onGeneratePlan={handleGeneratePlan} 
                 onStartPost={handleStartPostFromPlan}
+                pageProfile={pageProfile}
+                onProfileChange={setPageProfile}
             />;
         case 'drafts':
             return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;
@@ -684,8 +685,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         case 'analytics':
              return <PublishedPostsList posts={publishedPosts} isLoading={publishedPostsLoading}
                 onFetchAnalytics={handleFetchPostAnalytics} onGenerateInsights={handleGeneratePostInsights} />;
-        case 'profile':
-             return <PageProfilePage profile={pageProfile} onProfileChange={setPageProfile} />;
         default: return null;
     }
   }
@@ -715,9 +714,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 </button>
                 <button onClick={() => setView('planner')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'planner' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <BrainCircuitIcon className="w-5 h-5" /> استراتيجيات المحتوى
-                </button>
-                 <button onClick={() => setView('profile')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'profile' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
-                    <UserCircleIcon className="w-5 h-5" /> ملف الصفحة
                 </button>
                 <button onClick={() => setView('drafts')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'drafts' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <ArchiveBoxIcon className="w-5 h-5" /> المسودات ({drafts.length})

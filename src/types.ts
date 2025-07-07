@@ -123,6 +123,11 @@ export interface CampaignRequest extends BaseStrategyRequest {
   campaignObjective: string;
 }
 
+export interface OccasionCampaignRequest extends BaseStrategyRequest {
+    type: 'occasion';
+    occasion: string; // e.g., "اليوم الوطني", "رمضان"
+}
+
 export interface PillarContentRequest extends BaseStrategyRequest {
   type: 'pillar';
   pillarTopic: string;
@@ -134,7 +139,7 @@ export interface ImageBasedRequest extends BaseStrategyRequest {
 }
 
 // The main type for the form
-export type StrategyRequest = StandardContentRequest | CampaignRequest | PillarContentRequest | ImageBasedRequest;
+export type StrategyRequest = StandardContentRequest | CampaignRequest | PillarContentRequest | ImageBasedRequest | OccasionCampaignRequest;
 
 
 export interface ContentPlanItem {
