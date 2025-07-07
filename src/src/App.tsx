@@ -1,9 +1,9 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
-import DashboardPage from './src/components/DashboardPage';
-import HomePage from './src/components/HomePage';
+import DashboardPage from './components/DashboardPage';
+import HomePage from './components/HomePage';
 import { GoogleGenAI } from '@google/genai';
-import { initializeGoogleGenAI } from './src/services/geminiService';
+import { initializeGoogleGenAI } from './services/geminiService';
 
 
 const isSimulation = window.location.protocol === 'http:';
@@ -98,7 +98,7 @@ const App: React.FC = () => {
           console.error('User cancelled login or did not fully authorize.');
           setAuthStatus('not_authorized');
         }
-      }, { scope: 'pages_show_list,pages_read_engagement,pages_manage_posts' });
+      }, { scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management' });
     } catch (error) {
       console.error("An error occurred during FB.login:", error);
       setAuthStatus('not_authorized');
