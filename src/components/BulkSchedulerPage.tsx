@@ -1,8 +1,8 @@
-
-import React from 'react';
-import { BulkPostItem, Target } from '../types';
+import React, { useState, useCallback } from 'react';
+import { BulkPostItem, Target, WeeklyScheduleSettings } from '../types';
 import Button from './ui/Button';
 import BulkPostItemCard from './BulkPostItemCard';
+import BulkSchedulingOptions from './BulkSchedulingOptions';
 import { GoogleGenAI } from '@google/genai';
 
 interface BulkSchedulerPageProps {
@@ -15,6 +15,11 @@ interface BulkSchedulerPageProps {
   targets: Target[];
   aiClient: GoogleGenAI | null;
   onGenerateDescription: (id: string) => void;
+  schedulingStrategy: 'even' | 'weekly';
+  onSchedulingStrategyChange: (strategy: 'even' | 'weekly') => void;
+  weeklyScheduleSettings: WeeklyScheduleSettings;
+  onWeeklyScheduleSettingsChange: (settings: WeeklyScheduleSettings) => void;
+  onReschedule: () => void;
 }
 
 const BulkSchedulerPage: React.FC<BulkSchedulerPageProps> = ({
@@ -26,8 +31,14 @@ const BulkSchedulerPage: React.FC<BulkSchedulerPageProps> = ({
   isSchedulingAll,
   targets,
   aiClient,
-  onGenerateDescription
+  onGenerateDescription,
+  schedulingStrategy,
+  onSchedulingStrategyChange,
+  weeklyScheduleSettings,
+  onWeeklyScheduleSettingsChange,
+  onReschedule
 }) => {
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -36,61 +47,93 @@ const BulkSchedulerPage: React.FC<BulkSchedulerPageProps> = ({
     }
   };
 
+  const handleDragEvents = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    handleDragEvents(e);
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    handleDragEvents(e);
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    handleDragEvents(e);
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      onAddPosts(e.dataTransfer.files);
+    }
+  };
+
   return (
     <div className="space-y-8 fade-in">
-      <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
+      <div 
+        className={`p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg border-2 border-dashed ${isDragging ? 'border-blue-500 bg-blue-50 dark:bg-gray-700/50' : 'border-gray-300 dark:border-gray-600'} transition-all duration-300`}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragEvents}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">الجدولة المجمعة للمنشورات</h2>
         <p className="text-gray-600 dark:text-gray-400 mb-6">
-          ارفع صورًا متعددة، وقم بتخصيص كل منشور، ثم قم بجدولتها جميعًا دفعة واحدة لتوفير الوقت والجهد.
+          اسحب وأفلت صورًا متعددة هنا، أو اخترها يدويًا. سيقوم النظام بجدولتها بذكاء على مدار الشهر القادم.
         </p>
-        <div className="flex items-center gap-4">
-            <input
-                type="file"
-                id="bulkImageUpload"
-                className="hidden"
-                accept="image/*"
-                multiple
-                onChange={handleFileChange}
-            />
-            <Button
-                size="lg"
-                onClick={() => document.getElementById('bulkImageUpload')?.click()}
-            >
-                اختر صورًا للجدولة
-            </Button>
-            {bulkPosts.length > 0 && (
-                 <Button
-                    size="lg"
-                    variant="primary"
-                    onClick={onScheduleAll}
-                    isLoading={isSchedulingAll}
-                >
-                    {isSchedulingAll ? 'جاري الجدولة...' : `جدولة كل المنشورات (${bulkPosts.length})`}
-                </Button>
-            )}
-        </div>
+        <input
+          type="file"
+          id="bulkImageUpload"
+          className="hidden"
+          accept="image/*"
+          multiple
+          onChange={handleFileChange}
+        />
+        <Button
+          size="lg"
+          onClick={() => document.getElementById('bulkImageUpload')?.click()}
+        >
+          اختر صورًا للجدولة
+        </Button>
       </div>
 
-      {bulkPosts.length === 0 && (
-         <div className="text-center text-gray-500 dark:text-gray-400 p-12 border-2 border-dashed rounded-lg">
-            <h3 className="font-semibold text-2xl text-gray-700 dark:text-gray-300 mb-2">ابدأ بإضافة الصور</h3>
-            <p className="text-lg">سيتم عرض الصور التي تختارها هنا كقائمة من المنشورات الجاهزة للجدولة.</p>
-        </div>
-      )}
-      
       {bulkPosts.length > 0 && (
-        <div className="space-y-6">
-          {bulkPosts.map(post => (
-            <BulkPostItemCard
-              key={post.id}
-              item={post}
-              onUpdate={onUpdatePost}
-              onRemove={onRemovePost}
-              targets={targets}
-              aiClient={aiClient}
-              onGenerateDescription={onGenerateDescription}
-            />
-          ))}
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+          <div className="xl:col-span-3 space-y-6">
+            {bulkPosts.map(post => (
+              <BulkPostItemCard
+                key={post.id}
+                item={post}
+                onUpdate={onUpdatePost}
+                onRemove={onRemovePost}
+                targets={targets}
+                aiClient={aiClient}
+                onGenerateDescription={onGenerateDescription}
+              />
+            ))}
+          </div>
+          <div className="xl:col-span-1">
+            <div className="sticky top-24 space-y-6">
+              <BulkSchedulingOptions
+                strategy={schedulingStrategy}
+                onStrategyChange={onSchedulingStrategyChange}
+                settings={weeklyScheduleSettings}
+                onSettingsChange={onWeeklyScheduleSettingsChange}
+                onReschedule={onReschedule}
+              />
+              <Button
+                size="lg"
+                variant="primary"
+                onClick={onScheduleAll}
+                isLoading={isSchedulingAll}
+                className="w-full"
+              >
+                {isSchedulingAll ? 'جاري الجدولة...' : `جدولة كل المنشورات (${bulkPosts.length})`}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -73,6 +73,11 @@ export interface PublishedPost {
   analytics: PostAnalytics;
 }
 
+export interface WeeklyScheduleSettings {
+  days: number[]; // 0 for Sunday, 1 for Monday, etc.
+  time: string; // "HH:MM" format
+}
+
 export interface BulkPostItem {
   id:string;
   imageFile: File;

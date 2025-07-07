@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, ContentPlanRequest } from '../types';
+import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, ContentPlanRequest, WeeklyScheduleSettings } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import PostPreview from './PostPreview';
@@ -56,6 +56,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   // Bulk Scheduler State
   const [bulkPosts, setBulkPosts] = useState<BulkPostItem[]>([]);
   const [isSchedulingAll, setIsSchedulingAll] = useState(false);
+  const [schedulingStrategy, setSchedulingStrategy] = useState<'even' | 'weekly'>('even');
+  const [weeklyScheduleSettings, setWeeklyScheduleSettings] = useState<WeeklyScheduleSettings>({
+    days: [1, 3, 5], // Mon, Wed, Fri
+    time: '19:00',
+  });
 
   // Content Planner State
   const [contentPlan, setContentPlan] = useState<ContentPlanItem[] | null>(null);
@@ -75,6 +80,83 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setIsScheduled(false);
     setIncludeInstagram(!!linkedInstagramTarget);
   }, [linkedInstagramTarget]);
+
+  const rescheduleBulkPosts = useCallback((postsToReschedule: BulkPostItem[], strategy: 'even' | 'weekly', weeklySettings: WeeklyScheduleSettings) => {
+    if (postsToReschedule.length === 0) return [];
+    
+    const existingTimestamps = [
+        ...scheduledPosts.map(p => new Date(p.scheduledAt).getTime()),
+        ...bulkPosts.filter(p => !postsToReschedule.some(pr => pr.id === p.id)).map(p => new Date(p.scheduleDate).getTime())
+    ].filter(time => !isNaN(time));
+
+    const lastScheduledTime = existingTimestamps.length > 0 ? Math.max(...existingTimestamps) : Date.now();
+
+    const formatDateTimeForInputValue = (date: Date) => {
+        const pad = (num: number) => num.toString().padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
+
+    if (strategy === 'even') {
+        const firstScheduleDate = new Date(lastScheduledTime);
+        firstScheduleDate.setDate(firstScheduleDate.getDate() + 1);
+        firstScheduleDate.setHours(10, 0, 0, 0);
+
+        const schedulingPeriodMs = 28 * 24 * 60 * 60 * 1000;
+        const intervalMs = postsToReschedule.length > 1 ? (schedulingPeriodMs / (postsToReschedule.length - 1)) : 0;
+
+        return postsToReschedule.map((post, index) => {
+            const scheduleTime = firstScheduleDate.getTime() + (index * intervalMs);
+            return {
+                ...post,
+                scheduleDate: formatDateTimeForInputValue(new Date(scheduleTime))
+            };
+        });
+    } else { // weekly strategy
+        const sortedDays = weeklySettings.days.sort((a,b) => a-b);
+        if (sortedDays.length === 0) return postsToReschedule; // Can't schedule if no days are selected
+
+        let lastDate = new Date(lastScheduledTime);
+        
+        return postsToReschedule.map(post => {
+            let nextScheduleDate = new Date(lastDate);
+            nextScheduleDate.setHours(parseInt(weeklySettings.time.split(':')[0]), parseInt(weeklySettings.time.split(':')[1]), 0, 0);
+
+            // Find the next available day
+            while(true) {
+                const currentDay = nextScheduleDate.getDay();
+                const nextDayInCycle = sortedDays.find(d => d >= currentDay);
+
+                if (nextDayInCycle !== undefined) {
+                    nextScheduleDate.setDate(nextScheduleDate.getDate() + (nextDayInCycle - currentDay));
+                } else {
+                    // a week later, on the first available day
+                    nextScheduleDate.setDate(nextScheduleDate.getDate() + (7 - currentDay + sortedDays[0]));
+                }
+                
+                // If the new date is in the past or too soon, try again from the next day
+                if (nextScheduleDate <= lastDate || nextScheduleDate <= new Date()) {
+                   nextScheduleDate.setDate(nextScheduleDate.getDate() + 1);
+                   continue;
+                }
+                
+                lastDate = new Date(nextScheduleDate); // Found a valid slot
+                break;
+            }
+            
+            return {
+                ...post,
+                scheduleDate: formatDateTimeForInputValue(nextScheduleDate)
+            };
+        });
+    }
+}, [scheduledPosts, bulkPosts]);
+
+  const handleReschedule = useCallback(() => {
+    if (bulkPosts.length === 0) return;
+    const rescheduled = rescheduleBulkPosts(bulkPosts, schedulingStrategy, weeklyScheduleSettings);
+    setBulkPosts(rescheduled);
+  }, [bulkPosts, schedulingStrategy, weeklyScheduleSettings, rescheduleBulkPosts]);
+
   
   // Load data from localStorage when managedTarget changes
   useEffect(() => {
@@ -83,7 +165,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     try {
         const rawData = localStorage.getItem(dataKey);
         if (rawData) {
-            savedData = JSON.parse(rawData);
+            const parsedData = JSON.parse(rawData);
+            // Re-instantiate file objects is not possible, so we handle it gracefully.
+            savedData = {
+              ...parsedData,
+              drafts: parsedData.drafts?.map((d: any) => ({...d, imageFile: null})) || [],
+              scheduledPosts: parsedData.scheduledPosts?.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt), imageFile: null })) || [],
+            }
         } else {
             savedData = {};
         }
@@ -94,7 +182,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
 
     setDrafts(savedData.drafts || []);
-    setScheduledPosts(savedData.scheduledPosts ? savedData.scheduledPosts.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt)})) : []);
+    setScheduledPosts(savedData.scheduledPosts || []);
     setContentPlan(savedData.contentPlan || null);
     
     // We clear bulk posts on page change to avoid complexity with non-serializable File objects.
@@ -113,7 +201,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       setPublishedPosts([{
         id: 'mock_post_1', pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url,
         text: 'هذا منشور تجريبي تم جلبه لهذه الصفحة.', imagePreview: 'https://via.placeholder.com/400x300/CCCCCC/FFFFFF?text=Published',
-        publishedAt: new Date(Date.now() - 24 * 60 * 60 * 1000), analytics: { likes: 12, comments: 3, shares: 1, loading: false, lastUpdated: new Date() }
+        publishedAt: new Date(Date.now() - 24 * 60 * 60 * 1000), analytics: { likes: 12, comments: 3, shares: 1, loading: false, lastUpdated: new Date(), isGeneratingInsights: false, }
       }]);
       return;
     }
@@ -127,7 +215,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
             analytics: {
               likes: post.likes?.summary?.total_count ?? 0, comments: post.comments?.summary?.total_count ?? 0, shares: post.shares?.count ?? 0,
-              loading: false, lastUpdated: new Date()
+              loading: false, lastUpdated: new Date(), isGeneratingInsights: false
             }
           }));
           setPublishedPosts(fetchedPosts);
@@ -150,13 +238,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             drafts: drafts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imagePreview: imageFile ? rest.imagePreview : null })), 
             scheduledPosts: scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imageUrl: imageFile ? rest.imageUrl : null })),
             contentPlan, 
-            bulkPosts: bulkPosts.map(({imageFile, ...rest}) => ({...rest, imageFile: null, imagePreview: imageFile ? rest.imagePreview : null}))
         };
         localStorage.setItem(dataKey, JSON.stringify(dataToStore));
     } catch(e) {
         console.error("Could not save data to localStorage:", e);
     }
-  }, [drafts, scheduledPosts, contentPlan, bulkPosts, managedTarget.id]);
+  }, [drafts, scheduledPosts, contentPlan, managedTarget.id]);
 
 
   const showNotification = (type: 'success' | 'error' | 'partial', message: string) => {
@@ -362,51 +449,26 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
   // --- Start Bulk Logic ---
   const handleAddBulkPosts = (files: FileList) => {
-    if (!files || files.length === 0) {
-      return;
-    }
+    if (!files || files.length === 0) return;
 
-    const existingTimestamps = [
-      ...scheduledPosts.map(p => new Date(p.scheduledAt).getTime()),
-      ...bulkPosts.map(p => new Date(p.scheduleDate).getTime())
-    ].filter(time => !isNaN(time));
-
-    const lastScheduledTime = existingTimestamps.length > 0 ? Math.max(...existingTimestamps) : Date.now();
-
-    const firstScheduleDate = new Date(lastScheduledTime);
-    firstScheduleDate.setDate(firstScheduleDate.getDate() + 1);
-    firstScheduleDate.setHours(10, 0, 0, 0);
-
-    const totalPostsToAdd = files.length;
-    const schedulingPeriodMs = 28 * 24 * 60 * 60 * 1000;
-    const intervalMs = totalPostsToAdd > 1 ? (schedulingPeriodMs / (totalPostsToAdd - 1)) : 0;
-
-    const newPosts: BulkPostItem[] = Array.from(files).map((file, index) => {
-      const scheduleTime = firstScheduleDate.getTime() + (index * intervalMs);
-      const scheduledDateForPost = new Date(scheduleTime);
-      
-      const formatDateTimeForInputValue = (date: Date) => {
-          const pad = (num: number) => num.toString().padStart(2, '0');
-          return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-      };
-
-      const defaultTargetIds = [managedTarget.id];
-      if (linkedInstagramTarget) {
-          defaultTargetIds.push(linkedInstagramTarget.id);
-      }
-
-      return {
-        id: `bulk_${Date.now()}_${Math.random()}_${index}`,
-        imageFile: file,
-        imagePreview: URL.createObjectURL(file),
-        text: '',
-        scheduleDate: formatDateTimeForInputValue(scheduledDateForPost),
-        targetIds: defaultTargetIds,
-      };
+    const newPostsRaw: BulkPostItem[] = Array.from(files).map((file, index) => {
+        const defaultTargetIds = [managedTarget.id];
+        if (linkedInstagramTarget) {
+            defaultTargetIds.push(linkedInstagramTarget.id);
+        }
+        return {
+            id: `bulk_${Date.now()}_${Math.random()}_${index}`,
+            imageFile: file,
+            imagePreview: URL.createObjectURL(file),
+            text: '',
+            scheduleDate: '', // Will be set by rescheduling
+            targetIds: defaultTargetIds,
+        };
     });
 
-    setBulkPosts(prev => [...prev, ...newPosts]);
-  };
+    const rescheduledPosts = rescheduleBulkPosts(newPostsRaw, schedulingStrategy, weeklyScheduleSettings);
+    setBulkPosts(prev => [...prev, ...rescheduledPosts]);
+};
 
   const handleUpdateBulkPost = (id: string, updates: Partial<BulkPostItem>) => {
       setBulkPosts(prev => prev.map(p => (p.id === id ? { ...p, ...updates } : p)));
@@ -522,7 +584,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         showNotification('error', e.message);
       } finally {
         updatedPosts = [...publishedPosts];
-        updatedPosts[postIndex].analytics.isGeneratingInsights = false;
+        if(updatedPosts[postIndex]) {
+            updatedPosts[postIndex].analytics.isGeneratingInsights = false;
+        }
         setPublishedPosts(updatedPosts);
       }
    };
@@ -550,14 +614,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="space-y-6 sticky top-24 self-start">
                         <h3 className="text-xl font-bold text-gray-800 dark:text-white">معاينة مباشرة</h3>
-                        <div className={`grid gap-6 ${includeInstagram ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'}`}>
-                          <div className={includeInstagram ? "xl:col-span-2 flex justify-center" : ""}>
-                            <PostPreview type="facebook" postText={postText} imagePreview={imagePreview} pageName={managedTarget.name} pageAvatar={managedTarget.picture.data.url} />
-                          </div>
+                        <div className={`grid gap-6 ${includeInstagram ? 'grid-cols-1' : 'grid-cols-1 justify-items-center'}`}>
+                           <PostPreview type="facebook" postText={postText} imagePreview={imagePreview} pageName={managedTarget.name} pageAvatar={managedTarget.picture.data.url} />
                           {includeInstagram && (
-                            <div className="xl:col-span-2 flex justify-center">
                               <PostPreview type="instagram" postText={postText} imagePreview={imagePreview} pageName={linkedInstagramTarget?.name.split('(')[0].trim() || managedTarget.name} pageAvatar={linkedInstagramTarget?.picture.data.url || managedTarget.picture.data.url} />
-                            </div>
                           )}
                         </div>
                     </div>
@@ -572,8 +632,22 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 </div>
             );
         case 'bulk':
-            return <BulkSchedulerPage bulkPosts={bulkPosts} onAddPosts={handleAddBulkPosts} onUpdatePost={handleUpdateBulkPost} onRemovePost={handleRemoveBulkPost} onScheduleAll={handleScheduleAllBulk}
-                isSchedulingAll={isSchedulingAll} targets={availableBulkTargets} aiClient={aiClient} onGenerateDescription={handleGenerateBulkDescription} />;
+            return <BulkSchedulerPage 
+                bulkPosts={bulkPosts} 
+                onAddPosts={handleAddBulkPosts} 
+                onUpdatePost={handleUpdateBulkPost} 
+                onRemovePost={handleRemoveBulkPost} 
+                onScheduleAll={handleScheduleAllBulk}
+                isSchedulingAll={isSchedulingAll} 
+                targets={availableBulkTargets} 
+                aiClient={aiClient} 
+                onGenerateDescription={handleGenerateBulkDescription}
+                schedulingStrategy={schedulingStrategy}
+                onSchedulingStrategyChange={setSchedulingStrategy}
+                weeklyScheduleSettings={weeklyScheduleSettings}
+                onWeeklyScheduleSettingsChange={setWeeklyScheduleSettings}
+                onReschedule={handleReschedule}
+            />;
         case 'planner':
             return <ContentPlannerPage aiClient={aiClient} isGenerating={isGeneratingPlan} error={planError} plan={contentPlan}
                 onGeneratePlan={handleGeneratePlan} onStartPost={handleStartPostFromPlan} targets={[managedTarget]} />;
