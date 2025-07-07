@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import PageSelectorPage from './src/components/PageSelectorPage';
 import DashboardPage from './src/components/DashboardPage';
@@ -244,8 +245,6 @@ const App: React.FC = () => {
             onLogout={handleLogout}
             isSimulationMode={isSimulationMode}
             aiClient={aiClient}
-            currentApiKey={apiKey}
-            onSaveApiKey={handleSaveApiKey}
             onSettingsClick={() => setIsSettingsOpen(true)}
           />
         );
@@ -268,7 +267,7 @@ const App: React.FC = () => {
       <SettingsModal 
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        onSave={onSaveApiKey}
+        onSave={handleSaveApiKey}
         currentApiKey={apiKey}
       />
     </div>

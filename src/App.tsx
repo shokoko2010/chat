@@ -1,11 +1,12 @@
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
 import HomePage from './components/HomePage';
 import { GoogleGenAI } from '@google/genai';
 import { initializeGoogleGenAI } from './services/geminiService';
 import { Target } from './types';
+import SettingsModal from './components/SettingsModal';
 
 const isSimulation = window.location.protocol === 'http:';
 
@@ -27,6 +28,8 @@ const App: React.FC = () => {
   const [targetsLoading, setTargetsLoading] = useState(true);
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
 
   useEffect(() => {
     setAiClient(initializeGoogleGenAI(apiKey ?? ''));
@@ -35,6 +38,7 @@ const App: React.FC = () => {
   const handleSaveApiKey = (newKey: string) => {
     localStorage.setItem('geminiApiKey', newKey);
     setApiKey(newKey);
+    setIsSettingsOpen(false);
   };
 
   const isSimulationMode = isSimulation;
@@ -206,7 +210,7 @@ const App: React.FC = () => {
         if (response.authResponse) setAuthStatus('connected');
         else setAuthStatus('not_authorized');
       }, { 
-        scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights',
+        scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,groups_show_list',
         auth_type: 'rerequest'
       });
   }, [isSimulationMode]);
@@ -241,8 +245,7 @@ const App: React.FC = () => {
             onLogout={handleLogout}
             isSimulationMode={isSimulationMode}
             aiClient={aiClient}
-            currentApiKey={apiKey}
-            onSaveApiKey={handleSaveApiKey}
+            onSettingsClick={() => setIsSettingsOpen(true)}
           />
         );
       }
@@ -253,6 +256,7 @@ const App: React.FC = () => {
           error={targetsError}
           onSelectTarget={handleSelectTarget}
           onLogout={handleLogout}
+          onSettingsClick={() => setIsSettingsOpen(true)}
         />
       );
   };
@@ -260,6 +264,12 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       {renderContent()}
+      <SettingsModal 
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={handleSaveApiKey}
+        currentApiKey={apiKey}
+      />
     </div>
   );
 };

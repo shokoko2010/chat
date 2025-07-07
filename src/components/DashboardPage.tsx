@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Target, PublishedPost } from '../types';
 import Header from './Header';
@@ -19,12 +20,10 @@ interface DashboardPageProps {
   onLogout: () => void;
   isSimulationMode: boolean;
   aiClient: GoogleGenAI | null;
-  currentApiKey: string | null;
-  onSaveApiKey: (key: string) => void;
   onSettingsClick: () => void;
 }
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, currentApiKey, onSaveApiKey, onSettingsClick }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner'>('composer');
   
   // Composer state
