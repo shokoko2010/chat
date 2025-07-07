@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, ContentPlanRequest } from '../types';
 import Header from './Header';
@@ -12,7 +11,7 @@ import BulkSchedulerPage from './BulkSchedulerPage';
 import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, analyzePageForContentPlan, generateContentPlan, generatePostInsights } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePostInsights } from '../services/geminiService';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
