@@ -1,7 +1,7 @@
 
 
 import React, { useState, useCallback } from 'react';
-import { ContentPlanItem, ContentPlanRequest, PageProfile } from '../types';
+import { ContentPlanItem, ContentPlanRequest } from '../types';
 import Button from './ui/Button';
 import ContentPlanCard from './ContentPlanCard';
 import { GoogleGenAI } from '@google/genai';
