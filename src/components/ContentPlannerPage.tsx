@@ -12,6 +12,8 @@ import CalendarCheckIcon from './icons/CalendarCheckIcon';
 interface ContentPlannerPageProps {
   aiClient: GoogleGenAI | null;
   isGenerating: boolean;
+  isAnalyzing: boolean;
+  onAnalyze: () => void;
   error: string | null;
   plan: ContentPlanItem[] | null;
   onGeneratePlan: (request: StrategyRequest, images?: File[]) => void;
@@ -40,6 +42,8 @@ const StepIndicator: React.FC<{step: number, title: string, active: boolean}> = 
 const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({ 
   aiClient,
   isGenerating,
+  isAnalyzing,
+  onAnalyze,
   error,
   plan,
   onGeneratePlan,
@@ -143,8 +147,21 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
       case 1: // Page Profile
         return (
           <div className="space-y-6 fade-in">
-              <h3 className="text-xl font-bold text-gray-800 dark:text-white">تحديث ملف الصفحة</h3>
-              <p className="text-gray-600 dark:text-gray-400">هذه البيانات هي "دماغ" الذكاء الاصطناعي. كلما كانت أكثر دقة، كانت الاستراتيجيات أفضل. يتم حفظها تلقائيًا.</p>
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-800 dark:text-white">تحديث ملف الصفحة</h3>
+                  <p className="text-gray-600 dark:text-gray-400">هذه البيانات هي "دماغ" الذكاء الاصطناعي. كلما كانت أكثر دقة، كانت الاستراتيجيات أفضل.</p>
+                </div>
+                <Button 
+                    onClick={onAnalyze} 
+                    isLoading={isAnalyzing} 
+                    disabled={!aiClient || isAnalyzing}
+                    variant="secondary"
+                >
+                  🤖 تحليل الصفحة بالذكاء الاصطناعي
+                </Button>
+              </div>
+              
               <div><label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">وصف العمل / من نحن؟</label><textarea id="description" name="description" value={pageProfile.description} onChange={handleProfileChange} rows={3} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" placeholder="صف بإيجاز ما تقدمه شركتك." /></div>
               <div><label htmlFor="services" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">المنتجات والخدمات الرئيسية</label><textarea id="services" name="services" value={pageProfile.services} onChange={handleProfileChange} rows={3} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" placeholder="قائمة بالمنتجات أو الخدمات، افصل بينها بفاصلة." /></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label htmlFor="contactInfo" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">معلومات الاتصال</label><input type="text" id="contactInfo" name="contactInfo" value={pageProfile.contactInfo} onChange={handleProfileChange} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" placeholder="هاتف، بريد، عنوان..." /></div><div><label htmlFor="website" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الموقع الإلكتروني</label><input type="url" id="website" name="website" value={pageProfile.website} onChange={handleProfileChange} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" placeholder="https://example.com" /></div></div>

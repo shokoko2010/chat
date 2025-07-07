@@ -10,7 +10,7 @@ import BulkSchedulerPage from './BulkSchedulerPage';
 import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePostInsights } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePostInsights, analyzePageForProfile } from '../services/geminiService';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
@@ -67,6 +67,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   // Content Planner State
   const [contentPlan, setContentPlan] = useState<ContentPlanItem[] | null>(null);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [isAnalyzingProfile, setIsAnalyzingProfile] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
 
 
@@ -451,6 +452,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   };
 
+  const handleAnalyzeProfile = async () => {
+    if (!aiClient) return;
+    setIsAnalyzingProfile(true);
+    setPlanError(null);
+    try {
+      const generatedProfile = await analyzePageForProfile(aiClient, managedTarget.name, managedTarget.type);
+      setPageProfile(generatedProfile);
+      showNotification('success', 'تم تحليل الصفحة وملء البيانات بنجاح.');
+    } catch (e: any) {
+        setPlanError(e.message);
+    } finally {
+        setIsAnalyzingProfile(false);
+    }
+  };
+
   // --- Start Bulk Logic ---
   const handleAddBulkPosts = (files: FileList) => {
     if (!files || files.length === 0) return;
@@ -671,6 +687,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             return <ContentPlannerPage 
                 aiClient={aiClient} 
                 isGenerating={isGeneratingPlan} 
+                isAnalyzing={isAnalyzingProfile}
+                onAnalyze={handleAnalyzeProfile}
                 error={planError} 
                 plan={contentPlan}
                 onGeneratePlan={handleGeneratePlan} 

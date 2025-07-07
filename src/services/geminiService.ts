@@ -43,6 +43,59 @@ export const initializeGoogleGenAI = (apiKey: string): GoogleGenAI | null => {
   }
 };
 
+export const analyzePageForProfile = async (ai: GoogleGenAI, pageName: string, pageCategory?: string): Promise<PageProfile> => {
+    const prompt = `
+    أنت خبير استراتيجي في الأعمال والتسويق الرقمي.
+    بناءً على اسم الصفحة والفئة المعطاة، قم بإنشاء ملف تعريف (profile) افتراضي ومقترح لهذا العمل.
+    
+    - اسم الصفحة: "${pageName}"
+    - فئة الصفحة (إن وجدت): "${pageCategory || 'غير محدد'}"
+    
+    المطلوب:
+    أرجع كائن JSON فقط، بدون أي نص إضافي أو علامات markdown.
+    يجب أن يحتوي الكائن على المفاتيح التالية بقيم مقترحة ومقنعة باللغة العربية:
+    - "description": (string) وصف موجز وجذاب للعمل (من نحن؟).
+    - "services": (string) قائمة بالمنتجات أو الخدمات المحتملة التي يقدمها العمل، مفصولة بفاصلة.
+    - "contactInfo": (string) معلومات اتصال افتراضية (هاتف، بريد إلكتروني).
+    - "website": (string) رابط موقع إلكتروني افتراضي.
+    - "currentOffers": (string) اقتراح لعرض خاص أو حملة حالية (مثال: خصم ترحيبي 15%).
+    
+    مثال على الإجابة لصفحة اسمها "مقهى ركن القهوة":
+    {
+      "description": "مقهى ركن القهوة هو وجهتكم المثالية للاستمتاع بأجود أنواع القهوة المختصة والمشروبات المبتكرة في أجواء مريحة وملهمة. نفخر بتقديم تجربة فريدة تجمع بين النكهة الأصيلة والإبداع.",
+      "services": "قهوة مختصة، مشروبات باردة وساخنة، مخبوزات طازجة، حلويات، حبوب بن للبيع",
+      "contactInfo": "966555123456+، hello@cornercafe.com",
+      "website": "https://cornercafe.sa",
+      "currentOffers": "خصم 15% على أول طلب عبر التطبيق"
+    }
+  `;
+
+  const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-preview-04-17',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+      },
+  });
+
+  const text = response.text;
+  if (!text) {
+      throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء ملف تعريف (استجابة فارغة).");
+  }
+  let jsonStr = text.trim();
+  const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
+  const match = jsonStr.match(fenceRegex);
+  if (match && match[2]) {
+    jsonStr = match[2].trim();
+  }
+  
+  const data = JSON.parse(jsonStr);
+  if (data && data.description) {
+      return data;
+  }
+  throw new Error("فشل التحليل في إعادة البيانات بالتنسيق المطلوب.");
+};
+
 export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string, pageProfile?: PageProfile): Promise<string> => {
   try {
     const pageContext = createPageContext(pageProfile);
