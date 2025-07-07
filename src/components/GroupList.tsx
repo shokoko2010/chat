@@ -54,15 +54,16 @@ const TargetList: React.FC<TargetListProps> = ({
         return (
             <div className="text-center text-gray-500 dark:text-gray-400 p-4 border-2 border-dashed rounded-lg">
                 <h3 className="font-semibold text-lg text-gray-700 dark:text-gray-300 mb-2">لم يتم العثور على أي وجهات</h3>
-                <p className="text-sm mb-4">لم نعثر على صفحات تديرها، أو أنك لم تقم بربط حساب انستجرام بعد.</p>
+                <p className="text-sm mb-4">قد يكون هذا بسبب عدم منح التطبيق صلاحية الوصول لأي من صفحاتك.</p>
                 
-                <div className="text-right bg-gray-100 dark:bg-gray-700 p-3 rounded-md space-y-2">
-                    <p className="font-bold text-gray-800 dark:text-gray-200">لإضافة وجهات:</p>
-                    <ul className="list-disc list-inside text-sm space-y-1">
-                        <li>تأكد من أنك مسؤول (Admin) عن الصفحات التي تريد إدارتها.</li>
-                        <li>لربط انستجرام، تأكد أن حسابك هو "حساب أعمال" ومرتبط بصفحة فيسبوك.</li>
-                        <li>لإدارة المجموعات، يجب أن تكون مسؤولاً وتضيف التطبيق في إعدادات المجموعة.</li>
-                    </ul>
+                <div className="text-right bg-yellow-50 dark:bg-gray-700 p-3 rounded-md space-y-2">
+                    <p className="font-bold text-yellow-800 dark:text-yellow-200">💡 الحل المقترح:</p>
+                    <ol className="list-decimal list-inside text-sm space-y-1">
+                        <li>قم بتسجيل الخروج ثم <strong>تسجيل الدخول مرة أخرى</strong>.</li>
+                        <li>في نافذة فيسبوك، انقر على <strong>"تعديل الوصول" (Edit Access)</strong>.</li>
+                        <li>تأكد من <strong>تفعيل وتحديد جميع الصفحات</strong> التي ترغب في إدارتها.</li>
+                        <li>وافق على جميع الصلاحيات المطلوبة.</li>
+                    </ol>
                 </div>
             </div>
         );

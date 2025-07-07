@@ -1,4 +1,5 @@
 
+
 declare global {
   interface Window {
     FB: any;
@@ -7,7 +8,7 @@ declare global {
 
 export interface Target {
   id: string;
-  name: string;
+  name:string;
   type: 'page' | 'group' | 'instagram';
   access_token?: string;
   picture: {
@@ -16,11 +17,6 @@ export interface Target {
     }
   };
   parentPageId?: string;
-}
-
-export interface Business {
-  id: string;
-  name: string;
 }
 
 export interface ScheduledPost {
@@ -69,7 +65,7 @@ export interface PublishedPost {
 }
 
 export interface BulkPostItem {
-  id: string;
+  id:string;
   imageFile: File;
   imagePreview: string;
   text: string;
@@ -77,6 +73,11 @@ export interface BulkPostItem {
   targetIds: string[]; // Array of selected target IDs
   error?: string; // For per-item validation errors
   isGeneratingDescription?: boolean;
+}
+
+export interface Business {
+  id: string;
+  name: string;
 }
 
 // Types for AI Content Planner

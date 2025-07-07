@@ -21,6 +21,7 @@ import QueueListIcon from './icons/QueueListIcon';
 import BrainCircuitIcon from './icons/BrainCircuitIcon';
 import { GoogleGenAI } from '@google/genai';
 import { generateDescriptionForImage, generateContentPlan, generatePostInsights } from '../services/geminiService';
+import BusinessPortfolioManager from './BusinessPortfolioManager';
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -85,6 +86,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
   const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Business Manager state
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [loadingBusinessId, setLoadingBusinessId] = useState<string | null>(null);
+  const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set());
 
   // Bulk scheduler state
   const [bulkPosts, setBulkPosts] = useState<BulkPostItem[]>([]);
@@ -181,49 +187,36 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
         setTargetsLoading(true);
         setTargetsError(null);
         try {
-            // 1. Fetch all business IDs
-            const businesses: Business[] = await fetchWithPagination('/me/businesses?limit=100');
-            
-            // 2. Create promises for pages from all sources (direct, owned, client)
-            const pagePromises = businesses.flatMap(business => [
-                fetchWithPagination(`/${business.id}/owned_pages?fields=id,name,access_token,picture{url}&limit=100`),
-                fetchWithPagination(`/${business.id}/client_pages?fields=id,name,access_token,picture{url}&limit=100`)
-            ]);
-            pagePromises.push(fetchWithPagination('/me/accounts?fields=id,name,access_token,picture{url}&limit=100'));
-            
-            // 3. Create promise for groups
+            // 1. Fetch pages and groups directly
+            const pagesPromise = fetchWithPagination('/me/accounts?fields=id,name,access_token,picture{url}&limit=100');
             const groupsPromise = fetchWithPagination('/me/groups?fields=id,name,picture{url},permissions&limit=100');
 
-            // 4. Run all data fetches in parallel
-            const [pageResults, allGroupsRaw] = await Promise.all([
-                Promise.allSettled(pagePromises),
-                groupsPromise
-            ]);
+            const [allPagesData, allGroupsRaw] = await Promise.all([pagesPromise, groupsPromise]);
 
             const allTargetsMap = new Map<string, Target>();
 
-            // Process all page results
-            pageResults.forEach(result => {
-                if (result.status === 'fulfilled' && Array.isArray(result.value)) {
-                    result.value.forEach(page => {
-                        if (page && page.id && !allTargetsMap.has(page.id)) {
-                            allTargetsMap.set(page.id, { ...page, type: 'page' as 'page' });
-                        }
-                    });
-                }
-            });
+            // 2. Process all page results
+            if (allPagesData) {
+              allPagesData.forEach(page => {
+                  if (page && page.id && !allTargetsMap.has(page.id)) {
+                      allTargetsMap.set(page.id, { ...page, type: 'page' as 'page' });
+                  }
+              });
+            }
 
-            // Process group results
-            const adminGroups = allGroupsRaw.filter((group: any) => 
-                group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
-            );
-            adminGroups.forEach(group => {
-                if (group && group.id && !allTargetsMap.has(group.id)) {
-                    allTargetsMap.set(group.id, { ...group, type: 'group' as 'group' });
-                }
-            });
+            // 3. Process group results
+            if (allGroupsRaw) {
+              const adminGroups = allGroupsRaw.filter((group: any) => 
+                  group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
+              );
+              adminGroups.forEach(group => {
+                  if (group && group.id && !allTargetsMap.has(group.id)) {
+                      allTargetsMap.set(group.id, { ...group, type: 'group' as 'group' });
+                  }
+              });
+            }
 
-            // 5. Fetch Instagram accounts for all unique pages found
+            // 4. Fetch Instagram accounts for all unique pages found
             const allPages = Array.from(allTargetsMap.values()).filter(t => t.type === 'page');
             if (allPages.length > 0) {
                 const igAccounts = await fetchInstagramAccounts(allPages);
@@ -233,8 +226,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
                     }
                 });
             }
-
-            setTargets(Array.from(allTargetsMap.values()));
+            
+            const finalTargets = Array.from(allTargetsMap.values());
+            if (finalTargets.length === 0) {
+              console.warn("No pages, groups, or IG accounts found after fetching. The user might not have granted permissions to any pages during login.");
+            }
+            setTargets(finalTargets);
             
         } catch (error) {
             console.error("Error fetching all data from Facebook:", error);
@@ -244,13 +241,81 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
         }
     };
     
+    const fetchBusinessAccounts = async () => {
+        if (isSimulationMode) {
+            setBusinesses([
+                { id: 'business_1', name: 'حافظة أعمال تجريبية 1' },
+                { id: 'business_2', name: 'حافظة أعمال تجريبية 2' },
+            ]);
+            return;
+        }
+        try {
+            const response: any = await new Promise(resolve => window.FB.api('/me/businesses', (res: any) => resolve(res)));
+            if (response && response.data) {
+                setBusinesses(response.data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch business accounts:", error);
+        }
+    };
+
     if (isSimulationMode) {
         setTargets(MOCK_TARGETS);
         setScheduledPosts(MOCK_SCHEDULED_POSTS);
         setPublishedPosts(MOCK_PUBLISHED_POSTS);
+        setBusinesses([
+            { id: 'business_1', name: 'حافظة أعمال تجريبية 1' },
+            { id: 'business_2', name: 'حافظة أعمال تجريبية 2' },
+        ]);
         setTargetsLoading(false);
-    } else {
+    } else if (window.FB) {
         fetchAllData();
+        fetchBusinessAccounts();
+    }
+  }, [isSimulationMode, fetchInstagramAccounts]);
+
+  const handleLoadBusinessPages = useCallback(async (businessId: string) => {
+    setLoadingBusinessId(businessId);
+    if (isSimulationMode) {
+        setTimeout(() => {
+            const newPages: Target[] = [
+                { id: `b-page-${businessId}-1`, name: `صفحة من حافظة ${businessId}`, type: 'page', access_token: `DUMMY_TOKEN_${businessId}`, picture: { data: { url: 'https://via.placeholder.com/150/0000FF/FFFFFF?text=B_Page' } } },
+            ];
+            setTargets(prev => {
+                const existingIds = new Set(prev.map(t => t.id));
+                const uniqueNewTargets = newPages.filter(t => !existingIds.has(t.id));
+                return [...prev, ...uniqueNewTargets];
+            });
+            setLoadingBusinessId(null);
+            setLoadedBusinessIds(prev => new Set(prev).add(businessId));
+        }, 1000);
+        return;
+    }
+
+    try {
+        const response: any = await new Promise(resolve =>
+            window.FB.api(`/${businessId}/owned_pages?fields=id,name,access_token,picture{url}`, (res: any) => resolve(res))
+        );
+
+        if (response && response.data) {
+            const newPagesData = response.data.map((page: any) => ({ ...page, type: 'page' as 'page' }));
+            const newIgAccounts = await fetchInstagramAccounts(newPagesData);
+
+            setTargets(prev => {
+                const existingIds = new Set(prev.map(t => t.id));
+                const allNewTargets = [...newPagesData, ...newIgAccounts];
+                const uniqueNewTargets = allNewTargets.filter(t => !existingIds.has(t.id));
+                return [...prev, ...uniqueNewTargets];
+            });
+            setLoadedBusinessIds(prev => new Set(prev).add(businessId));
+        } else if (response.error) {
+            console.error('Failed to load business pages:', response.error);
+            setNotification({ type: 'error', message: `فشل تحميل صفحات الحافظة: ${response.error.message}` });
+        }
+    } catch (error) {
+        console.error('Error in handleLoadBusinessPages:', error);
+    } finally {
+        setLoadingBusinessId(null);
     }
   }, [isSimulationMode, fetchInstagramAccounts]);
 
@@ -814,6 +879,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
                             selectedTargetIds={selectedTargetIds}
                             onSelectionChange={setSelectedTargetIds}
                             selectionError={targetSelectionError}
+                        />
+                        <BusinessPortfolioManager
+                          businesses={businesses}
+                          onLoadPages={handleLoadBusinessPages}
+                          loadingBusinessId={loadingBusinessId}
+                          loadedBusinessIds={loadedBusinessIds}
                         />
                     </div>
                 </div>
