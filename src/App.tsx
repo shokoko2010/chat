@@ -253,7 +253,6 @@ const App: React.FC = () => {
           error={targetsError}
           onSelectTarget={handleSelectTarget}
           onLogout={handleLogout}
-          onSettingsClick={() => { /* Need settings modal here */ }}
         />
       );
   };

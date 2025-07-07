@@ -1,16 +1,9 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics, BulkPostItem, ContentPlanRequest, ContentPlanItem } from '../types';
+import { Target, PublishedPost } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
-import ContentCalendar from './ContentCalendar';
 import PostPreview from './PostPreview';
-import DraftsList from './DraftsList';
 import PublishedPostsList from './PublishedPostsList';
-import SettingsModal from './SettingsModal';
-import BulkSchedulerPage from './BulkSchedulerPage'; 
-import ContentPlannerPage from './ContentPlannerPage';
-import ReminderCard from './ReminderCard';
 import PencilSquareIcon from './icons/PencilSquareIcon';
 import CalendarIcon from './icons/CalendarIcon';
 import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
@@ -18,7 +11,6 @@ import ChartBarIcon from './icons/ChartBarIcon';
 import QueueListIcon from './icons/QueueListIcon';
 import BrainCircuitIcon from './icons/BrainCircuitIcon';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePostInsights } from '../services/geminiService';
 
 interface DashboardPageProps {
   managedTarget: Target;
@@ -29,24 +21,10 @@ interface DashboardPageProps {
   aiClient: GoogleGenAI | null;
   currentApiKey: string | null;
   onSaveApiKey: (key: string) => void;
+  onSettingsClick: () => void;
 }
 
-const MOCK_SCHEDULED_POSTS: ScheduledPost[] = [
-    { id: 'post1', text: 'تخفيضات نهاية الأسبوع تبدأ غداً! استعدوا لأقوى العروض 🛍️', scheduledAt: new Date(new Date().setDate(new Date().getDate() + 2)), targets: [], imageUrl: 'https://via.placeholder.com/400x300/FFD700/000000?text=Sale' },
-    { id: 'post2', text: 'ما هي لغة البرمجة التي تتعلمها حالياً؟ شاركنا في التعليقات! 💻', scheduledAt: new Date(new Date().setDate(new Date().getDate() + 4)), targets: [] },
-];
-
-const formatDateTimeForInput = (date: Date) => {
-    const pad = (num: number) => num.toString().padStart(2, '0');
-    const year = date.getFullYear();
-    const month = pad(date.getMonth() + 1);
-    const day = pad(date.getDate());
-    const hours = pad(date.getHours());
-    const minutes = pad(date.getMinutes());
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-};
-
-const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, currentApiKey, onSaveApiKey }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, currentApiKey, onSaveApiKey, onSettingsClick }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner'>('composer');
   
   // Composer state
@@ -61,26 +39,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   // Publishing state
   const [isPublishing, setIsPublishing] = useState(false);
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'partial', message: string} | null>(null);
-  const [publishingReminderId, setPublishingReminderId] = useState<string | null>(null);
   
   // Data state
-  const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
   const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
   const [publishedPostsLoading, setPublishedPostsLoading] = useState(true);
-  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-  // Bulk & Planner state
-  const [bulkPosts, setBulkPosts] = useState<BulkPostItem[]>([]);
-  const [isSchedulingAll, setIsSchedulingAll] = useState(false);
-  const [contentPlan, setContentPlan] = useState<ContentPlanItem[] | null>(null);
-  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
-  const [planError, setPlanError] = useState<string | null>(null);
 
   const linkedInstagramTarget = useMemo(() => {
     if (managedTarget.type !== 'page') return null;
-    return allTargets.find(t => t.type === 'instagram' && t.parentPageId === managedTarget.id);
+    return allTargets.find(t => t.type === 'instagram' && t.parentPageId === managedTarget.id) || null;
   }, [managedTarget, allTargets]);
 
   useEffect(() => {
@@ -88,10 +54,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     clearComposer();
     setPublishedPosts([]);
     setPublishedPostsLoading(true);
-    setScheduledPosts(isSimulationMode ? MOCK_SCHEDULED_POSTS : []);
-    setDrafts([]);
-    setBulkPosts([]);
-    setContentPlan(null);
     setView('composer');
 
     if (isSimulationMode) {
@@ -133,8 +95,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         setPublishedPostsLoading(false);
       }
     );
-
-    // TODO: Fetch scheduled posts for the calendar
     
   }, [managedTarget, isSimulationMode]);
 
@@ -146,7 +106,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setIsScheduled(false);
     setScheduleDate('');
     setComposerError('');
-    setActiveDraftId(null);
     setIncludeInstagram(false);
   }, []);
 
@@ -215,8 +174,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
   }, [postText, selectedImage, isScheduled, scheduleDate, managedTarget, includeInstagram, linkedInstagramTarget, clearComposer]);
 
-  // All other handlers (handlePublishReminder, handleFetchAnalytics, etc.) remain largely the same.
-  // ...
   const getNotificationBgColor = () => {
     if (!notification) return '';
     switch(notification.type) {
@@ -285,7 +242,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       <Header 
         onLogout={onLogout}
         isSimulationMode={isSimulationMode}
-        onSettingsClick={() => setIsSettingsOpen(true)}
+        onSettingsClick={onSettingsClick}
         pageName={managedTarget.name}
         onChangePage={onChangePage}
       />
@@ -322,12 +279,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         {renderActiveView()}
 
       </main>
-      <SettingsModal 
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        onSave={onSaveApiKey}
-        currentApiKey={currentApiKey}
-      />
     </div>
   );
 };

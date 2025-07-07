@@ -5,6 +5,7 @@ import HomePage from './src/components/HomePage';
 import { GoogleGenAI } from '@google/genai';
 import { initializeGoogleGenAI } from './src/services/geminiService';
 import { Target } from './src/types';
+import SettingsModal from './src/components/SettingsModal';
 
 const isSimulation = window.location.protocol === 'http:';
 
@@ -26,6 +27,8 @@ const App: React.FC = () => {
   const [targetsLoading, setTargetsLoading] = useState(true);
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
 
   useEffect(() => {
     setAiClient(initializeGoogleGenAI(apiKey ?? ''));
@@ -34,6 +37,7 @@ const App: React.FC = () => {
   const handleSaveApiKey = (newKey: string) => {
     localStorage.setItem('geminiApiKey', newKey);
     setApiKey(newKey);
+    setIsSettingsOpen(false);
   };
 
   const isSimulationMode = isSimulation;
@@ -242,6 +246,7 @@ const App: React.FC = () => {
             aiClient={aiClient}
             currentApiKey={apiKey}
             onSaveApiKey={handleSaveApiKey}
+            onSettingsClick={() => setIsSettingsOpen(true)}
           />
         );
       }
@@ -252,7 +257,7 @@ const App: React.FC = () => {
           error={targetsError}
           onSelectTarget={handleSelectTarget}
           onLogout={handleLogout}
-          onSettingsClick={() => { /* Need settings modal here */ }}
+          onSettingsClick={() => setIsSettingsOpen(true)}
         />
       );
   };
@@ -260,6 +265,12 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       {renderContent()}
+      <SettingsModal 
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={onSaveApiKey}
+        currentApiKey={apiKey}
+      />
     </div>
   );
 };

@@ -1,10 +1,9 @@
-
 import React from 'react';
 import { Target } from '../types';
 import Button from './ui/Button';
-import SettingsIcon from './icons/SettingsIcon';
 import FacebookIcon from './icons/FacebookIcon';
 import InstagramIcon from './icons/InstagramIcon';
+import SettingsIcon from './icons/SettingsIcon';
 
 interface PageSelectorPageProps {
   targets: Target[];
@@ -16,9 +15,16 @@ interface PageSelectorPageProps {
 }
 
 const TargetCard: React.FC<{ target: Target, onSelect: () => void }> = ({ target, onSelect }) => {
-  const isPage = target.type === 'page';
+  const isPage = target.type === 'page' || target.type === 'group';
   const Icon = isPage ? FacebookIcon : InstagramIcon;
   const color = isPage ? 'text-blue-500' : '';
+  const typeText = () => {
+    switch (target.type) {
+        case 'page': return 'صفحة فيسبوك';
+        case 'group': return 'مجموعة فيسبوك';
+        case 'instagram': return 'حساب انستجرام';
+    }
+  }
 
   return (
     <button
@@ -36,7 +42,7 @@ const TargetCard: React.FC<{ target: Target, onSelect: () => void }> = ({ target
       <div className="p-3 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-100 dark:border-gray-700/50 rounded-b-lg">
         <span className={`text-sm font-semibold flex items-center gap-2 ${color}`}>
             <Icon className="w-5 h-5" />
-            {isPage ? 'صفحة فيسبوك' : 'حساب انستجرام'}
+            {typeText()}
         </span>
       </div>
     </button>
@@ -44,7 +50,7 @@ const TargetCard: React.FC<{ target: Target, onSelect: () => void }> = ({ target
 };
 
 const PageSelectorPage: React.FC<PageSelectorPageProps> = ({ targets, isLoading, error, onSelectTarget, onLogout, onSettingsClick }) => {
-  const pages = targets.filter(t => t.type === 'page');
+  const pages = targets.filter(t => t.type === 'page' || t.type === 'group');
   const instagramAccounts = targets.filter(t => t.type === 'instagram');
 
   const renderContent = () => {
@@ -86,7 +92,7 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({ targets, isLoading,
 
     return (
         <div className="space-y-8">
-            {renderTargetSection('صفحات فيسبوك', pages)}
+            {renderTargetSection('صفحات ومجموعات فيسبوك', pages)}
             {renderTargetSection('حسابات انستجرام', instagramAccounts)}
         </div>
     );
@@ -97,7 +103,13 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({ targets, isLoading,
         <header className="bg-white dark:bg-gray-800 shadow-md p-4 flex justify-between items-center">
             <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">zex-pages</h1>
             <div className="flex items-center gap-2">
-                {/* <button onClick={onSettingsClick} className="p-2 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"><SettingsIcon className="w-6 h-6" /></button> */}
+                <button 
+                  onClick={onSettingsClick} 
+                  className="p-2 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                  aria-label="الإعدادات"
+                >
+                  <SettingsIcon className="w-6 h-6" />
+                </button>
                 <Button onClick={onLogout} variant="secondary">تسجيل الخروج</Button>
             </div>
         </header>
