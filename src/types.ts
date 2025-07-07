@@ -18,6 +18,11 @@ export interface Target {
   parentPageId?: string;
 }
 
+export interface Business {
+  id: string;
+  name: string;
+}
+
 export interface ScheduledPost {
   id: string;
   text: string;

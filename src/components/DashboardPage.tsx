@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics, BulkPostItem, ContentPlanRequest, ContentPlanItem } from '../types';
+import { Target, ScheduledPost, Draft, PublishedPost, PostAnalytics, BulkPostItem, ContentPlanRequest, ContentPlanItem, Business } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import TargetList from './GroupList';
@@ -13,6 +13,7 @@ import SettingsModal from './SettingsModal';
 import BulkSchedulerPage from './BulkSchedulerPage'; 
 import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard'; // New import
+import BusinessPortfolioManager from './BusinessPortfolioManager'; // New import
 import PencilSquareIcon from './icons/PencilSquareIcon';
 import CalendarIcon from './icons/CalendarIcon';
 import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
@@ -33,15 +34,17 @@ interface DashboardPageProps {
 const MOCK_TARGETS: Target[] = [
     { id: '1', name: 'صفحة تجريبية 1', type: 'page', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/4B79A1/FFFFFF?text=Page1' } } },
     { id: '101', name: 'مجموعة المطورين التجريبية', type: 'group', picture: { data: { url: 'https://via.placeholder.com/150/228B22/FFFFFF?text=Group1' } } },
-    { id: '2', name: 'متجر الأزياء العصرية', type: 'page', access_token: 'DUMMY_TOKEN_2', picture: { data: { url: 'https://via.placeholder.com/150/C154C1/FFFFFF?text=Fashion' } } },
-    { id: '4', name: 'صفحة من حافظة أعمال', type: 'page', access_token: 'DUMMY_TOKEN_4', picture: { data: { url: 'https://via.placeholder.com/150/FF6347/FFFFFF?text=BizPage' } } },
     { id: 'ig1', name: 'Zex Pages IG (@zex_pages_ig)', type: 'instagram', parentPageId: '1', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/E4405F/FFFFFF?text=IG' } } }
 ];
 
+const MOCK_BUSINESSES: Business[] = [
+    { id: 'biz1', name: 'حافظة أعمال تجريبية (ZEX)' },
+    { id: 'biz2', name: 'حافظة أعمال العملاء (وكالة)' }
+];
+
 const MOCK_SCHEDULED_POSTS: ScheduledPost[] = [
-    { id: 'post1', text: 'تخفيضات نهاية الأسبوع تبدأ غداً! استعدوا لأقوى العروض 🛍️', scheduledAt: new Date(new Date().setDate(new Date().getDate() + 2)), targets: [MOCK_TARGETS[0], MOCK_TARGETS[2]], imageUrl: 'https://via.placeholder.com/400x300/FFD700/000000?text=Sale' },
+    { id: 'post1', text: 'تخفيضات نهاية الأسبوع تبدأ غداً! استعدوا لأقوى العروض 🛍️', scheduledAt: new Date(new Date().setDate(new Date().getDate() + 2)), targets: [MOCK_TARGETS[0]], imageUrl: 'https://via.placeholder.com/400x300/FFD700/000000?text=Sale' },
     { id: 'post2', text: 'ما هي لغة البرمجة التي تتعلمها حالياً؟ شاركنا في التعليقات! 💻', scheduledAt: new Date(new Date().setDate(new Date().getDate() + 4)), targets: [MOCK_TARGETS[1]] },
-    { id: 'post3_reminder', text: 'تذكير انستجرام! 🤳', scheduledAt: new Date(new Date().setDate(new Date().getDate() -1)), targets: [MOCK_TARGETS[3]], isReminder: true, imageUrl: 'https://via.placeholder.com/400x300/E4405F/FFFFFF?text=IG' },
 ];
 
 const MOCK_PUBLISHED_POSTS: PublishedPost[] = [
@@ -65,6 +68,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
   // Targets state
   const [targets, setTargets] = useState<Target[]>([]);
   const [targetsLoading, setTargetsLoading] = useState(true);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [loadingBusinessId, setLoadingBusinessId] = useState<string | null>(null);
+  const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set());
   
   // Composer state (lifted)
   const [postText, setPostText] = useState('');
@@ -98,9 +104,65 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
   const [planError, setPlanError] = useState<string | null>(null);
 
 
-  // Load initial data
+  const fetchInstagramAccounts = useCallback(async (pages: Target[]): Promise<Target[]> => {
+    if (pages.length === 0) return [];
+
+    const BATCH_SIZE = 50;
+    const pageChunks: Target[][] = [];
+    for (let i = 0; i < pages.length; i += BATCH_SIZE) {
+        pageChunks.push(pages.slice(i, i + BATCH_SIZE));
+    }
+
+    const igPromises = pageChunks.map(chunk => {
+        const batchRequest = chunk.map(page => ({
+            method: 'GET',
+            relative_url: `${page.id}?fields=instagram_business_account{id,name,username,profile_picture_url}`
+        }));
+        return new Promise<any[] | {error: any}>(resolve => {
+            window.FB.api('/', 'POST', { batch: batchRequest }, (response: any) => resolve(response));
+        });
+    });
+
+    const allIgChunkedResponses = await Promise.all(igPromises);
+    const igAccounts: Target[] = [];
+
+    allIgChunkedResponses.forEach((igResponses: any, chunkIndex: number) => {
+        if (igResponses && !igResponses.error && Array.isArray(igResponses)) {
+            igResponses.forEach((res: any, indexInChunk: number) => {
+                if (res && res.code === 200) {
+                    try {
+                        const body = JSON.parse(res.body);
+                        if (body && body.instagram_business_account) {
+                            const igAccount = body.instagram_business_account;
+                            const parentPage = pageChunks[chunkIndex][indexInChunk];
+                            if (parentPage) {
+                                const igTarget: Target = {
+                                    id: igAccount.id,
+                                    name: igAccount.name ? `${igAccount.name} (@${igAccount.username})` : `@${igAccount.username}`,
+                                    type: 'instagram',
+                                    parentPageId: parentPage.id,
+                                    access_token: parentPage.access_token,
+                                    picture: {
+                                        data: { url: igAccount.profile_picture_url || 'https://via.placeholder.com/150/833AB4/FFFFFF?text=IG' }
+                                    }
+                                };
+                                igAccounts.push(igTarget);
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Error parsing IG account response body:", e, res.body);
+                    }
+                }
+            });
+        } else if (igResponses && igResponses.error) {
+            console.error("Error in batch request for IG accounts:", igResponses.error);
+        }
+    });
+
+    return igAccounts;
+  }, []);
+
   useEffect(() => {
-    // Helper function to handle Facebook API's cursor-based pagination.
     const fetchWithPagination = async (initialPath: string): Promise<any[]> => {
         let allData: any[] = [];
         let path: string | null = initialPath;
@@ -112,125 +174,51 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
 
             if (response && response.data && response.data.length > 0) {
                 allData = allData.concat(response.data);
-                // Use the 'next' URL from the paging object for the subsequent API call.
                 path = response.paging?.next ? new URL(response.paging.next).pathname + new URL(response.paging.next).search : null;
             } else {
                 if (response.error) {
                     console.error(`Error fetching paginated data for path ${path}:`, response.error);
                 }
-                path = null; // Stop pagination on error or no more data
+                path = null;
             }
         }
         return allData;
     };
 
-    // Main data fetching logic
-    const fetchAllTargets = async () => {
+    const fetchInitialData = async () => {
+        setTargetsLoading(true);
         try {
-            setTargetsLoading(true);
-            
-            // Fetch all top-level assets in parallel
-            const [directPages, allGroups, businesses] = await Promise.all([
+            const [directPages, allGroups, businessData] = await Promise.all([
                 fetchWithPagination('/me/accounts?fields=id,name,access_token,picture{url}&limit=100'),
                 fetchWithPagination('/me/groups?fields=id,name,picture{url},permissions&limit=100'),
                 fetchWithPagination('/me/businesses?limit=100')
             ]);
-            
-            // Filter groups to only include those where the user is an admin
+
+            setBusinesses(businessData as Business[]);
+
             const adminGroups = allGroups.filter((group: any) =>
                 group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
             );
 
-            // Fetch pages from all business portfolios
-            let businessPages: any[] = [];
-            if (businesses && businesses.length > 0) {
-                const businessIds: string[] = businesses.map((b: any) => b.id);
-                const pagePromises = businessIds.flatMap(id => [
-                    fetchWithPagination(`/${id}/owned_pages?fields=id,name,access_token,picture{url}&limit=100`),
-                    fetchWithPagination(`/${id}/client_pages?fields=id,name,access_token,picture{url}&limit=100`),
-                ]);
-                businessPages = (await Promise.all(pagePromises)).flat();
-            }
-
-            // Consolidate all targets and remove duplicates using a Map
+            const initialTargets: Target[] = [
+                ...directPages.map(p => ({ ...p, type: 'page' as 'page' })),
+                ...adminGroups.map(g => ({ ...g, type: 'group' as 'group' }))
+            ];
+            
+            const initialPages = initialTargets.filter(t => t.type === 'page');
+            const igAccounts = await fetchInstagramAccounts(initialPages);
+            
             const allTargetsMap = new Map<string, Target>();
-            const addToMap = (targetsToAdd: any[], type: 'page' | 'group') => {
-                targetsToAdd.forEach(t => {
-                    if (!allTargetsMap.has(t.id)) {
-                        allTargetsMap.set(t.id, { ...t, type });
-                    }
-                });
-            };
-
-            addToMap(directPages, 'page');
-            addToMap(adminGroups, 'group');
-            addToMap(businessPages, 'page');
-
-            const allUniquePages = Array.from(allTargetsMap.values()).filter(t => t.type === 'page');
-
-            // Efficiently fetch linked Instagram accounts using BATCHED and CHUNKED requests
-            if (allUniquePages.length > 0) {
-                const BATCH_SIZE = 50; // Facebook's limit for batch requests
-                const pageChunks: Target[][] = [];
-                for (let i = 0; i < allUniquePages.length; i += BATCH_SIZE) {
-                    pageChunks.push(allUniquePages.slice(i, i + BATCH_SIZE));
+            [...initialTargets, ...igAccounts].forEach(t => {
+                if (!allTargetsMap.has(t.id)) {
+                    allTargetsMap.set(t.id, t);
                 }
-
-                const igPromises = pageChunks.map(chunk => {
-                    const batchRequest = chunk.map(page => ({
-                        method: 'GET',
-                        relative_url: `${page.id}?fields=instagram_business_account{id,name,username,profile_picture_url}`
-                    }));
-                    
-                    return new Promise<any[]>(resolve => {
-                        window.FB.api('/', 'POST', { batch: batchRequest }, (response: any) => resolve(response));
-                    });
-                });
-
-                const allIgChunkedResponses = await Promise.all(igPromises);
-                
-                // Process all responses from all chunks
-                allIgChunkedResponses.forEach((igResponses: any, chunkIndex: number) => {
-                    if (igResponses && !igResponses.error && Array.isArray(igResponses)) {
-                        igResponses.forEach((res: any, indexInChunk: number) => {
-                            if (res && res.code === 200) {
-                                try {
-                                    const body = JSON.parse(res.body);
-                                    if (body && body.instagram_business_account) {
-                                        const igAccount = body.instagram_business_account;
-                                        // Important: get the correct page from the chunk
-                                        const parentPage = pageChunks[chunkIndex][indexInChunk];
-                                        if (parentPage) {
-                                            const igTarget: Target = {
-                                                id: igAccount.id,
-                                                name: igAccount.name ? `${igAccount.name} (@${igAccount.username})` : `@${igAccount.username}`,
-                                                type: 'instagram',
-                                                parentPageId: parentPage.id,
-                                                access_token: parentPage.access_token,
-                                                picture: {
-                                                    data: { url: igAccount.profile_picture_url || 'https://via.placeholder.com/150/833AB4/FFFFFF?text=IG' }
-                                                }
-                                            };
-                                            if (!allTargetsMap.has(igTarget.id)) {
-                                                allTargetsMap.set(igTarget.id, igTarget);
-                                            }
-                                        }
-                                    }
-                                } catch (e) {
-                                    console.error("Error parsing IG account response body:", e, res.body);
-                                }
-                            }
-                        });
-                    } else if (igResponses && igResponses.error) {
-                        console.error("Error in batch request for IG accounts:", igResponses.error);
-                    }
-                });
-            }
+            });
             
             setTargets(Array.from(allTargetsMap.values()));
 
         } catch (error) {
-            console.error("Error fetching all targets from Facebook:", error);
+            console.error("Error fetching initial data from Facebook:", error);
         } finally {
             setTargetsLoading(false);
         }
@@ -238,13 +226,77 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
     
     if (isSimulationMode) {
         setTargets(MOCK_TARGETS);
+        setBusinesses(MOCK_BUSINESSES);
         setScheduledPosts(MOCK_SCHEDULED_POSTS);
         setPublishedPosts(MOCK_PUBLISHED_POSTS);
         setTargetsLoading(false);
     } else {
-        fetchAllTargets();
+        fetchInitialData();
     }
-  }, [isSimulationMode]);
+  }, [isSimulationMode, fetchInstagramAccounts]);
+
+  const handleLoadBusinessPages = useCallback(async (businessId: string) => {
+    setLoadingBusinessId(businessId);
+
+    if (isSimulationMode) {
+        setTimeout(() => {
+            const newMockPage: Target = {
+                id: `biz_page_${businessId}_${Date.now()}`,
+                name: `صفحة من حافظة ${businessId}`,
+                type: 'page',
+                access_token: 'DUMMY_TOKEN_BIZ',
+                picture: { data: { url: `https://via.placeholder.com/150/008080/FFFFFF?text=Biz` } }
+            };
+            setTargets(prev => [...prev, newMockPage]);
+            setLoadedBusinessIds(prev => new Set(prev).add(businessId));
+            setLoadingBusinessId(null);
+        }, 1000);
+        return;
+    }
+
+    const fetchWithPagination = async (initialPath: string): Promise<any[]> => {
+        let allData: any[] = [];
+        let path: string | null = initialPath;
+        while (path) {
+            const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
+            if (response && response.data && response.data.length > 0) {
+                allData = allData.concat(response.data);
+                path = response.paging?.next ? new URL(response.paging.next).pathname + new URL(response.paging.next).search : null;
+            } else {
+                if (response.error) console.error(`Error paginating ${path}:`, response.error);
+                path = null;
+            }
+        }
+        return allData;
+    };
+
+    try {
+        const [ownedPages, clientPages] = await Promise.all([
+            fetchWithPagination(`/${businessId}/owned_pages?fields=id,name,access_token,picture{url}&limit=100`),
+            fetchWithPagination(`/${businessId}/client_pages?fields=id,name,access_token,picture{url}&limit=100`),
+        ]);
+        
+        const newPages: Target[] = [...ownedPages, ...clientPages].map(p => ({ ...p, type: 'page' }));
+        const newIgAccounts = await fetchInstagramAccounts(newPages);
+        const newTargets = [...newPages, ...newIgAccounts];
+        
+        setTargets(prevTargets => {
+            const targetsMap = new Map<string, Target>(prevTargets.map(t => [t.id, t]));
+            newTargets.forEach(t => targetsMap.set(t.id, t));
+            return Array.from(targetsMap.values());
+        });
+        
+        setLoadedBusinessIds(prev => new Set(prev).add(businessId));
+
+    } catch (error) {
+        console.error(`Failed to load pages for business ${businessId}:`, error);
+        setNotification({ type: 'error', message: 'فشل تحميل الصفحات من حافظة الأعمال.'});
+        setTimeout(() => setNotification(null), 5000);
+    } finally {
+        setLoadingBusinessId(null);
+    }
+  }, [isSimulationMode, fetchInstagramAccounts]);
+
 
   const clearComposer = useCallback(() => {
     setPostText('');
@@ -786,6 +838,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
                             error={composerError}
                             targets={targets}
                             selectedTargetIds={selectedTargetIds}
+                        />
+                         <BusinessPortfolioManager
+                            businesses={businesses}
+                            onLoadPages={handleLoadBusinessPages}
+                            loadingBusinessId={loadingBusinessId}
+                            loadedBusinessIds={loadedBusinessIds}
                         />
                         <TargetList
                             targets={targets}
