@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { Target } from '../types';
 import Checkbox from './ui/Checkbox';
@@ -53,10 +54,11 @@ const TargetList: React.FC<TargetListProps> = ({
         return (
             <div className="text-center text-gray-500 dark:text-gray-400 p-4 border-2 border-dashed rounded-lg">
                 <h3 className="font-semibold text-lg text-gray-700 dark:text-gray-300 mb-2">لم يتم العثور على أي وجهات</h3>
-                <p className="text-sm">لم نعثر على صفحات تديرها، أو أنك لم تقم بربط حساب انستجرام بعد.</p>
-                <div className="mt-4 text-right bg-gray-100 dark:bg-gray-700 p-3 rounded-md">
+                <p className="text-sm mb-4">لم نعثر على صفحات تديرها، أو أنك لم تقم بربط حساب انستجرام بعد.</p>
+                
+                <div className="text-right bg-gray-100 dark:bg-gray-700 p-3 rounded-md space-y-2">
                     <p className="font-bold text-gray-800 dark:text-gray-200">لإضافة وجهات:</p>
-                    <ul className="list-disc list-inside text-sm space-y-1 mt-1">
+                    <ul className="list-disc list-inside text-sm space-y-1">
                         <li>تأكد من أنك مسؤول (Admin) عن الصفحات التي تريد إدارتها.</li>
                         <li>لربط انستجرام، تأكد أن حسابك هو "حساب أعمال" ومرتبط بصفحة فيسبوك.</li>
                         <li>لإدارة المجموعات، يجب أن تكون مسؤولاً وتضيف التطبيق في إعدادات المجموعة.</li>

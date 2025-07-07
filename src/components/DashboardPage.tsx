@@ -12,8 +12,7 @@ import PublishedPostsList from './PublishedPostsList';
 import SettingsModal from './SettingsModal';
 import BulkSchedulerPage from './BulkSchedulerPage'; 
 import ContentPlannerPage from './ContentPlannerPage';
-import ReminderCard from './ReminderCard'; // New import
-import BusinessPortfolioManager from './BusinessPortfolioManager'; // New import
+import ReminderCard from './ReminderCard';
 import PencilSquareIcon from './icons/PencilSquareIcon';
 import CalendarIcon from './icons/CalendarIcon';
 import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
@@ -35,11 +34,6 @@ const MOCK_TARGETS: Target[] = [
     { id: '1', name: 'صفحة تجريبية 1', type: 'page', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/4B79A1/FFFFFF?text=Page1' } } },
     { id: '101', name: 'مجموعة المطورين التجريبية', type: 'group', picture: { data: { url: 'https://via.placeholder.com/150/228B22/FFFFFF?text=Group1' } } },
     { id: 'ig1', name: 'Zex Pages IG (@zex_pages_ig)', type: 'instagram', parentPageId: '1', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/E4405F/FFFFFF?text=IG' } } }
-];
-
-const MOCK_BUSINESSES: Business[] = [
-    { id: 'biz1', name: 'حافظة أعمال تجريبية (ZEX)' },
-    { id: 'biz2', name: 'حافظة أعمال العملاء (وكالة)' }
 ];
 
 const MOCK_SCHEDULED_POSTS: ScheduledPost[] = [
@@ -68,9 +62,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
   // Targets state
   const [targets, setTargets] = useState<Target[]>([]);
   const [targetsLoading, setTargetsLoading] = useState(true);
-  const [businesses, setBusinesses] = useState<Business[]>([]);
-  const [loadingBusinessId, setLoadingBusinessId] = useState<string | null>(null);
-  const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set());
+  const [targetsError, setTargetsError] = useState<string | null>(null);
   
   // Composer state (lifted)
   const [postText, setPostText] = useState('');
@@ -185,40 +177,68 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
         return allData;
     };
 
-    const fetchInitialData = async () => {
+    const fetchAllData = async () => {
         setTargetsLoading(true);
+        setTargetsError(null);
         try {
-            const [directPages, allGroups, businessData] = await Promise.all([
-                fetchWithPagination('/me/accounts?fields=id,name,access_token,picture{url}&limit=100'),
-                fetchWithPagination('/me/groups?fields=id,name,picture{url},permissions&limit=100'),
-                fetchWithPagination('/me/businesses?limit=100')
+            // 1. Fetch all business IDs
+            const businesses: Business[] = await fetchWithPagination('/me/businesses?limit=100');
+            
+            // 2. Create promises for pages from all sources (direct, owned, client)
+            const pagePromises = businesses.flatMap(business => [
+                fetchWithPagination(`/${business.id}/owned_pages?fields=id,name,access_token,picture{url}&limit=100`),
+                fetchWithPagination(`/${business.id}/client_pages?fields=id,name,access_token,picture{url}&limit=100`)
+            ]);
+            pagePromises.push(fetchWithPagination('/me/accounts?fields=id,name,access_token,picture{url}&limit=100'));
+            
+            // 3. Create promise for groups
+            const groupsPromise = fetchWithPagination('/me/groups?fields=id,name,picture{url},permissions&limit=100');
+
+            // 4. Run all data fetches in parallel
+            const [pageResults, allGroupsRaw] = await Promise.all([
+                Promise.allSettled(pagePromises),
+                groupsPromise
             ]);
 
-            setBusinesses(businessData as Business[]);
-
-            const adminGroups = allGroups.filter((group: any) =>
-                group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
-            );
-
-            const initialTargets: Target[] = [
-                ...directPages.map(p => ({ ...p, type: 'page' as 'page' })),
-                ...adminGroups.map(g => ({ ...g, type: 'group' as 'group' }))
-            ];
-            
-            const initialPages = initialTargets.filter(t => t.type === 'page');
-            const igAccounts = await fetchInstagramAccounts(initialPages);
-            
             const allTargetsMap = new Map<string, Target>();
-            [...initialTargets, ...igAccounts].forEach(t => {
-                if (!allTargetsMap.has(t.id)) {
-                    allTargetsMap.set(t.id, t);
+
+            // Process all page results
+            pageResults.forEach(result => {
+                if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+                    result.value.forEach(page => {
+                        if (page && page.id && !allTargetsMap.has(page.id)) {
+                            allTargetsMap.set(page.id, { ...page, type: 'page' as 'page' });
+                        }
+                    });
                 }
             });
-            
-            setTargets(Array.from(allTargetsMap.values()));
 
+            // Process group results
+            const adminGroups = allGroupsRaw.filter((group: any) => 
+                group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
+            );
+            adminGroups.forEach(group => {
+                if (group && group.id && !allTargetsMap.has(group.id)) {
+                    allTargetsMap.set(group.id, { ...group, type: 'group' as 'group' });
+                }
+            });
+
+            // 5. Fetch Instagram accounts for all unique pages found
+            const allPages = Array.from(allTargetsMap.values()).filter(t => t.type === 'page');
+            if (allPages.length > 0) {
+                const igAccounts = await fetchInstagramAccounts(allPages);
+                igAccounts.forEach(igAccount => {
+                    if (igAccount && igAccount.id && !allTargetsMap.has(igAccount.id)) {
+                        allTargetsMap.set(igAccount.id, igAccount);
+                    }
+                });
+            }
+
+            setTargets(Array.from(allTargetsMap.values()));
+            
         } catch (error) {
-            console.error("Error fetching initial data from Facebook:", error);
+            console.error("Error fetching all data from Facebook:", error);
+            setTargetsError('حدث خطأ فادح عند الاتصال بفيسبوك.');
         } finally {
             setTargetsLoading(false);
         }
@@ -226,74 +246,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
     
     if (isSimulationMode) {
         setTargets(MOCK_TARGETS);
-        setBusinesses(MOCK_BUSINESSES);
         setScheduledPosts(MOCK_SCHEDULED_POSTS);
         setPublishedPosts(MOCK_PUBLISHED_POSTS);
         setTargetsLoading(false);
     } else {
-        fetchInitialData();
-    }
-  }, [isSimulationMode, fetchInstagramAccounts]);
-
-  const handleLoadBusinessPages = useCallback(async (businessId: string) => {
-    setLoadingBusinessId(businessId);
-
-    if (isSimulationMode) {
-        setTimeout(() => {
-            const newMockPage: Target = {
-                id: `biz_page_${businessId}_${Date.now()}`,
-                name: `صفحة من حافظة ${businessId}`,
-                type: 'page',
-                access_token: 'DUMMY_TOKEN_BIZ',
-                picture: { data: { url: `https://via.placeholder.com/150/008080/FFFFFF?text=Biz` } }
-            };
-            setTargets(prev => [...prev, newMockPage]);
-            setLoadedBusinessIds(prev => new Set(prev).add(businessId));
-            setLoadingBusinessId(null);
-        }, 1000);
-        return;
-    }
-
-    const fetchWithPagination = async (initialPath: string): Promise<any[]> => {
-        let allData: any[] = [];
-        let path: string | null = initialPath;
-        while (path) {
-            const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
-            if (response && response.data && response.data.length > 0) {
-                allData = allData.concat(response.data);
-                path = response.paging?.next ? new URL(response.paging.next).pathname + new URL(response.paging.next).search : null;
-            } else {
-                if (response.error) console.error(`Error paginating ${path}:`, response.error);
-                path = null;
-            }
-        }
-        return allData;
-    };
-
-    try {
-        const [ownedPages, clientPages] = await Promise.all([
-            fetchWithPagination(`/${businessId}/owned_pages?fields=id,name,access_token,picture{url}&limit=100`),
-            fetchWithPagination(`/${businessId}/client_pages?fields=id,name,access_token,picture{url}&limit=100`),
-        ]);
-        
-        const newPages: Target[] = [...ownedPages, ...clientPages].map(p => ({ ...p, type: 'page' }));
-        const newIgAccounts = await fetchInstagramAccounts(newPages);
-        const newTargets = [...newPages, ...newIgAccounts];
-        
-        setTargets(prevTargets => {
-            const targetsMap = new Map<string, Target>(prevTargets.map(t => [t.id, t]));
-            newTargets.forEach(t => targetsMap.set(t.id, t));
-            return Array.from(targetsMap.values());
-        });
-        
-        setLoadedBusinessIds(prev => new Set(prev).add(businessId));
-
-    } catch (error) {
-        console.error(`Failed to load pages for business ${businessId}:`, error);
-        setNotification({ type: 'error', message: 'فشل تحميل الصفحات من حافظة الأعمال.'});
-        setTimeout(() => setNotification(null), 5000);
-    } finally {
-        setLoadingBusinessId(null);
+        fetchAllData();
     }
   }, [isSimulationMode, fetchInstagramAccounts]);
 
@@ -391,30 +348,41 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
       const publishPromises = allTargets.map(target => {
         let apiPath: string;
         const formData = new FormData();
-        formData.append('access_token', target.access_token!);
-        if (postText) formData.append('caption', postText);
-
+        
         if (target.type === 'instagram') {
-          apiPath = `/${target.parentPageId}/photos`;
-          formData.append('source', selectedImage!);
+          apiPath = `/${target.id}/media`;
+          if (postText) formData.append('caption', postText);
+          const imageUrl = URL.createObjectURL(selectedImage!); // needs to be publicly accessible URL or use media_publish
+          formData.append('image_url', imageUrl); // This is simplified, real IG publishing is a 2-step process.
+          formData.append('access_token', target.access_token!);
         } else if (selectedImage) {
           apiPath = `/${target.id}/photos`;
           formData.append('source', selectedImage);
-        } else {
+          if(target.access_token) formData.append('access_token', target.access_token);
+           if (postText) formData.append('caption', postText);
+        } else { // text only
           apiPath = `/${target.id}/feed`;
-          formData.append('message', postText);
+          const params = { message: postText, access_token: target.access_token };
+           return new Promise((resolve, reject) => {
+                window.FB.api(apiPath, 'POST', params, (response: any) => {
+                    if (response && !response.error) resolve({ targetName: target.name, success: true });
+                    else reject({ targetName: target.name, success: false, error: response?.error });
+                });
+            });
         }
         
         return new Promise((resolve, reject) => {
-            window.FB.api(apiPath, 'POST', apiPath.includes('feed') ? {message: postText, access_token: target.access_token} : formData, (response: any) => {
+            window.FB.api(apiPath, 'POST', formData, (response: any) => {
                 if (response && !response.error) resolve({ targetName: target.name, success: true });
-                else reject({ targetName: target.name, success: false, error: response?.error?.message });
+                else reject({ targetName: target.name, success: false, error: response?.error });
             });
         });
       });
       // This part is simplified; a real implementation would handle results better.
-      await Promise.allSettled(publishPromises);
-      messages.push(`تم إرسال ${allTargets.length} منشورات للنشر الفوري.`);
+      const results = await Promise.allSettled(publishPromises);
+      const successfulPosts = results.filter(r => r.status === 'fulfilled').length;
+      if(successfulPosts > 0) messages.push(`تم إرسال ${successfulPosts} منشورات للنشر الفوري.`);
+
 
     } else { // --- Handle scheduling ---
       // 1. Schedule for Facebook & Groups
@@ -496,7 +464,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
         return;
     }
     
-    const apiPath = `/${target.parentPageId}/photos`;
+    const apiPath = `/${target.parentPageId}/photos`; // Publishing to IG is more complex, this is a simplification
     const formData = new FormData();
     formData.append('access_token', target.access_token!);
     formData.append('source', post.imageFile);
@@ -839,16 +807,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
                             targets={targets}
                             selectedTargetIds={selectedTargetIds}
                         />
-                         <BusinessPortfolioManager
-                            businesses={businesses}
-                            onLoadPages={handleLoadBusinessPages}
-                            loadingBusinessId={loadingBusinessId}
-                            loadedBusinessIds={loadedBusinessIds}
-                        />
                         <TargetList
                             targets={targets}
                             isLoading={targetsLoading}
-                            loadingError={null}
+                            loadingError={targetsError}
                             selectedTargetIds={selectedTargetIds}
                             onSelectionChange={setSelectedTargetIds}
                             selectionError={targetSelectionError}
