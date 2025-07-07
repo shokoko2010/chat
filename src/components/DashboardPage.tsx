@@ -676,7 +676,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 plan={contentPlan}
                 onGeneratePlan={handleGeneratePlan} 
                 onStartPost={handleStartPostFromPlan}
-                pageProfile={pageProfile}
             />;
         case 'drafts':
             return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;

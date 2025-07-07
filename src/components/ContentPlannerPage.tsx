@@ -1,7 +1,7 @@
 
 
 import React, { useState, useCallback } from 'react';
-import { ContentPlanItem, StrategyRequest, PageProfile } from '../types';
+import { ContentPlanItem, StrategyRequest } from '../types';
 import Button from './ui/Button';
 import ContentPlanCard from './ContentPlanCard';
 import { GoogleGenAI } from '@google/genai';
@@ -15,7 +15,6 @@ interface ContentPlannerPageProps {
   plan: ContentPlanItem[] | null;
   onGeneratePlan: (request: StrategyRequest, images?: File[]) => void;
   onStartPost: (planItem: ContentPlanItem) => void;
-  pageProfile: PageProfile;
 }
 
 const StrategyButton: React.FC<{label: string, active: boolean, onClick: () => void}> = ({ label, active, onClick }) => (
@@ -32,7 +31,6 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   plan,
   onGeneratePlan,
   onStartPost,
-  pageProfile
 }) => {
   const [strategyType, setStrategyType] = useState<StrategyRequest['type']>('standard');
   const [planDuration, setPlanDuration] = useState<StrategyRequest['duration']>('weekly');
