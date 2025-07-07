@@ -99,7 +99,10 @@ const App: React.FC = () => {
           console.error('User cancelled login or did not fully authorize.');
           setAuthStatus('not_authorized');
         }
-      }, { scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights' });
+      }, { 
+        scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights',
+        auth_type: 'rerequest'
+      });
     } catch (error) {
       console.error("An error occurred during FB.login:", error);
       setAuthStatus('not_authorized');
