@@ -92,8 +92,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setDrafts(savedData.drafts || []);
     setScheduledPosts(savedData.scheduledPosts ? savedData.scheduledPosts.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt)})) : []);
     setContentPlan(savedData.contentPlan || null);
-    // For bulk posts, we only restore serializable data. The File object needs to be recreated.
-    setBulkPosts(savedData.bulkPosts ? savedData.bulkPosts.map((p: BulkPostItem) => ({...p, imageFile: new File([], p.imageFile.name)})) : []);
+    
+    // This part is tricky because File objects aren't serializable.
+    // We restore the metadata, but the user would need to re-select files if they refresh.
+    // For this implementation, we will clear bulk posts on page change to avoid complexity.
+    setBulkPosts([]);
 
 
     // Reset composer and session-based state
@@ -139,10 +142,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   useEffect(() => {
     try {
         const dataKey = `zex-pages-data-${managedTarget.id}`;
-        // Don't save File objects to local storage directly, just their metadata
-        const serializableDrafts = drafts.map(({ imageFile, ...rest }) => ({...rest, imageFile: imageFile ? {name: imageFile.name} : null }));
-        const serializableBulkPosts = bulkPosts.map(({imageFile, ...rest}) => ({...rest, imageFile: {name: imageFile.name}}));
-        const serializableScheduledPosts = scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: imageFile ? {name: imageFile.name} : null }));
+        // Create serializable versions of state that contain non-serializable objects like File.
+        const serializableDrafts = drafts.map(({ imageFile, ...rest }) => ({...rest, imageFile: imageFile ? {name: imageFile.name, type: imageFile.type} : null }));
+        const serializableBulkPosts = bulkPosts.map(({imageFile, ...rest}) => ({...rest, imageFile: {name: imageFile.name, type: imageFile.type}}));
+        const serializableScheduledPosts = scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: imageFile ? {name: imageFile.name, type: imageFile.type} : null }));
 
         const dataToStore = { 
             drafts: serializableDrafts, 
@@ -366,48 +369,47 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
   // --- Start Bulk Logic ---
   const handleAddBulkPosts = (files: FileList) => {
-      if (files.length === 0) return;
+    if (!files || files.length === 0) {
+      return;
+    }
 
-      // 1. Find the latest scheduled date from all existing posts
-      const allScheduledDates = [
-          ...scheduledPosts.map(p => new Date(p.scheduledAt).getTime()),
-          ...bulkPosts.map(p => {
-              const d = new Date(p.scheduleDate);
-              return isNaN(d.getTime()) ? 0 : d.getTime();
-          })
-      ].filter(t => t > 0);
+    // 1. Determine the last known scheduled time to avoid overlaps.
+    // We look in both already scheduled posts and pending bulk posts.
+    const existingTimestamps = [
+      ...scheduledPosts.map(p => new Date(p.scheduledAt).getTime()),
+      ...bulkPosts.map(p => new Date(p.scheduleDate).getTime())
+    ].filter(time => !isNaN(time));
 
-      let lastScheduleDate = new Date(); // Today
-      if (allScheduledDates.length > 0) {
-          lastScheduleDate = new Date(Math.max(...allScheduledDates));
-      }
+    const lastScheduledTime = existingTimestamps.length > 0 ? Math.max(...existingTimestamps) : Date.now();
 
-      // 2. Determine the start date for new scheduling (day after the last one, or tomorrow)
-      const startDate = new Date(lastScheduleDate);
-      startDate.setDate(startDate.getDate() + 1);
-      startDate.setHours(10, 0, 0, 0); // Default time: 10:00 AM
+    // 2. We'll start scheduling for the day after the last scheduled post, at 10:00 AM.
+    const firstScheduleDate = new Date(lastScheduledTime);
+    firstScheduleDate.setDate(firstScheduleDate.getDate() + 1);
+    firstScheduleDate.setHours(10, 0, 0, 0);
 
-      // 3. Calculate the interval over a 28-day period
-      const numberOfNewPosts = files.length;
-      const schedulingPeriodDays = 28;
-      const intervalMilliseconds = (schedulingPeriodDays * 24 * 60 * 60 * 1000) / numberOfNewPosts;
+    // 3. Calculate the time interval between each new post to spread them over 28 days.
+    const totalPostsToAdd = files.length;
+    const schedulingPeriodMs = 28 * 24 * 60 * 60 * 1000;
+    // The interval can be 0 if only one post is added.
+    const intervalMs = totalPostsToAdd > 1 ? (schedulingPeriodMs / totalPostsToAdd) : 0;
 
-      // 4. Create new bulk post items with distributed dates
-      const newPosts: BulkPostItem[] = Array.from(files).map((file, index) => {
-          const scheduleTimestamp = startDate.getTime() + (index * intervalMilliseconds);
-          const scheduledDateForPost = new Date(scheduleTimestamp);
+    // 4. Create new bulk post items with distributed dates
+    const newPosts: BulkPostItem[] = Array.from(files).map((file, index) => {
+      // Calculate the exact schedule time for the current post.
+      const scheduleTime = firstScheduleDate.getTime() + (index * intervalMs);
+      const scheduledDateForPost = new Date(scheduleTime);
 
-          return {
-              id: `bulk_${Date.now()}_${Math.random()}_${index}`,
-              imageFile: file,
-              imagePreview: URL.createObjectURL(file),
-              text: '',
-              scheduleDate: formatDateTimeForInput(scheduledDateForPost),
-              targetIds: [managedTarget.id],
-          };
-      });
+      return {
+        id: `bulk_${Date.now()}_${Math.random()}_${index}`,
+        imageFile: file,
+        imagePreview: URL.createObjectURL(file),
+        text: '',
+        scheduleDate: formatDateTimeForInput(scheduledDateForPost),
+        targetIds: [managedTarget.id],
+      };
+    });
 
-      setBulkPosts(prev => [...prev, ...newPosts]);
+    setBulkPosts(prev => [...prev, ...newPosts]);
   };
 
   const handleUpdateBulkPost = (id: string, updates: Partial<BulkPostItem>) => {
