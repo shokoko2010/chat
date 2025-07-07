@@ -1,11 +1,12 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
 import HomePage from './components/HomePage';
 import { GoogleGenAI } from '@google/genai';
 import { initializeGoogleGenAI } from './services/geminiService';
-import { Target } from './types';
+import { Target, Business } from './types';
 import SettingsModal from './components/SettingsModal';
 
 const isSimulation = window.location.protocol === 'http:';
@@ -14,6 +15,11 @@ const MOCK_TARGETS: Target[] = [
     { id: '1', name: 'صفحة تجريبية 1', type: 'page', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/4B79A1/FFFFFF?text=Page1' } } },
     { id: '101', name: 'مجموعة المطورين التجريبية', type: 'group', picture: { data: { url: 'https://via.placeholder.com/150/228B22/FFFFFF?text=Group1' } } },
     { id: 'ig1', name: 'Zex Pages IG (@zex_pages_ig)', type: 'instagram', parentPageId: '1', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/E4405F/FFFFFF?text=IG' } } }
+];
+
+const MOCK_BUSINESSES: Business[] = [
+    { id: 'b1', name: 'الوكالة الرقمية الإبداعية' },
+    { id: 'b2', name: 'مجموعة مطاعم النكهة الأصيلة' },
 ];
 
 const App: React.FC = () => {
@@ -25,10 +31,14 @@ const App: React.FC = () => {
   const [aiClient, setAiClient] = useState<GoogleGenAI | null>(null);
 
   const [targets, setTargets] = useState<Target[]>([]);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
   const [targetsLoading, setTargetsLoading] = useState(true);
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  const [loadingBusinessId, setLoadingBusinessId] = useState<string | null>(null);
+  const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set());
 
 
   useEffect(() => {
@@ -91,6 +101,22 @@ const App: React.FC = () => {
       clearTimeout(timeoutId);
     };
   }, [checkLoginStatus, isSimulationMode]);
+  
+  const fetchWithPagination = useCallback(async (initialPath: string): Promise<any[]> => {
+      let allData: any[] = [];
+      let path: string | null = initialPath;
+      while (path) {
+          const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
+          if (response && response.data && response.data.length > 0) {
+              allData = allData.concat(response.data);
+              path = response.paging?.next ? new URL(response.paging.next).pathname + new URL(response.paging.next).search : null;
+          } else {
+              if (response.error) console.error(`Error fetching paginated data for path ${path}:`, response.error);
+              path = null;
+          }
+      }
+      return allData;
+  }, []);
 
   const fetchInstagramAccounts = useCallback(async (pages: Target[]): Promise<Target[]> => {
     if (pages.length === 0) return [];
@@ -146,37 +172,25 @@ const App: React.FC = () => {
     if (authStatus !== 'connected') {
         setTargetsLoading(true);
         setTargets([]);
+        setBusinesses([]);
         return;
     }
     if (isSimulationMode) {
         setTargets(MOCK_TARGETS);
+        setBusinesses(MOCK_BUSINESSES);
         setTargetsLoading(false);
         return;
     }
     
-    const fetchWithPagination = async (initialPath: string): Promise<any[]> => {
-        let allData: any[] = [];
-        let path: string | null = initialPath;
-        while (path) {
-            const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
-            if (response && response.data && response.data.length > 0) {
-                allData = allData.concat(response.data);
-                path = response.paging?.next ? new URL(response.paging.next).pathname + new URL(response.paging.next).search : null;
-            } else {
-                if (response.error) console.error(`Error fetching paginated data for path ${path}:`, response.error);
-                path = null;
-            }
-        }
-        return allData;
-    };
-
     const fetchAllData = async () => {
         setTargetsLoading(true);
         setTargetsError(null);
         try {
             const pagesPromise = fetchWithPagination('/me/accounts?fields=id,name,access_token,picture{url}&limit=100');
             const groupsPromise = fetchWithPagination('/me/groups?fields=id,name,picture{url},permissions&limit=100');
-            const [allPagesData, allGroupsRaw] = await Promise.all([pagesPromise, groupsPromise]);
+            const businessesPromise = fetchWithPagination('/me/businesses?fields=id,name');
+
+            const [allPagesData, allGroupsRaw, allBusinessesData] = await Promise.all([pagesPromise, groupsPromise, businessesPromise]);
 
             const allTargetsMap = new Map<string, Target>();
             if (allPagesData) allPagesData.forEach(p => allTargetsMap.set(p.id, { ...p, type: 'page' }));
@@ -187,8 +201,8 @@ const App: React.FC = () => {
             const igAccounts = await fetchInstagramAccounts(allPagesData);
             igAccounts.forEach(ig => allTargetsMap.set(ig.id, ig));
             
-            const finalTargets = Array.from(allTargetsMap.values());
-            setTargets(finalTargets);
+            setTargets(Array.from(allTargetsMap.values()));
+            setBusinesses(allBusinessesData);
         } catch (error) {
             console.error("Error fetching data from Facebook:", error);
             setTargetsError('حدث خطأ فادح عند الاتصال بفيسبوك.');
@@ -197,7 +211,39 @@ const App: React.FC = () => {
         }
     };
     fetchAllData();
-  }, [authStatus, isSimulationMode, fetchInstagramAccounts]);
+  }, [authStatus, isSimulationMode, fetchInstagramAccounts, fetchWithPagination]);
+  
+  const handleLoadPagesFromBusiness = useCallback(async (businessId: string) => {
+    setLoadingBusinessId(businessId);
+    try {
+      const ownedPagesPromise = fetchWithPagination(`/${businessId}/owned_pages?fields=id,name,access_token,picture{url}&limit=100`);
+      const clientPagesPromise = fetchWithPagination(`/${businessId}/client_pages?fields=id,name,access_token,picture{url}&limit=100`);
+      
+      const [ownedPages, clientPages] = await Promise.all([ownedPagesPromise, clientPagesPromise]);
+      const allBusinessPages = [...ownedPages, ...clientPages];
+      
+      const igAccounts = await fetchInstagramAccounts(allBusinessPages);
+      
+      const newTargetsMap = new Map<string, Target>();
+      allBusinessPages.forEach(p => newTargetsMap.set(p.id, { ...p, type: 'page' }));
+      igAccounts.forEach(ig => newTargetsMap.set(ig.id, ig));
+      
+      setTargets(prevTargets => {
+        const existingTargetsMap = new Map(prevTargets.map(t => [t.id, t]));
+        newTargetsMap.forEach((value, key) => existingTargetsMap.set(key, value));
+        return Array.from(existingTargetsMap.values());
+      });
+      
+      setLoadedBusinessIds(prev => new Set(prev).add(businessId));
+
+    } catch(error) {
+      console.error(`Error loading pages for business ${businessId}:`, error);
+      // Maybe set an error state to show in the UI
+    } finally {
+      setLoadingBusinessId(null);
+    }
+  }, [fetchWithPagination, fetchInstagramAccounts]);
+
 
   const handleLogin = useCallback(() => {
     if (isSimulationMode) {
@@ -252,6 +298,10 @@ const App: React.FC = () => {
       return (
         <PageSelectorPage
           targets={targets}
+          businesses={businesses}
+          onLoadPagesFromBusiness={handleLoadPagesFromBusiness}
+          loadingBusinessId={loadingBusinessId}
+          loadedBusinessIds={loadedBusinessIds}
           isLoading={targetsLoading}
           error={targetsError}
           onSelectTarget={handleSelectTarget}

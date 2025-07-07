@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Draft } from '../types';
 import Button from './ui/Button';
@@ -38,15 +39,10 @@ const DraftsList: React.FC<DraftsListProps> = ({ drafts, onLoad, onDelete }) => 
             <p className="text-gray-700 dark:text-gray-300 h-24 overflow-hidden text-ellipsis">
               {draft.text || <span className="text-gray-400">لا يوجد نص...</span>}
             </p>
-            {draft.selectedTargetIds.length > 0 && 
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                    {draft.selectedTargetIds.length} وجهات مختارة
-                </p>
-            }
           </div>
           <div className="p-3 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700/50 flex justify-between items-center gap-2">
             <Button 
-                variant="secondary" 
+                variant="danger" 
                 onClick={() => onDelete(draft.id)} 
                 className="!p-2" 
                 aria-label="Delete draft"

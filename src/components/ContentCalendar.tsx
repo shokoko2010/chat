@@ -92,7 +92,7 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts }) => {
                                                 {post.isReminder && <span title="تذكير لنشر انستجرام"><BellIcon className="w-4 h-4 text-yellow-500" /></span>}
                                                 {post.imageUrl && <PhotoIcon className="w-4 h-4" />}
                                                 <div className="flex -space-x-2 overflow-hidden">
-                                                    {post.targets.slice(0, 3).map(t => <img key={t.id} className="inline-block h-5 w-5 rounded-full ring-2 ring-white dark:ring-gray-700" src={t.picture.data.url} alt={t.name}/>)}
+                                                    {post.targetInfo && <img className="inline-block h-5 w-5 rounded-full ring-2 ring-white dark:ring-gray-700" src={post.targetInfo.avatarUrl} alt={post.targetInfo.name}/>}
                                                 </div>
                                             </div>
                                         </div>

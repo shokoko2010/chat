@@ -1,12 +1,19 @@
+
 import React from 'react';
-import { Target } from '../types';
+import { Target, Business } from '../types';
 import Button from './ui/Button';
 import FacebookIcon from './icons/FacebookIcon';
 import InstagramIcon from './icons/InstagramIcon';
 import SettingsIcon from './icons/SettingsIcon';
+import BusinessPortfolioManager from './BusinessPortfolioManager';
+
 
 interface PageSelectorPageProps {
   targets: Target[];
+  businesses?: Business[];
+  onLoadPagesFromBusiness?: (businessId: string) => void;
+  loadingBusinessId?: string | null;
+  loadedBusinessIds?: Set<string>;
   isLoading: boolean;
   error: string | null;
   onSelectTarget: (target: Target) => void;
@@ -49,18 +56,29 @@ const TargetCard: React.FC<{ target: Target, onSelect: () => void }> = ({ target
   );
 };
 
-const PageSelectorPage: React.FC<PageSelectorPageProps> = ({ targets, isLoading, error, onSelectTarget, onLogout, onSettingsClick }) => {
+const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
+  targets,
+  businesses,
+  onLoadPagesFromBusiness,
+  loadingBusinessId,
+  loadedBusinessIds,
+  isLoading,
+  error,
+  onSelectTarget,
+  onLogout,
+  onSettingsClick,
+}) => {
   const pages = targets.filter(t => t.type === 'page' || t.type === 'group');
   const instagramAccounts = targets.filter(t => t.type === 'instagram');
 
   const renderContent = () => {
-    if (isLoading) {
+    if (isLoading && targets.length === 0) {
       return <div className="text-center text-gray-500 dark:text-gray-400 py-10">جاري تحميل وجهات النشر...</div>;
     }
     if (error) {
       return <div className="text-center text-red-500 py-10">{error}</div>;
     }
-    if (targets.length === 0) {
+    if (targets.length === 0 && !isLoading) {
       return (
         <div className="text-center text-gray-500 dark:text-gray-400 p-8 border-2 border-dashed rounded-lg">
           <h3 className="font-semibold text-xl text-gray-700 dark:text-gray-300 mb-2">لم يتم العثور على أي وجهات</h3>
@@ -115,7 +133,21 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({ targets, isLoading,
         </header>
         <main className="p-4 sm:p-8">
             <div className="max-w-7xl mx-auto">
-              <h1 className="text-3xl font-bold mb-6 text-gray-900 dark:text-white">اختر وجهة لإدارتها</h1>
+              <div className="md:flex justify-between items-center mb-6">
+                <h1 className="text-3xl font-bold mb-4 md:mb-0 text-gray-900 dark:text-white">اختر وجهة لإدارتها</h1>
+                {isLoading && <p className="text-gray-500">جاري تحديث القائمة...</p>}
+              </div>
+              
+              {businesses && onLoadPagesFromBusiness && loadingBusinessId !== undefined && loadedBusinessIds && (
+                <div className="mb-8">
+                    <BusinessPortfolioManager 
+                        businesses={businesses}
+                        onLoadPages={onLoadPagesFromBusiness}
+                        loadingBusinessId={loadingBusinessId}
+                        loadedBusinessIds={loadedBusinessIds}
+                    />
+                </div>
+              )}
               {renderContent()}
             </div>
         </main>

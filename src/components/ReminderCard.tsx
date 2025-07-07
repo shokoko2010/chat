@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ScheduledPost } from '../types';
 import Button from './ui/Button';
@@ -9,10 +10,11 @@ interface ReminderCardProps {
 }
 
 const ReminderCard: React.FC<ReminderCardProps> = ({ post, onPublish, isPublishing }) => {
-    if (!post.targets[0]) {
-        return null; // Should not happen
+    const { targetInfo } = post;
+    if (!targetInfo) {
+        return null; // Should not happen with consistent data
     }
-    const target = post.targets[0];
+    
     return (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md flex items-center justify-between gap-4 border-l-4 border-yellow-500">
             <div className="flex items-center gap-4 flex-grow">
@@ -26,11 +28,11 @@ const ReminderCard: React.FC<ReminderCardProps> = ({ post, onPublish, isPublishi
                 <div className="flex-grow">
                     <div className="flex items-center gap-2">
                          <img 
-                            src={target.picture.data.url}
-                            alt={target.name}
+                            src={targetInfo.avatarUrl}
+                            alt={targetInfo.name}
                             className="w-6 h-6 rounded-full"
                          />
-                        <p className="font-bold text-gray-800 dark:text-white">{target.name}</p>
+                        <p className="font-bold text-gray-800 dark:text-white">{targetInfo.name}</p>
                     </div>
                     <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 truncate">
                         {post.text || 'منشور يحتوي على صورة فقط.'}

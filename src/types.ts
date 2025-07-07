@@ -17,6 +17,7 @@ export interface Target {
     }
   };
   parentPageId?: string;
+  published_posts?: { data: any[] }; // To match FB API response for IG
 }
 
 export interface ScheduledPost {
@@ -25,8 +26,13 @@ export interface ScheduledPost {
   imageUrl?: string;
   imageFile?: File; // For reminder re-publishing
   scheduledAt: Date;
-  targets: Target[];
-  isReminder?: boolean; // To identify Instagram reminders
+  isReminder: boolean;
+  targetId: string; // ID of the target (page/group/ig)
+  targetInfo: {
+      name: string;
+      avatarUrl: string;
+      type: 'page' | 'group' | 'instagram';
+  }
 }
 
 export interface Draft {
@@ -34,7 +40,10 @@ export interface Draft {
   text: string;
   imageFile: File | null;
   imagePreview: string | null;
-  selectedTargetIds: string[];
+  targetId: string; // The managed target this draft was saved for
+  isScheduled: boolean;
+  scheduleDate: string;
+  includeInstagram: boolean;
 }
 
 export interface PostAnalytics {
@@ -70,7 +79,7 @@ export interface BulkPostItem {
   imagePreview: string;
   text: string;
   scheduleDate: string; // ISO string format
-  targetIds: string[]; // Array of selected target IDs
+  targetIds: string[]; // List of target IDs to post to
   error?: string; // For per-item validation errors
   isGeneratingDescription?: boolean;
 }

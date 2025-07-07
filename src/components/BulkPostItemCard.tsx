@@ -85,7 +85,7 @@ const BulkPostItemCard: React.FC<BulkPostItemCardProps> = ({
               >
                 {targets.map(target => (
                   <option key={target.id} value={target.id}>
-                    {target.name} ({target.type === 'page' ? 'صفحة' : 'مجموعة'})
+                    {target.name} ({target.type === 'page' ? 'صفحة' : (target.type === 'group' ? 'مجموعة' : 'انستجرام')})
                   </option>
                 ))}
               </select>
