@@ -1,5 +1,4 @@
 import React from 'react';
-import FacebookIcon from './icons/FacebookIcon';
 import HeartIcon from './icons/HeartIcon';
 import ChatBubbleOvalLeftIcon from './icons/ChatBubbleOvalLeftIcon';
 import PaperAirplaneIcon from './icons/PaperAirplaneIcon';
