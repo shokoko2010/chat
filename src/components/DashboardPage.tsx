@@ -30,16 +30,6 @@ interface DashboardPageProps {
   onSettingsClick: () => void;
 }
 
-const formatDateTimeForInput = (date: Date) => {
-    const pad = (num: number) => num.toString().padStart(2, '0');
-    const year = date.getFullYear();
-    const month = pad(date.getMonth() + 1);
-    const day = pad(date.getDate());
-    const hours = pad(date.getHours());
-    const minutes = pad(date.getMinutes());
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-};
-
 const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner'>('composer');
   
@@ -77,15 +67,29 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     if (managedTarget.type !== 'page') return null;
     return allTargets.find(t => t.type === 'instagram' && t.parentPageId === managedTarget.id) || null;
   }, [managedTarget, allTargets]);
+
+  const clearComposer = useCallback(() => {
+    setPostText(''); setSelectedImage(null); setImagePreview(null);
+    setScheduleDate(''); setComposerError('');
+    // Default to including IG if available, and not scheduling.
+    setIsScheduled(false);
+    setIncludeInstagram(!!linkedInstagramTarget);
+  }, [linkedInstagramTarget]);
   
   // Load data from localStorage when managedTarget changes
   useEffect(() => {
     const dataKey = `zex-pages-data-${managedTarget.id}`;
     let savedData;
     try {
-        savedData = JSON.parse(localStorage.getItem(dataKey) || '{}');
+        const rawData = localStorage.getItem(dataKey);
+        if (rawData) {
+            savedData = JSON.parse(rawData);
+        } else {
+            savedData = {};
+        }
     } catch(e) {
         console.error("Failed to parse saved data, resetting.", e);
+        localStorage.removeItem(dataKey); // Remove corrupt data
         savedData = {};
     }
 
@@ -93,9 +97,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setScheduledPosts(savedData.scheduledPosts ? savedData.scheduledPosts.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt)})) : []);
     setContentPlan(savedData.contentPlan || null);
     
-    // This part is tricky because File objects aren't serializable.
-    // We restore the metadata, but the user would need to re-select files if they refresh.
-    // For this implementation, we will clear bulk posts on page change to avoid complexity.
+    // We clear bulk posts on page change to avoid complexity with non-serializable File objects.
     setBulkPosts([]);
 
 
@@ -136,22 +138,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       }
     );
     
-  }, [managedTarget.id, isSimulationMode]);
+  }, [managedTarget.id, isSimulationMode, clearComposer]);
   
   // Save data to localStorage whenever it changes
   useEffect(() => {
     try {
         const dataKey = `zex-pages-data-${managedTarget.id}`;
         // Create serializable versions of state that contain non-serializable objects like File.
-        const serializableDrafts = drafts.map(({ imageFile, ...rest }) => ({...rest, imageFile: imageFile ? {name: imageFile.name, type: imageFile.type} : null }));
-        const serializableBulkPosts = bulkPosts.map(({imageFile, ...rest}) => ({...rest, imageFile: {name: imageFile.name, type: imageFile.type}}));
-        const serializableScheduledPosts = scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: imageFile ? {name: imageFile.name, type: imageFile.type} : null }));
-
+        // We only store metadata for files, not the files themselves.
         const dataToStore = { 
-            drafts: serializableDrafts, 
-            scheduledPosts: serializableScheduledPosts,
+            drafts: drafts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imagePreview: imageFile ? rest.imagePreview : null })), 
+            scheduledPosts: scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imageUrl: imageFile ? rest.imageUrl : null })),
             contentPlan, 
-            bulkPosts: serializableBulkPosts 
+            bulkPosts: bulkPosts.map(({imageFile, ...rest}) => ({...rest, imageFile: null, imagePreview: imageFile ? rest.imagePreview : null}))
         };
         localStorage.setItem(dataKey, JSON.stringify(dataToStore));
     } catch(e) {
@@ -159,12 +158,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   }, [drafts, scheduledPosts, contentPlan, bulkPosts, managedTarget.id]);
 
-
-  const clearComposer = useCallback(() => {
-    setPostText(''); setSelectedImage(null); setImagePreview(null);
-    setIsScheduled(false); setScheduleDate(''); setComposerError('');
-    setIncludeInstagram(false);
-  }, []);
 
   const showNotification = (type: 'success' | 'error' | 'partial', message: string) => {
     setNotification({ type, message });
@@ -373,8 +366,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       return;
     }
 
-    // 1. Determine the last known scheduled time to avoid overlaps.
-    // We look in both already scheduled posts and pending bulk posts.
     const existingTimestamps = [
       ...scheduledPosts.map(p => new Date(p.scheduledAt).getTime()),
       ...bulkPosts.map(p => new Date(p.scheduleDate).getTime())
@@ -382,30 +373,35 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
     const lastScheduledTime = existingTimestamps.length > 0 ? Math.max(...existingTimestamps) : Date.now();
 
-    // 2. We'll start scheduling for the day after the last scheduled post, at 10:00 AM.
     const firstScheduleDate = new Date(lastScheduledTime);
     firstScheduleDate.setDate(firstScheduleDate.getDate() + 1);
     firstScheduleDate.setHours(10, 0, 0, 0);
 
-    // 3. Calculate the time interval between each new post to spread them over 28 days.
     const totalPostsToAdd = files.length;
     const schedulingPeriodMs = 28 * 24 * 60 * 60 * 1000;
-    // The interval can be 0 if only one post is added.
-    const intervalMs = totalPostsToAdd > 1 ? (schedulingPeriodMs / totalPostsToAdd) : 0;
+    const intervalMs = totalPostsToAdd > 1 ? (schedulingPeriodMs / (totalPostsToAdd - 1)) : 0;
 
-    // 4. Create new bulk post items with distributed dates
     const newPosts: BulkPostItem[] = Array.from(files).map((file, index) => {
-      // Calculate the exact schedule time for the current post.
       const scheduleTime = firstScheduleDate.getTime() + (index * intervalMs);
       const scheduledDateForPost = new Date(scheduleTime);
+      
+      const formatDateTimeForInputValue = (date: Date) => {
+          const pad = (num: number) => num.toString().padStart(2, '0');
+          return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      };
+
+      const defaultTargetIds = [managedTarget.id];
+      if (linkedInstagramTarget) {
+          defaultTargetIds.push(linkedInstagramTarget.id);
+      }
 
       return {
         id: `bulk_${Date.now()}_${Math.random()}_${index}`,
         imageFile: file,
         imagePreview: URL.createObjectURL(file),
         text: '',
-        scheduleDate: formatDateTimeForInput(scheduledDateForPost),
-        targetIds: [managedTarget.id],
+        scheduleDate: formatDateTimeForInputValue(scheduledDateForPost),
+        targetIds: defaultTargetIds,
       };
     });
 
@@ -551,11 +547,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     switch (view) {
         case 'composer':
             return (
-                <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                    <div className="lg:col-span-2">
-                        <PostPreview postText={postText} imagePreview={imagePreview} pageName={managedTarget.name} pageAvatar={managedTarget.picture.data.url} />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="space-y-6 sticky top-24 self-start">
+                        <h3 className="text-xl font-bold text-gray-800 dark:text-white">معاينة مباشرة</h3>
+                        <div className={`grid gap-6 ${includeInstagram ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'}`}>
+                          <div className={includeInstagram ? "xl:col-span-2 flex justify-center" : ""}>
+                            <PostPreview type="facebook" postText={postText} imagePreview={imagePreview} pageName={managedTarget.name} pageAvatar={managedTarget.picture.data.url} />
+                          </div>
+                          {includeInstagram && (
+                            <div className="xl:col-span-2 flex justify-center">
+                              <PostPreview type="instagram" postText={postText} imagePreview={imagePreview} pageName={linkedInstagramTarget?.name.split('(')[0].trim() || managedTarget.name} pageAvatar={linkedInstagramTarget?.picture.data.url || managedTarget.picture.data.url} />
+                            </div>
+                          )}
+                        </div>
                     </div>
-                    <div className="lg:col-span-3">
+                    <div className="lg:col-span-1">
                         <PostComposer aiClient={aiClient} onPublish={handlePublishFromComposer} onSaveDraft={handleSaveDraft} isPublishing={isPublishing} postText={postText}
                             onPostTextChange={setPostText} onImageChange={handleImageChange} onImageGenerated={handleGeneratedImageSelect} onImageRemove={handleImageRemove}
                             imagePreview={imagePreview} isScheduled={isScheduled} onIsScheduledChange={setIsScheduled} scheduleDate={scheduleDate}
