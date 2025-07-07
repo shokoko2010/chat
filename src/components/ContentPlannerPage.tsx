@@ -1,7 +1,7 @@
 
 
 import React, { useState, useCallback } from 'react';
-import { ContentPlanItem, StrategyRequest, PageProfile } from '../types';
+import { ContentPlanItem, StrategyRequest, PageProfile, StrategyHistoryItem } from '../types';
 import Button from './ui/Button';
 import ContentPlanCard from './ContentPlanCard';
 import { GoogleGenAI } from '@google/genai';
@@ -9,6 +9,8 @@ import BrainCircuitIcon from './icons/BrainCircuitIcon';
 import PhotoIcon from './icons/PhotoIcon';
 import CalendarCheckIcon from './icons/CalendarCheckIcon';
 import CalendarPlusIcon from './icons/CalendarPlusIcon';
+import StrategyHistoryModal from './StrategyHistoryModal';
+import ClockHistoryIcon from './icons/ClockHistoryIcon';
 
 interface ContentPlannerPageProps {
   aiClient: GoogleGenAI | null;
@@ -23,6 +25,9 @@ interface ContentPlannerPageProps {
   onStartPost: (planItem: ContentPlanItem) => void;
   pageProfile: PageProfile;
   onProfileChange: (newProfile: PageProfile) => void;
+  strategyHistory: StrategyHistoryItem[];
+  onLoadFromHistory: (plan: ContentPlanItem[]) => void;
+  onDeleteFromHistory: (id: string) => void;
 }
 
 const StrategyButton: React.FC<{label: string, icon: React.ReactNode, active: boolean, onClick: () => void}> = ({ label, icon, active, onClick }) => (
@@ -54,7 +59,10 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   onScheduleStrategy,
   onStartPost,
   pageProfile,
-  onProfileChange
+  onProfileChange,
+  strategyHistory,
+  onLoadFromHistory,
+  onDeleteFromHistory,
 }) => {
   const [currentStep, setCurrentStep] = useState(1);
   
@@ -79,6 +87,7 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   
   const [isDragging, setIsDragging] = useState(false);
   const [formError, setFormError] = useState('');
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -154,6 +163,11 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
     'حملة صيفية عامة', 'حملة شتوية عامة'
   ];
 
+  const handleLoadAndClose = (plan: ContentPlanItem[]) => {
+      onLoadFromHistory(plan);
+      setIsHistoryModalOpen(false);
+  };
+  
   const renderStepContent = () => {
     switch (currentStep) {
       case 1: // Page Profile
@@ -225,13 +239,20 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   }
 
   return (
+    <>
     <div className="space-y-8 fade-in max-w-5xl mx-auto">
       <div className="p-6 sm:p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-        <div className="text-center mb-8">
+        <div className="text-center mb-4">
             <h2 className="text-3xl font-extrabold text-gray-800 dark:text-white mb-2">محرك استراتيجيات المحتوى</h2>
             <p className="text-lg text-gray-600 dark:text-gray-400">
             حوّل أفكارك إلى خطط محتوى احترافية وشاملة في خطوات بسيطة.
             </p>
+        </div>
+         <div className="text-center mb-8">
+            <Button variant="secondary" onClick={() => setIsHistoryModalOpen(true)} disabled={strategyHistory.length === 0}>
+                <ClockHistoryIcon className="w-5 h-5 ml-2" />
+                عرض سجل الاستراتيجيات ({strategyHistory.length})
+            </Button>
         </div>
         
         {/* Step Indicators */}
@@ -301,6 +322,14 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
         </div>
       )}
     </div>
+    <StrategyHistoryModal 
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        history={strategyHistory}
+        onLoad={handleLoadAndClose}
+        onDelete={onDeleteFromHistory}
+    />
+    </>
   );
 };
 

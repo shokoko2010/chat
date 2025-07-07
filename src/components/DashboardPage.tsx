@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData } from '../types';
+import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import PostPreview from './PostPreview';
@@ -68,6 +68,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [isAnalyzingProfile, setIsAnalyzingProfile] = useState(false);
   const [isSchedulingStrategy, setIsSchedulingStrategy] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [strategyHistory, setStrategyHistory] = useState<StrategyHistoryItem[]>([]);
+
 
   // Analytics State
   const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
@@ -194,6 +196,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setDrafts(savedData.drafts || []);
     setScheduledPosts(savedData.scheduledPosts || []);
     setContentPlan(savedData.contentPlan || null);
+    setStrategyHistory(savedData.strategyHistory || []);
     
     // We clear bulk posts on page change to avoid complexity with non-serializable File objects.
     setBulkPosts([]);
@@ -249,13 +252,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             pageProfile,
             drafts: drafts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imagePreview: imageFile ? rest.imagePreview : null })), 
             scheduledPosts: scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imageUrl: imageFile ? rest.imageUrl : null })),
-            contentPlan, 
+            contentPlan,
+            strategyHistory,
         };
         localStorage.setItem(dataKey, JSON.stringify(dataToStore));
     } catch(e) {
         console.error("Could not save data to localStorage:", e);
     }
-  }, [pageProfile, drafts, scheduledPosts, contentPlan, managedTarget.id]);
+  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, managedTarget.id]);
 
   const filteredPosts = useMemo(() => {
     const now = new Date();
@@ -494,6 +498,39 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setView('composer');
   };
   
+  const handleAddStrategyToHistory = (request: StrategyRequest, plan: ContentPlanItem[]) => {
+    let summary: string;
+    const durationText = request.duration === 'weekly' ? 'أسبوعية' : request.duration === 'monthly' ? `شهرية (${request.postCount || ''} منشور)` : 'سنوية';
+    
+    switch (request.type) {
+        case 'standard': summary = `خطة قياسية - ${durationText}`; break;
+        case 'campaign': summary = `حملة: ${request.campaignName} - ${durationText}`; break;
+        case 'occasion': summary = `حملة لمناسبة: ${request.occasion}`; break;
+        case 'pillar': summary = `محتوى محوري: ${request.pillarTopic}`; break;
+        case 'images': summary = `استراتيجية من ${plan.length} صور`; break;
+        default: summary = 'استراتيجية مخصصة';
+    }
+
+    const newHistoryItem: StrategyHistoryItem = {
+      id: `hist_${Date.now()}`,
+      request,
+      plan,
+      summary,
+      createdAt: new Date().toISOString(),
+    };
+    setStrategyHistory(prev => [newHistoryItem, ...prev]);
+  };
+
+  const handleDeleteStrategyFromHistory = (id: string) => {
+      setStrategyHistory(prev => prev.filter(item => item.id !== id));
+      showNotification('success', 'تم حذف الاستراتيجية من السجل.');
+  };
+
+  const handleLoadStrategyFromHistory = (plan: ContentPlanItem[]) => {
+      setContentPlan(plan);
+      showNotification('success', 'تم تحميل الاستراتيجية بنجاح. يمكنك الآن جدولتها.');
+  };
+  
   const handleGeneratePlan = async (request: StrategyRequest, images?: File[]) => {
     if (!aiClient) return;
     setIsGeneratingPlan(true);
@@ -501,6 +538,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     try {
         const plan = await generateContentPlan(aiClient, request, pageProfile, images);
         setContentPlan(plan);
+        handleAddStrategyToHistory(request, plan);
     } catch(e: any) {
         setPlanError(e.message);
     } finally {
@@ -785,11 +823,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 error={planError} 
                 plan={contentPlan}
                 onGeneratePlan={handleGeneratePlan}
-                onScheduleStrategy={handleScheduleStrategy}
                 isSchedulingStrategy={isSchedulingStrategy}
+                onScheduleStrategy={handleScheduleStrategy}
                 onStartPost={handleStartPostFromPlan}
                 pageProfile={pageProfile}
                 onProfileChange={setPageProfile}
+                strategyHistory={strategyHistory}
+                onLoadFromHistory={handleLoadStrategyFromHistory}
+                onDeleteFromHistory={handleDeleteStrategyFromHistory}
             />;
         case 'drafts':
             return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;

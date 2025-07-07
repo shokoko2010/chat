@@ -159,3 +159,11 @@ export interface ContentPlanItem {
   contentType: string; // e.g., "صورة عالية الجودة", "استطلاع رأي"
   cta: string; // e.g., "ما رأيكم؟ شاركونا في التعليقات!"
 }
+
+export interface StrategyHistoryItem {
+  id: string;
+  request: StrategyRequest;
+  plan: ContentPlanItem[];
+  summary: string;
+  createdAt: string; // ISO date string
+}
