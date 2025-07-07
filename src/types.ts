@@ -94,12 +94,21 @@ export interface Business {
   name: string;
 }
 
+export interface PageProfile {
+  description: string;
+  services: string;
+  contactInfo: string;
+  website: string;
+  currentOffers: string;
+}
+
 // Types for AI Content Planner
 export interface ContentPlanRequest {
-  pageType: string;
+  planType: 'engagement' | 'product_launch' | 'promotion';
   audience: string;
   goals: string;
   tone: string;
+  productInfo?: string; // Optional field for product launches/promotions
 }
 
 export interface ContentPlanItem {

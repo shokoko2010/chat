@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, ContentPlanRequest, WeeklyScheduleSettings } from '../types';
+import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, ContentPlanRequest, WeeklyScheduleSettings, PageProfile } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import PostPreview from './PostPreview';
@@ -10,7 +10,8 @@ import BulkSchedulerPage from './BulkSchedulerPage';
 import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePostInsights } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePostInsights, generatePostSuggestion } from '../services/geminiService';
+import PageProfilePage from './PageProfilePage';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
@@ -19,6 +20,7 @@ import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
 import ChartBarIcon from './icons/ChartBarIcon';
 import QueueListIcon from './icons/QueueListIcon';
 import BrainCircuitIcon from './icons/BrainCircuitIcon';
+import UserCircleIcon from './icons/UserCircleIcon';
 
 interface DashboardPageProps {
   managedTarget: Target;
@@ -31,7 +33,7 @@ interface DashboardPageProps {
 }
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick }) => {
-  const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner'>('composer');
+  const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'profile'>('composer');
   
   // Composer state
   const [postText, setPostText] = useState('');
@@ -48,6 +50,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [publishingReminderId, setPublishingReminderId] = useState<string | null>(null);
   
   // Data state, managed per target
+  const [pageProfile, setPageProfile] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '' });
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
@@ -89,7 +92,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         ...bulkPosts.filter(p => !postsToReschedule.some(pr => pr.id === p.id)).map(p => new Date(p.scheduleDate).getTime())
     ].filter(time => !isNaN(time));
 
-    const lastScheduledTime = existingTimestamps.length > 0 ? Math.max(...existingTimestamps) : Date.now();
+    let lastScheduledTime = existingTimestamps.length > 0 ? Math.max(...existingTimestamps) : Date.now();
 
     const formatDateTimeForInputValue = (date: Date) => {
         const pad = (num: number) => num.toString().padStart(2, '0');
@@ -102,7 +105,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         firstScheduleDate.setHours(10, 0, 0, 0);
 
         const schedulingPeriodMs = 28 * 24 * 60 * 60 * 1000;
-        const intervalMs = postsToReschedule.length > 1 ? (schedulingPeriodMs / (postsToReschedule.length - 1)) : 0;
+        const intervalMs = postsToReschedule.length > 1 ? (schedulingPeriodMs / (postsToReschedule.length)) : 0;
 
         return postsToReschedule.map((post, index) => {
             const scheduleTime = firstScheduleDate.getTime() + (index * intervalMs);
@@ -134,7 +137,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
                 
                 // If the new date is in the past or too soon, try again from the next day
-                if (nextScheduleDate <= lastDate || nextScheduleDate <= new Date()) {
+                if (nextScheduleDate <= lastDate || nextScheduleDate.getTime() < Date.now() + 10 * 60 * 1000) {
                    nextScheduleDate.setDate(nextScheduleDate.getDate() + 1);
                    continue;
                 }
@@ -145,7 +148,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             
             return {
                 ...post,
-                scheduleDate: formatDateTimeForInputValue(nextScheduleDate)
+                scheduleDate: formatDateTimeForInputValue(lastDate)
             };
         });
     }
@@ -181,6 +184,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         savedData = {};
     }
 
+    setPageProfile(savedData.pageProfile || { description: '', services: '', contactInfo: '', website: '', currentOffers: '' });
     setDrafts(savedData.drafts || []);
     setScheduledPosts(savedData.scheduledPosts || []);
     setContentPlan(savedData.contentPlan || null);
@@ -235,6 +239,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         // Create serializable versions of state that contain non-serializable objects like File.
         // We only store metadata for files, not the files themselves.
         const dataToStore = { 
+            pageProfile,
             drafts: drafts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imagePreview: imageFile ? rest.imagePreview : null })), 
             scheduledPosts: scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imageUrl: imageFile ? rest.imageUrl : null })),
             contentPlan, 
@@ -243,7 +248,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     } catch(e) {
         console.error("Could not save data to localStorage:", e);
     }
-  }, [drafts, scheduledPosts, contentPlan, managedTarget.id]);
+  }, [pageProfile, drafts, scheduledPosts, contentPlan, managedTarget.id]);
 
 
   const showNotification = (type: 'success' | 'error' | 'partial', message: string) => {
@@ -438,7 +443,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setIsGeneratingPlan(true);
     setPlanError(null);
     try {
-        const plan = await generateContentPlan(aiClient, request);
+        const plan = await generateContentPlan(aiClient, request, pageProfile);
         setContentPlan(plan);
     } catch(e: any) {
         setPlanError(e.message);
@@ -485,7 +490,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     
     handleUpdateBulkPost(id, { isGeneratingDescription: true });
     try {
-        const description = await generateDescriptionForImage(aiClient, post.imageFile);
+        const description = await generateDescriptionForImage(aiClient, post.imageFile, pageProfile);
         handleUpdateBulkPost(id, { text: description });
     } catch (e: any) {
         handleUpdateBulkPost(id, { error: e.message });
@@ -495,35 +500,50 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   };
   
   const handleScheduleAllBulk = async () => {
+    let hasErrors = false;
+    // Perform validation before scheduling
+    const validatedPosts = bulkPosts.map(post => {
+      const scheduleAt = new Date(post.scheduleDate);
+      if (isNaN(scheduleAt.getTime()) || scheduleAt.getTime() < Date.now() + 9 * 60 * 1000) {
+        hasErrors = true;
+        return { ...post, error: "تاريخ الجدولة غير صالح أو في الماضي." };
+      }
+      if (post.targetIds.length === 0) {
+        hasErrors = true;
+        return { ...post, error: "يجب اختيار وجهة واحدة على الأقل." };
+      }
+      return { ...post, error: undefined };
+    });
+  
+    setBulkPosts(validatedPosts);
+  
+    if (hasErrors) {
+      showNotification('error', 'الرجاء إصلاح الأخطاء في بعض المنشورات قبل المتابعة.');
+      return;
+    }
+
     setIsSchedulingAll(true);
     let successCount = 0;
     const promises = bulkPosts.map(async post => {
         try {
             const scheduleAt = new Date(post.scheduleDate);
-            if (isNaN(scheduleAt.getTime()) || scheduleAt.getTime() < Date.now() + 9 * 60 * 1000) {
-                 throw new Error("تاريخ الجدولة غير صالح أو في الماضي.");
-            }
-            if(post.targetIds.length === 0){
-                throw new Error("يجب اختيار وجهة واحدة على الأقل.");
-            }
-            
             const postTargets = allTargets.filter(t => post.targetIds.includes(t.id));
             
             for (const target of postTargets) {
                 const isIgReminder = target.type === 'instagram';
                 await publishToTarget(target, post.text, post.imageFile, scheduleAt, isIgReminder);
             }
-            handleUpdateBulkPost(post.id, { error: undefined }); // Clear error on success
             successCount++;
+            return { ...post, error: undefined }; // Mark as successful
         } catch (e: any) {
-            handleUpdateBulkPost(post.id, { error: e.message || "فشل غير معروف" });
+            return { ...post, error: e.message || "فشل غير معروف" };
         }
     });
 
-    await Promise.all(promises);
+    const results = await Promise.all(promises);
     setIsSchedulingAll(false);
     showNotification('partial', `اكتملت الجدولة المجمعة. نجح: ${successCount}، فشل: ${bulkPosts.length - successCount}.`);
-    setBulkPosts(prev => prev.filter(p => !p.error)); // Remove successful posts
+    setBulkPosts(results.filter(p => p.error)); // Only keep failed posts
   };
   // --- End Bulk Logic ---
 
@@ -614,7 +634,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="space-y-6 sticky top-24 self-start">
                         <h3 className="text-xl font-bold text-gray-800 dark:text-white">معاينة مباشرة</h3>
-                        <div className={`grid gap-6 ${includeInstagram ? 'grid-cols-1' : 'grid-cols-1 justify-items-center'}`}>
+                        <div className={`grid gap-6 ${includeInstagram ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1 justify-items-center'}`}>
                            <PostPreview type="facebook" postText={postText} imagePreview={imagePreview} pageName={managedTarget.name} pageAvatar={managedTarget.picture.data.url} />
                           {includeInstagram && (
                               <PostPreview type="instagram" postText={postText} imagePreview={imagePreview} pageName={linkedInstagramTarget?.name.split('(')[0].trim() || managedTarget.name} pageAvatar={linkedInstagramTarget?.picture.data.url || managedTarget.picture.data.url} />
@@ -626,7 +646,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             onPostTextChange={setPostText} onImageChange={handleImageChange} onImageGenerated={handleGeneratedImageSelect} onImageRemove={handleImageRemove}
                             imagePreview={imagePreview} isScheduled={isScheduled} onIsScheduledChange={setIsScheduled} scheduleDate={scheduleDate}
                             onScheduleDateChange={setScheduleDate} error={composerError} managedTarget={managedTarget} linkedInstagramTarget={linkedInstagramTarget}
-                            includeInstagram={includeInstagram} onIncludeInstagramChange={setIncludeInstagram}
+                            includeInstagram={includeInstagram} onIncludeInstagramChange={setIncludeInstagram} pageProfile={pageProfile}
                         />
                     </div>
                 </div>
@@ -658,6 +678,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         case 'analytics':
              return <PublishedPostsList posts={publishedPosts} isLoading={publishedPostsLoading}
                 onFetchAnalytics={handleFetchPostAnalytics} onGenerateInsights={handleGeneratePostInsights} />;
+        case 'profile':
+             return <PageProfilePage profile={pageProfile} onProfileChange={setPageProfile} />;
         default: return null;
     }
   }
@@ -687,6 +709,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 </button>
                 <button onClick={() => setView('planner')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'planner' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <BrainCircuitIcon className="w-5 h-5" /> المخطط الذكي
+                </button>
+                 <button onClick={() => setView('profile')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'profile' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                    <UserCircleIcon className="w-5 h-5" /> ملف الصفحة
                 </button>
                 <button onClick={() => setView('drafts')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'drafts' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <ArchiveBoxIcon className="w-5 h-5" /> المسودات ({drafts.length})

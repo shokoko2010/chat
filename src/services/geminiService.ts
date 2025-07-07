@@ -1,7 +1,7 @@
 
 
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { ContentPlanRequest, ContentPlanItem, PostAnalytics } from "../types";
+import { ContentPlanRequest, ContentPlanItem, PostAnalytics, PageProfile } from "../types";
 
 const fileToGenerativePart = async (file: File) => {
   const base64EncodedDataPromise = new Promise<string>((resolve) => {
@@ -14,6 +14,21 @@ const fileToGenerativePart = async (file: File) => {
   };
 }
 
+const createPageContext = (pageProfile?: PageProfile): string => {
+  if (!pageProfile || Object.values(pageProfile).every(val => !val)) {
+    return '';
+  }
+  return `
+    ---
+    سياق الصفحة/العمل (استخدم هذه المعلومات في ردك):
+    - وصف العمل: ${pageProfile.description || 'غير محدد'}
+    - المنتجات/الخدمات: ${pageProfile.services || 'غير محدد'}
+    - معلومات الاتصال: ${pageProfile.contactInfo || 'غير محدد'}
+    - الموقع الإلكتروني: ${pageProfile.website || 'غير محدد'}
+    - العروض الحالية: ${pageProfile.currentOffers || 'غير محدد'}
+    ---
+  `;
+};
 
 export const initializeGoogleGenAI = (apiKey: string): GoogleGenAI | null => {
   if (!apiKey) {
@@ -28,13 +43,16 @@ export const initializeGoogleGenAI = (apiKey: string): GoogleGenAI | null => {
   }
 };
 
-export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string): Promise<string> => {
+export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string, pageProfile?: PageProfile): Promise<string> => {
   try {
+    const pageContext = createPageContext(pageProfile);
     const prompt = `
+    ${pageContext}
     أنت خبير في التسويق عبر وسائل التواصل الاجتماعي.
     مهمتك هي كتابة منشور جذاب لصفحة فيسبوك حول الموضوع التالي: "${topic}".
     يجب أن يكون المنشور:
     - باللغة العربية.
+    - متوافقًا مع سياق الصفحة والعمل الموضح أعلاه.
     - ودود ومحفز للنقاش.
     - يحتوي على سؤال أو دعوة للتفاعل (call to action).
     - يستخدم بعض الإيموجي المناسبة بشكل طبيعي.
@@ -142,17 +160,20 @@ export const getBestPostingTime = async (ai: GoogleGenAI, postText: string): Pro
   }
 };
 
-export const generateDescriptionForImage = async (ai: GoogleGenAI, imageFile: File): Promise<string> => {
+export const generateDescriptionForImage = async (ai: GoogleGenAI, imageFile: File, pageProfile?: PageProfile): Promise<string> => {
   try {
     const imagePart = await fileToGenerativePart(imageFile);
+    const pageContext = createPageContext(pageProfile);
     const textPart = {
       text: `
+      ${pageContext}
       أنت خبير في التسويق عبر وسائل التواصل الاجتماعي.
-      مهمتك هي كتابة وصف جذاب وموجز كمنشور لفيسبوك بناءً على الصورة المرفقة.
+      مهمتك هي كتابة وصف جذاب وموجز كمنشور لفيسبوك بناءً على الصورة المرفقة وسياق الصفحة.
       يجب أن يكون الوصف:
       - باللغة العربية.
+      - متوافقًا مع هوية العلامة التجارية الموضحة في سياق الصفحة.
       - ودود ومحفز للنقاش.
-      - يحتوي على سؤال أو دعوة للتفاعل (call to action) مرتبطة بالصورة.
+      - يحتوي على سؤال أو دعوة للتفاعل (call to action) مرتبطة بالصورة وسياق العمل.
       - يستخدم 2-3 إيموجي مناسبة بشكل طبيعي.
       - لا يزيد عن 3-4 أسطر.
       - ابدأ مباشرة بالمحتوى، لا تضع عنوانًا مثل "وصف:".
@@ -174,15 +195,33 @@ export const generateDescriptionForImage = async (ai: GoogleGenAI, imageFile: Fi
   }
 };
 
-export const generateContentPlan = async (ai: GoogleGenAI, request: ContentPlanRequest): Promise<ContentPlanItem[]> => {
-  try {
-    const prompt = `
-      أنت خبير استراتيجي للمحتوى على وسائل التواصل الاجتماعي. مهمتك هي إنشاء خطة محتوى إبداعية ومتنوعة لمدة 7 أيام لصفحة فيسبوك.
+const getPlanTypeInstructions = (request: ContentPlanRequest): string => {
+  switch (request.planType) {
+    case 'engagement':
+      return 'الخطة يجب أن تركز بشكل أساسي على زيادة التفاعل والمشاركة. استخدم الأسئلة، استطلاعات الرأي، اطلب آراء الجمهور، ومحتوى يثير النقاش.';
+    case 'product_launch':
+      return `الخطة تهدف إلى إطلاق منتج أو خدمة جديدة. يجب أن تبني الخطة تشويقًا، ثم تكشف عن المنتج، ثم توضح فوائده ومميزاته، وتنتهي بدعوة واضحة للشراء أو المعرفة المزيد. تفاصيل المنتج: ${request.productInfo || 'لم يتم تحديد تفاصيل المنتج'}`;
+    case 'promotion':
+      return `الخطة هي حملة ترويجية أو عروض خاصة. يجب أن تركز على إبراز الخصومات، الفوائد المباشرة للشراء، وخلق شعور بالإلحاح. تفاصيل العرض: ${request.productInfo || 'لم يتم تحديد تفاصيل العرض'}`;
+    default:
+      return 'الخطة يجب أن تكون متنوعة ومتوازنة.';
+  }
+};
 
-      تفاصيل الصفحة:
-      - نوع الصفحة: ${request.pageType}
+
+export const generateContentPlan = async (ai: GoogleGenAI, request: ContentPlanRequest, pageProfile?: PageProfile): Promise<ContentPlanItem[]> => {
+  try {
+    const pageContext = createPageContext(pageProfile);
+    const planInstructions = getPlanTypeInstructions(request);
+
+    const prompt = `
+      ${pageContext}
+      أنت خبير استراتيجي للمحتوى على وسائل التواصل الاجتماعي. مهمتك هي إنشاء خطة محتوى إبداعية ومتنوعة لمدة 7 أيام لصفحة فيسبوك بناءً على التفاصيل التالية.
+
+      تفاصيل الطلب:
+      - الهدف من الخطة: ${planInstructions}
       - الجمهور المستهدف: ${request.audience}
-      - الأهداف الرئيسية: ${request.goals}
+      - الأهداف الثانوية: ${request.goals}
       - النبرة المطلوبة: ${request.tone}
 
       المطلوب:
@@ -192,7 +231,7 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: ContentPlanR
       يجب أن تكون الإجابة عبارة عن مصفوفة JSON، حيث كل عنصر في المصفوفة هو كائن يمثل يومًا واحدًا ويحتوي على المفاتيح التالية بالضبط:
       - "day": (string) اسم اليوم باللغة العربية (مثال: "السبت").
       - "theme": (string) الفكرة العامة أو الموضوع الرئيسي لليوم (مثال: "مشاركة من وراء الكواليس").
-      - "postSuggestion": (string) نص المنشور المقترح بالكامل، يجب أن يكون جذابًا ويتضمن دعوة للعمل (CTA) وإيموجيز مناسبة.
+      - "postSuggestion": (string) نص المنشور المقترح بالكامل، يجب أن يكون جذابًا ومتوافقًا مع سياق الصفحة والطلب، ويتضمن دعوة للعمل (CTA) وإيموجيز مناسبة.
       - "contentType": (string) نوع المحتوى المقترح (مثال: "صورة عالية الجودة"، "فيديو قصير (Reel)"، "استطلاع رأي").
       - "cta": (string) دعوة للعمل واضحة ومختصرة (مثال: "شاركنا رأيك في التعليقات!", "اطلب الآن عبر موقعنا").
 
@@ -228,7 +267,6 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: ContentPlanR
 
     const plan = JSON.parse(jsonStr);
     
-    // Basic validation
     if (Array.isArray(plan) && plan.length > 0 && plan[0].day && plan[0].postSuggestion) {
       return plan;
     }

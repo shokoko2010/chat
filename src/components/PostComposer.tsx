@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
@@ -6,7 +5,7 @@ import SparklesIcon from './icons/SparklesIcon';
 import WandSparklesIcon from './icons/WandSparklesIcon';
 import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime } from '../services/geminiService';
 import { GoogleGenAI } from '@google/genai';
-import { Target } from '../types';
+import { Target, PageProfile } from '../types';
 import InstagramIcon from './icons/InstagramIcon';
 
 
@@ -30,6 +29,7 @@ interface PostComposerProps {
   linkedInstagramTarget: Target | null;
   includeInstagram: boolean;
   onIncludeInstagramChange: (checked: boolean) => void;
+  pageProfile: PageProfile;
 }
 
 
@@ -74,6 +74,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   linkedInstagramTarget,
   includeInstagram,
   onIncludeInstagramChange,
+  pageProfile,
 }) => {
   const [aiTopic, setAiTopic] = useState('');
   const [isGeneratingText, setIsGeneratingText] = useState(false);
@@ -93,7 +94,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
       setAiTextError('');
       setIsGeneratingText(true);
       try {
-        const suggestion = await generatePostSuggestion(aiClient, aiTopic);
+        const suggestion = await generatePostSuggestion(aiClient, aiTopic, pageProfile);
         onPostTextChange(suggestion);
       } catch (e: any) {
         setAiTextError(e.message || 'حدث خطأ غير متوقع.');
