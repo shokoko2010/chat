@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, ContentPlanRequest } from '../types';
 import Header from './Header';
@@ -88,15 +89,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       setDrafts(parsed.drafts || []);
       setScheduledPosts(parsed.scheduledPosts ? parsed.scheduledPosts.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt)})) : []);
       setContentPlan(parsed.contentPlan || null);
+      setBulkPosts(parsed.bulkPosts ? parsed.bulkPosts.map((p: BulkPostItem) => ({...p, imageFile: new File([], p.imageFile.name)})) : []);
     } else {
       setDrafts([]);
       setScheduledPosts([]);
       setContentPlan(null);
+      setBulkPosts([]);
     }
 
     // Reset composer and session-based state
     clearComposer();
-    setBulkPosts([]);
     setPublishedPosts([]);
     setPublishedPostsLoading(true);
     setView('composer');
@@ -137,9 +139,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   // Save data to localStorage whenever it changes
   useEffect(() => {
     const dataKey = `zex-pages-data-${managedTarget.id}`;
-    const dataToStore = { drafts, scheduledPosts, contentPlan };
+    // Don't save File objects to local storage directly
+    const serializableBulkPosts = bulkPosts.map(({imageFile, ...rest}) => rest);
+    const dataToStore = { drafts, scheduledPosts, contentPlan, bulkPosts: serializableBulkPosts };
     localStorage.setItem(dataKey, JSON.stringify(dataToStore));
-  }, [drafts, scheduledPosts, contentPlan, managedTarget.id]);
+  }, [drafts, scheduledPosts, contentPlan, bulkPosts, managedTarget.id]);
 
 
   const clearComposer = useCallback(() => {
@@ -203,6 +207,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
           if (isSimulationMode) {
               console.log(`SIMULATING PUBLISH: Target=${target.name}, Schedule=${scheduleAt}, Text=${text}`);
+              if(scheduleAt){
+                const newScheduledPost: ScheduledPost = {
+                  id: `sim_scheduled_${Date.now()}`, text, scheduledAt: scheduleAt!, isReminder: false, targetId: target.id,
+                  imageUrl: image ? URL.createObjectURL(image) : undefined,
+                  targetInfo: { name: target.name, avatarUrl: target.picture.data.url, type: target.type }
+                };
+                setScheduledPosts(prev => [...prev, newScheduledPost]);
+              }
               setTimeout(() => resolve({ targetName: target.name, success: true, response: { id: `sim_${Date.now()}` } }), 500);
               return;
           }
@@ -231,6 +243,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
           window.FB.api(apiPath, 'POST', apiParams, (response: any) => {
               if (response && !response.error) {
+                  if(scheduleAt) {
+                     const newScheduledPost: ScheduledPost = {
+                      id: response.post_id || `scheduled_${Date.now()}`, text, scheduledAt: scheduleAt!, isReminder: false, targetId: target.id,
+                      imageUrl: image ? URL.createObjectURL(image) : undefined,
+                      targetInfo: { name: target.name, avatarUrl: target.picture.data.url, type: target.type }
+                    };
+                    setScheduledPosts(prev => [...prev, newScheduledPost]);
+                  }
                   resolve({ targetName: target.name, success: true, response });
               } else {
                   const errorMsg = response?.error?.message || 'Unknown error';
@@ -333,12 +353,140 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   };
 
+  // --- Start Bulk Logic ---
+  const handleAddBulkPosts = (files: FileList) => {
+      const newPosts: BulkPostItem[] = Array.from(files).map(file => {
+          const now = new Date();
+          now.setDate(now.getDate() + bulkPosts.length + 1); // Stagger posts
+          return {
+              id: `bulk_${Date.now()}_${Math.random()}`,
+              imageFile: file,
+              imagePreview: URL.createObjectURL(file),
+              text: '',
+              scheduleDate: formatDateTimeForInput(now),
+              targetIds: [managedTarget.id],
+          };
+      });
+      setBulkPosts(prev => [...prev, ...newPosts]);
+  };
+
+  const handleUpdateBulkPost = (id: string, updates: Partial<BulkPostItem>) => {
+      setBulkPosts(prev => prev.map(p => (p.id === id ? { ...p, ...updates } : p)));
+  };
+
+  const handleRemoveBulkPost = (id: string) => {
+      setBulkPosts(prev => prev.filter(p => p.id !== id));
+  };
+  
+  const handleGenerateBulkDescription = async (id: string) => {
+    if(!aiClient) return;
+    const post = bulkPosts.find(p => p.id === id);
+    if (!post) return;
+    
+    handleUpdateBulkPost(id, { isGeneratingDescription: true });
+    try {
+        const description = await generateDescriptionForImage(aiClient, post.imageFile);
+        handleUpdateBulkPost(id, { text: description });
+    } catch (e: any) {
+        handleUpdateBulkPost(id, { error: e.message });
+    } finally {
+        handleUpdateBulkPost(id, { isGeneratingDescription: false });
+    }
+  };
+  
+  const handleScheduleAllBulk = async () => {
+    setIsSchedulingAll(true);
+    let successCount = 0;
+    const promises = bulkPosts.map(async post => {
+        try {
+            const scheduleAt = new Date(post.scheduleDate);
+            if (isNaN(scheduleAt.getTime()) || scheduleAt.getTime() < Date.now() + 9 * 60 * 1000) {
+                 throw new Error("تاريخ الجدولة غير صالح أو في الماضي.");
+            }
+            if(post.targetIds.length === 0){
+                throw new Error("يجب اختيار وجهة واحدة على الأقل.");
+            }
+            
+            const postTargets = allTargets.filter(t => post.targetIds.includes(t.id));
+            
+            for (const target of postTargets) {
+                const isIgReminder = target.type === 'instagram';
+                await publishToTarget(target, post.text, post.imageFile, scheduleAt, isIgReminder);
+            }
+            handleUpdateBulkPost(post.id, { error: undefined }); // Clear error on success
+            successCount++;
+        } catch (e: any) {
+            handleUpdateBulkPost(post.id, { error: e.message || "فشل غير معروف" });
+        }
+    });
+
+    await Promise.all(promises);
+    setIsSchedulingAll(false);
+    showNotification('partial', `اكتملت الجدولة المجمعة. نجح: ${successCount}، فشل: ${bulkPosts.length - successCount}.`);
+    setBulkPosts(prev => prev.filter(p => !p.error)); // Remove successful posts
+  };
+  // --- End Bulk Logic ---
+
   // --- Start Analytics Logic ---
    const handleFetchPostAnalytics = (postId: string) => {
-       // Placeholder for fetching single post analytics
+      const postIndex = publishedPosts.findIndex(p => p.id === postId);
+      if (postIndex === -1 || isSimulationMode) return;
+      
+      const updatedPosts = [...publishedPosts];
+      updatedPosts[postIndex].analytics.loading = true;
+      setPublishedPosts(updatedPosts);
+      
+      window.FB.api(
+        `/${postId}?fields=likes.summary(true),comments.summary(true),shares`,
+        (response: any) => {
+           const newUpdatedPosts = [...publishedPosts];
+           if(response && !response.error){
+              newUpdatedPosts[postIndex].analytics = {
+                ...newUpdatedPosts[postIndex].analytics,
+                likes: response.likes?.summary?.total_count ?? 0,
+                comments: response.comments?.summary?.total_count ?? 0,
+                shares: response.shares?.count ?? 0,
+                lastUpdated: new Date(),
+              }
+           } else {
+             console.error("Failed to update analytics", response?.error);
+           }
+           newUpdatedPosts[postIndex].analytics.loading = false;
+           setPublishedPosts(newUpdatedPosts);
+        }
+      );
    };
-   const handleGeneratePostInsights = (postId: string) => {
-       // Placeholder for generating insights
+   
+   const handleGeneratePostInsights = async (postId: string) => {
+      if (!aiClient) return;
+      const postIndex = publishedPosts.findIndex(p => p.id === postId);
+      if (postIndex === -1) return;
+
+      const post = publishedPosts[postIndex];
+      let updatedPosts = [...publishedPosts];
+      updatedPosts[postIndex].analytics.isGeneratingInsights = true;
+      setPublishedPosts(updatedPosts);
+
+      try {
+        const commentsResponse: any = await new Promise(resolve => 
+            window.FB.api(`/${postId}/comments?limit=25`, (res: any) => resolve(res))
+        );
+        const comments = commentsResponse?.data || [];
+        
+        const insights = await generatePostInsights(aiClient, post.text, post.analytics, comments);
+        
+        updatedPosts = [...publishedPosts]; // get fresh copy in case of state changes
+        updatedPosts[postIndex].analytics.aiSummary = insights.performanceSummary;
+        updatedPosts[postIndex].analytics.sentiment = insights.sentiment;
+
+      } catch (e: any) {
+        console.error("Error generating insights:", e);
+        showNotification('error', e.message);
+      } finally {
+        updatedPosts = [...publishedPosts];
+        updatedPosts[postIndex].analytics.isGeneratingInsights = false;
+        setPublishedPosts(updatedPosts);
+      }
    };
   // --- End Analytics Logic ---
 
@@ -352,6 +500,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }
   
   const upcomingReminders = scheduledPosts.filter(p => p.isReminder && new Date(p.scheduledAt) <= new Date());
+  
+  const availableBulkTargets = useMemo(() => {
+    return [managedTarget, ...(linkedInstagramTarget ? [linkedInstagramTarget] : [])];
+  }, [managedTarget, linkedInstagramTarget]);
 
   const renderActiveView = () => {
     switch (view) {
@@ -372,8 +524,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 </div>
             );
         case 'bulk':
-            return <BulkSchedulerPage bulkPosts={bulkPosts} onAddPosts={()=>{}} onUpdatePost={()=>{}} onRemovePost={()=>{}} onScheduleAll={()=>{}}
-                isSchedulingAll={isSchedulingAll} targets={[managedTarget]} aiClient={aiClient} onGenerateDescription={()=>{}} />;
+            return <BulkSchedulerPage bulkPosts={bulkPosts} onAddPosts={handleAddBulkPosts} onUpdatePost={handleUpdateBulkPost} onRemovePost={handleRemoveBulkPost} onScheduleAll={handleScheduleAllBulk}
+                isSchedulingAll={isSchedulingAll} targets={availableBulkTargets} aiClient={aiClient} onGenerateDescription={handleGenerateBulkDescription} />;
         case 'planner':
             return <ContentPlannerPage aiClient={aiClient} isGenerating={isGeneratingPlan} error={planError} plan={contentPlan}
                 onGeneratePlan={handleGeneratePlan} onStartPost={handleStartPostFromPlan} targets={[managedTarget]} />;

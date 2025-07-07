@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 const DocumentDuplicateIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (

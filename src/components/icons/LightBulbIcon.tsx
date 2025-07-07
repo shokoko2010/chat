@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 const LightBulbIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (

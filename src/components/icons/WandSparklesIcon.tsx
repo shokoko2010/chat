@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 const WandSparklesIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
