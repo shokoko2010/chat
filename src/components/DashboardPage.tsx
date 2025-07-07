@@ -34,6 +34,7 @@ const MOCK_TARGETS: Target[] = [
     { id: '1', name: 'صفحة تجريبية 1', type: 'page', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/4B79A1/FFFFFF?text=Page1' } } },
     { id: '101', name: 'مجموعة المطورين التجريبية', type: 'group', picture: { data: { url: 'https://via.placeholder.com/150/228B22/FFFFFF?text=Group1' } } },
     { id: '2', name: 'متجر الأزياء العصرية', type: 'page', access_token: 'DUMMY_TOKEN_2', picture: { data: { url: 'https://via.placeholder.com/150/C154C1/FFFFFF?text=Fashion' } } },
+    { id: '4', name: 'صفحة من حافظة أعمال', type: 'page', access_token: 'DUMMY_TOKEN_4', picture: { data: { url: 'https://via.placeholder.com/150/FF6347/FFFFFF?text=BizPage' } } },
     { id: 'ig1', name: 'Zex Pages IG (@zex_pages_ig)', type: 'instagram', parentPageId: '1', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/E4405F/FFFFFF?text=IG' } } }
 ];
 
@@ -108,78 +109,151 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
     }
 
     setTargetsLoading(true);
-    
-    const fetchPages = new Promise<Target[]>((resolve, reject) => {
-        window.FB.api(
-            '/me/accounts?fields=id,name,access_token,picture{url}', 
-            (response: any) => {
-                if (response && !response.error) {
-                    resolve(response.data.map((page: any) => ({ ...page, type: 'page' as 'page' })));
-                } else {
-                    reject(response?.error?.message || 'فشل في جلب الصفحات.');
-                }
-            }
-        );
-    });
 
-    const fetchGroups = new Promise<Target[]>((resolve) => {
-        window.FB.api(
-            '/me/groups?fields=id,name,picture{url},permissions', 
-            (response: any) => {
-                if (response && !response.error) {
-                    const adminGroups = response.data.filter((group: any) => 
-                        group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
-                    );
-                    resolve(adminGroups.map((group: any) => ({ ...group, type: 'group' as 'group' })));
-                } else {
-                    console.warn("Could not fetch groups:", response?.error);
-                    resolve([]); 
+    // Helper function for fetching pages from a business endpoint
+    const fetchPagesForBusiness = (businessId: string, edge: 'owned_pages' | 'client_pages'): Promise<Target[]> => {
+        return new Promise<Target[]>(resolve => {
+            window.FB.api(
+                `/${businessId}/${edge}?fields=id,name,access_token,picture{url}&limit=200`,
+                (response: any) => {
+                    if (response && !response.error) {
+                        resolve(response.data.map((page: any) => ({ ...page, type: 'page' as 'page' })));
+                    } else {
+                        console.warn(`Could not fetch ${edge} for business ${businessId}:`, response?.error);
+                        resolve([]); // Resolve empty, don't fail the whole chain
+                    }
                 }
-            }
-        );
-    });
-
-    Promise.all([fetchPages, fetchGroups])
-        .then(async ([pagesData, groupsData]) => {
-            let allTargets: Target[] = [...pagesData, ...groupsData];
-            
-            // New: Fetch connected Instagram accounts
-            const igPromises = pagesData.map(page => 
-                new Promise<Target | null>(resolve => {
-                    window.FB.api(`/${page.id}?fields=instagram_business_account{id,name,username,profile_picture_url}`, (response: any) => {
-                        if (response && response.instagram_business_account) {
-                            const igAccount = response.instagram_business_account;
-                            resolve({
-                                id: igAccount.id,
-                                name: igAccount.name ? `${igAccount.name} (@${igAccount.username})` : `@${igAccount.username}`,
-                                type: 'instagram',
-                                parentPageId: page.id,
-                                access_token: page.access_token, // carry over page token
-                                picture: {
-                                    data: {
-                                        url: igAccount.profile_picture_url || 'https://via.placeholder.com/150/833AB4/FFFFFF?text=IG'
-                                    }
-                                }
-                            });
-                        } else {
-                            resolve(null);
-                        }
-                    });
-                })
             );
-
-            const igResults = await Promise.all(igPromises);
-            const igTargets = igResults.filter((ig): ig is Target => ig !== null);
-            allTargets = [...pagesData, ...groupsData, ...igTargets];
-            
-            setTargets(allTargets);
-        })
-        .catch(error => {
-            console.error("Error fetching data from Facebook:", error);
-        })
-        .finally(() => {
-            setTargetsLoading(false);
         });
+    };
+
+    // Main data fetching logic
+    const fetchAllTargets = async () => {
+        try {
+            // Promise for directly managed pages
+            const directPagesPromise = new Promise<Target[]>((resolve, reject) => {
+                window.FB.api('/me/accounts?fields=id,name,access_token,picture{url}&limit=200', (response: any) => {
+                    if (response && !response.error) {
+                        resolve(response.data.map((page: any) => ({ ...page, type: 'page' as 'page' })));
+                    } else {
+                        reject(new Error(response?.error?.message || 'فشل في جلب الصفحات المباشرة.'));
+                    }
+                });
+            });
+
+            // Promise for groups
+            const groupsPromise = new Promise<Target[]>((resolve) => {
+                window.FB.api('/me/groups?fields=id,name,picture{url},permissions&limit=200', (response: any) => {
+                    if (response && !response.error) {
+                        const adminGroups = response.data.filter((group: any) =>
+                            group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
+                        );
+                        resolve(adminGroups.map((group: any) => ({ ...group, type: 'group' as 'group' })));
+                    } else {
+                        console.warn("Could not fetch groups:", response?.error);
+                        resolve([]);
+                    }
+                });
+            });
+
+            // Promise for all business-related pages
+            const businessPagesPromise = new Promise<Target[]>(async (resolve) => {
+                try {
+                    const businessesResponse: any = await new Promise(res => {
+                        window.FB.api('/me/businesses', (r: any) => res(r));
+                    });
+
+                    if (!businessesResponse || businessesResponse.error || !businessesResponse.data || businessesResponse.data.length === 0) {
+                        console.log("No business accounts found or error fetching them.");
+                        resolve([]);
+                        return;
+                    }
+                    
+                    const businessIds: string[] = businessesResponse.data.map((b: any) => b.id);
+                    const pagePromises: Promise<Target[]>[] = [];
+
+                    businessIds.forEach(id => {
+                        pagePromises.push(fetchPagesForBusiness(id, 'owned_pages'));
+                        pagePromises.push(fetchPagesForBusiness(id, 'client_pages'));
+                    });
+
+                    const pagesFromBusinesses = (await Promise.all(pagePromises)).flat();
+                    resolve(pagesFromBusinesses);
+                } catch (e) {
+                    console.error("Error processing business pages:", e);
+                    resolve([]); // Resolve empty if the business logic fails
+                }
+            });
+
+            // --- Consolidate all results ---
+            const [directPagesResult, groupsResult, businessPagesResult] = await Promise.allSettled([
+                directPagesPromise,
+                groupsPromise,
+                businessPagesPromise
+            ]);
+
+            const allTargetsMap = new Map<string, Target>();
+
+            const addToMap = (targetsToAdd: Target[] | undefined) => {
+                if (!targetsToAdd) return;
+                targetsToAdd.forEach(t => {
+                    if (!allTargetsMap.has(t.id)) {
+                        allTargetsMap.set(t.id, t);
+                    }
+                });
+            };
+            
+            if (directPagesResult.status === 'fulfilled') addToMap(directPagesResult.value);
+            if (groupsResult.status === 'fulfilled') addToMap(groupsResult.value);
+            if (businessPagesResult.status === 'fulfilled') addToMap(businessPagesResult.value);
+
+            const allUniqueTargets = Array.from(allTargetsMap.values());
+            const pages = allUniqueTargets.filter(t => t.type === 'page');
+
+            // --- Fetch linked Instagram accounts for all unique pages ---
+            if (pages.length > 0) {
+                const igPromises = pages.map(page =>
+                    new Promise<Target | null>(resolve => {
+                        window.FB.api(`/${page.id}?fields=instagram_business_account{id,name,username,profile_picture_url}`, (response: any) => {
+                             if (response && response.instagram_business_account) {
+                                const igAccount = response.instagram_business_account;
+                                resolve({
+                                    id: igAccount.id,
+                                    name: igAccount.name ? `${igAccount.name} (@${igAccount.username})` : `@${igAccount.username}`,
+                                    type: 'instagram',
+                                    parentPageId: page.id,
+                                    access_token: page.access_token,
+                                    picture: {
+                                        data: { url: igAccount.profile_picture_url || 'https://via.placeholder.com/150/833AB4/FFFFFF?text=IG' }
+                                    }
+                                });
+                            } else {
+                                resolve(null);
+                            }
+                        });
+                    })
+                );
+                
+                const igResults = await Promise.all(igPromises);
+                const igTargets = igResults.filter((ig): ig is Target => ig !== null);
+                igTargets.forEach(t => {
+                    if(!allTargetsMap.has(t.id)){
+                        allTargetsMap.set(t.id, t);
+                    }
+                });
+            }
+            
+            setTargets(Array.from(allTargetsMap.values()));
+
+        } catch (error) {
+            console.error("Error fetching data from Facebook:", error);
+        } finally {
+            setTargetsLoading(false);
+        }
+    };
+    
+    fetchAllTargets();
+
   }, [isSimulationMode]);
 
   const clearComposer = useCallback(() => {
