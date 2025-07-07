@@ -670,7 +670,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             />;
         case 'planner':
             return <ContentPlannerPage aiClient={aiClient} isGenerating={isGeneratingPlan} error={planError} plan={contentPlan}
-                onGeneratePlan={handleGeneratePlan} onStartPost={handleStartPostFromPlan} pageProfile={pageProfile} />;
+                onGeneratePlan={handleGeneratePlan} onStartPost={handleStartPostFromPlan} />;
         case 'drafts':
             return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;
         case 'calendar':

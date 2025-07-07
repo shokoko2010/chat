@@ -15,7 +15,6 @@ interface ContentPlannerPageProps {
   plan: ContentPlanItem[] | null;
   onGeneratePlan: (request: ContentPlanRequest, images?: File[]) => void;
   onStartPost: (planItem: ContentPlanItem) => void;
-  pageProfile: PageProfile;
 }
 
 const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({ 
@@ -24,8 +23,7 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   error,
   plan,
   onGeneratePlan,
-  onStartPost,
-  pageProfile
+  onStartPost
 }) => {
   const [sourceType, setSourceType] = useState<ContentPlanRequest['sourceType']>('profile');
   const [planDuration, setPlanDuration] = useState<ContentPlanRequest['planDuration']>('weekly');
