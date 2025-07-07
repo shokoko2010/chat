@@ -100,160 +100,128 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout, isSimulationMod
 
   // Load initial data
   useEffect(() => {
-    if (isSimulationMode) {
-        setTargets(MOCK_TARGETS);
-        setScheduledPosts(MOCK_SCHEDULED_POSTS);
-        setPublishedPosts(MOCK_PUBLISHED_POSTS);
-        setTargetsLoading(false);
-        return;
-    }
+    // Helper function to handle Facebook API's cursor-based pagination.
+    const fetchWithPagination = async (initialPath: string): Promise<any[]> => {
+        let allData: any[] = [];
+        let path: string | null = initialPath;
 
-    setTargetsLoading(true);
+        while (path) {
+            const response: any = await new Promise(resolve => {
+                window.FB.api(path, (res: any) => resolve(res));
+            });
 
-    // Helper function for fetching pages from a business endpoint
-    const fetchPagesForBusiness = (businessId: string, edge: 'owned_pages' | 'client_pages'): Promise<Target[]> => {
-        return new Promise<Target[]>(resolve => {
-            window.FB.api(
-                `/${businessId}/${edge}?fields=id,name,access_token,picture{url}&limit=200`,
-                (response: any) => {
-                    if (response && !response.error) {
-                        resolve(response.data.map((page: any) => ({ ...page, type: 'page' as 'page' })));
-                    } else {
-                        console.warn(`Could not fetch ${edge} for business ${businessId}:`, response?.error);
-                        resolve([]); // Resolve empty, don't fail the whole chain
-                    }
+            if (response && response.data && response.data.length > 0) {
+                allData = allData.concat(response.data);
+                // Use the 'next' URL from the paging object for the subsequent API call.
+                path = response.paging?.next ? new URL(response.paging.next).pathname + new URL(response.paging.next).search : null;
+            } else {
+                if (response.error) {
+                    console.error(`Error fetching paginated data for path ${path}:`, response.error);
                 }
-            );
-        });
+                path = null; // Stop pagination on error or no more data
+            }
+        }
+        return allData;
     };
 
     // Main data fetching logic
     const fetchAllTargets = async () => {
         try {
-            // Promise for directly managed pages
-            const directPagesPromise = new Promise<Target[]>((resolve, reject) => {
-                window.FB.api('/me/accounts?fields=id,name,access_token,picture{url}&limit=200', (response: any) => {
-                    if (response && !response.error) {
-                        resolve(response.data.map((page: any) => ({ ...page, type: 'page' as 'page' })));
-                    } else {
-                        reject(new Error(response?.error?.message || 'فشل في جلب الصفحات المباشرة.'));
-                    }
-                });
-            });
-
-            // Promise for groups
-            const groupsPromise = new Promise<Target[]>((resolve) => {
-                window.FB.api('/me/groups?fields=id,name,picture{url},permissions&limit=200', (response: any) => {
-                    if (response && !response.error) {
-                        const adminGroups = response.data.filter((group: any) =>
-                            group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
-                        );
-                        resolve(adminGroups.map((group: any) => ({ ...group, type: 'group' as 'group' })));
-                    } else {
-                        console.warn("Could not fetch groups:", response?.error);
-                        resolve([]);
-                    }
-                });
-            });
-
-            // Promise for all business-related pages
-            const businessPagesPromise = new Promise<Target[]>(async (resolve) => {
-                try {
-                    const businessesResponse: any = await new Promise(res => {
-                        window.FB.api('/me/businesses', (r: any) => res(r));
-                    });
-
-                    if (!businessesResponse || businessesResponse.error || !businessesResponse.data || businessesResponse.data.length === 0) {
-                        console.log("No business accounts found or error fetching them.");
-                        resolve([]);
-                        return;
-                    }
-                    
-                    const businessIds: string[] = businessesResponse.data.map((b: any) => b.id);
-                    const pagePromises: Promise<Target[]>[] = [];
-
-                    businessIds.forEach(id => {
-                        pagePromises.push(fetchPagesForBusiness(id, 'owned_pages'));
-                        pagePromises.push(fetchPagesForBusiness(id, 'client_pages'));
-                    });
-
-                    const pagesFromBusinesses = (await Promise.all(pagePromises)).flat();
-                    resolve(pagesFromBusinesses);
-                } catch (e) {
-                    console.error("Error processing business pages:", e);
-                    resolve([]); // Resolve empty if the business logic fails
-                }
-            });
-
-            // --- Consolidate all results ---
-            const [directPagesResult, groupsResult, businessPagesResult] = await Promise.allSettled([
-                directPagesPromise,
-                groupsPromise,
-                businessPagesPromise
+            setTargetsLoading(true);
+            
+            // Fetch all top-level assets in parallel
+            const [directPages, allGroups, businesses] = await Promise.all([
+                fetchWithPagination('/me/accounts?fields=id,name,access_token,picture{url}&limit=100'),
+                fetchWithPagination('/me/groups?fields=id,name,picture{url},permissions&limit=100'),
+                fetchWithPagination('/me/businesses?limit=100')
             ]);
+            
+            // Filter groups to only include those where the user is an admin
+            const adminGroups = allGroups.filter((group: any) =>
+                group.permissions && group.permissions.data.some((p: any) => p.permission === 'admin')
+            );
 
+            // Fetch pages from all business portfolios
+            let businessPages: any[] = [];
+            if (businesses && businesses.length > 0) {
+                const businessIds: string[] = businesses.map((b: any) => b.id);
+                const pagePromises = businessIds.flatMap(id => [
+                    fetchWithPagination(`/${id}/owned_pages?fields=id,name,access_token,picture{url}&limit=100`),
+                    fetchWithPagination(`/${id}/client_pages?fields=id,name,access_token,picture{url}&limit=100`),
+                ]);
+                businessPages = (await Promise.all(pagePromises)).flat();
+            }
+
+            // Consolidate all targets and remove duplicates using a Map
             const allTargetsMap = new Map<string, Target>();
-
-            const addToMap = (targetsToAdd: Target[] | undefined) => {
-                if (!targetsToAdd) return;
+            const addToMap = (targetsToAdd: any[], type: 'page' | 'group') => {
                 targetsToAdd.forEach(t => {
                     if (!allTargetsMap.has(t.id)) {
-                        allTargetsMap.set(t.id, t);
+                        allTargetsMap.set(t.id, { ...t, type });
                     }
                 });
             };
-            
-            if (directPagesResult.status === 'fulfilled') addToMap(directPagesResult.value);
-            if (groupsResult.status === 'fulfilled') addToMap(groupsResult.value);
-            if (businessPagesResult.status === 'fulfilled') addToMap(businessPagesResult.value);
 
-            const allUniqueTargets = Array.from(allTargetsMap.values());
-            const pages = allUniqueTargets.filter(t => t.type === 'page');
+            addToMap(directPages, 'page');
+            addToMap(adminGroups, 'group');
+            addToMap(businessPages, 'page');
 
-            // --- Fetch linked Instagram accounts for all unique pages ---
-            if (pages.length > 0) {
-                const igPromises = pages.map(page =>
-                    new Promise<Target | null>(resolve => {
-                        window.FB.api(`/${page.id}?fields=instagram_business_account{id,name,username,profile_picture_url}`, (response: any) => {
-                             if (response && response.instagram_business_account) {
-                                const igAccount = response.instagram_business_account;
-                                resolve({
+            const allUniquePages = Array.from(allTargetsMap.values()).filter(t => t.type === 'page');
+
+            // Efficiently fetch linked Instagram accounts using a single batch request
+            if (allUniquePages.length > 0) {
+                const batchRequest = allUniquePages.map(page => ({
+                    method: 'GET',
+                    relative_url: `${page.id}?fields=instagram_business_account{id,name,username,profile_picture_url}`
+                }));
+
+                const igResponses: any = await new Promise(resolve => {
+                    window.FB.api('/', 'POST', { batch: batchRequest }, (response: any) => resolve(response));
+                });
+                
+                if (igResponses && !igResponses.error) {
+                    igResponses.forEach((res: any, index: number) => {
+                        if (res.code === 200) {
+                            const body = JSON.parse(res.body);
+                            if (body.instagram_business_account) {
+                                const igAccount = body.instagram_business_account;
+                                const parentPage = allUniquePages[index];
+                                const igTarget: Target = {
                                     id: igAccount.id,
                                     name: igAccount.name ? `${igAccount.name} (@${igAccount.username})` : `@${igAccount.username}`,
                                     type: 'instagram',
-                                    parentPageId: page.id,
-                                    access_token: page.access_token,
+                                    parentPageId: parentPage.id,
+                                    access_token: parentPage.access_token,
                                     picture: {
                                         data: { url: igAccount.profile_picture_url || 'https://via.placeholder.com/150/833AB4/FFFFFF?text=IG' }
                                     }
-                                });
-                            } else {
-                                resolve(null);
+                                };
+                                if (!allTargetsMap.has(igTarget.id)) {
+                                    allTargetsMap.set(igTarget.id, igTarget);
+                                }
                             }
-                        });
-                    })
-                );
-                
-                const igResults = await Promise.all(igPromises);
-                const igTargets = igResults.filter((ig): ig is Target => ig !== null);
-                igTargets.forEach(t => {
-                    if(!allTargetsMap.has(t.id)){
-                        allTargetsMap.set(t.id, t);
-                    }
-                });
+                        }
+                    });
+                }
             }
             
             setTargets(Array.from(allTargetsMap.values()));
 
         } catch (error) {
-            console.error("Error fetching data from Facebook:", error);
+            console.error("Error fetching all targets from Facebook:", error);
         } finally {
             setTargetsLoading(false);
         }
     };
     
-    fetchAllTargets();
-
+    if (isSimulationMode) {
+        setTargets(MOCK_TARGETS);
+        setScheduledPosts(MOCK_SCHEDULED_POSTS);
+        setPublishedPosts(MOCK_PUBLISHED_POSTS);
+        setTargetsLoading(false);
+    } else {
+        fetchAllTargets();
+    }
   }, [isSimulationMode]);
 
   const clearComposer = useCallback(() => {
