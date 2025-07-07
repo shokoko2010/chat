@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { PublishedPost } from '../types';
 import Button from './ui/Button';
@@ -12,6 +11,7 @@ import PostInsights from './PostInsights';
 
 interface PublishedPostsListProps {
   posts: PublishedPost[];
+  isLoading: boolean;
   onFetchAnalytics: (postId: string) => void;
   onGenerateInsights: (postId: string) => void;
 }
@@ -24,7 +24,31 @@ const StatCard: React.FC<{ icon: React.ReactNode, value?: number, label: string 
     </div>
 );
 
-const PublishedPostsList: React.FC<PublishedPostsListProps> = ({ posts, onFetchAnalytics, onGenerateInsights }) => {
+const PostSkeleton: React.FC = () => (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden animate-pulse">
+        <div className="p-5">
+            <div className="flex items-center mb-4">
+                <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700"></div>
+                <div className="mr-3 flex-grow">
+                    <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/3 mb-1"></div>
+                    <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/4"></div>
+                </div>
+            </div>
+            <div className="space-y-2">
+                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full"></div>
+                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-5/6"></div>
+            </div>
+        </div>
+        <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-100 dark:border-gray-700">
+            <div className="flex justify-between items-center">
+                <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+                <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded w-1/4"></div>
+            </div>
+        </div>
+    </div>
+);
+
+const PublishedPostsList: React.FC<PublishedPostsListProps> = ({ posts, isLoading, onFetchAnalytics, onGenerateInsights }) => {
   const [openInsightsPostId, setOpenInsightsPostId] = useState<string | null>(null);
 
   const toggleInsights = (postId: string) => {
@@ -32,7 +56,6 @@ const PublishedPostsList: React.FC<PublishedPostsListProps> = ({ posts, onFetchA
       setOpenInsightsPostId(null);
     } else {
       const post = posts.find(p => p.id === postId);
-      // If insights are not yet generated, generate them. Also check if there's no summary yet, to allow re-generation.
       if (post && !post.analytics.aiSummary && !post.analytics.isGeneratingInsights) {
         onGenerateInsights(postId);
       }
@@ -40,12 +63,20 @@ const PublishedPostsList: React.FC<PublishedPostsListProps> = ({ posts, onFetchA
     }
   };
 
+  if (isLoading) {
+    return (
+        <div className="space-y-6 fade-in">
+            <PostSkeleton />
+            <PostSkeleton />
+        </div>
+    );
+  }
 
   if (posts.length === 0) {
     return (
       <div className="text-center text-gray-500 dark:text-gray-400 p-8 border-2 border-dashed rounded-lg fade-in">
-        <h3 className="font-semibold text-2xl text-gray-700 dark:text-gray-300 mb-2">لا توجد منشورات منشورة بعد</h3>
-        <p className="text-lg">عندما تنشر منشورًا جديدًا، سيظهر هنا لتتمكن من تتبع أدائه.</p>
+        <h3 className="font-semibold text-2xl text-gray-700 dark:text-gray-300 mb-2">لا توجد منشورات منشورة</h3>
+        <p className="text-lg">لم نعثر على أي منشورات على هذه الصفحة، أو أنك نشرت للتو وتحتاج إلى تحديث.</p>
       </div>
     );
   }

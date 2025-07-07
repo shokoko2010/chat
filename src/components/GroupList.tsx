@@ -74,7 +74,7 @@ const TargetList: React.FC<TargetListProps> = ({
             <div className="border-b pb-2 border-gray-200 dark:border-gray-700">
                 <Checkbox
                     id="select-all"
-                    label="تحديد الكل"
+                    label={`تحديد الكل (${targets.length})`}
                     checked={selectAll}
                     onChange={handleSelectAll}
                 />

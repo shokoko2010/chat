@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
@@ -8,6 +7,8 @@ import WandSparklesIcon from './icons/WandSparklesIcon';
 import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime } from '../services/geminiService';
 import { GoogleGenAI } from '@google/genai';
 import { Target } from '../types';
+import InstagramIcon from './icons/InstagramIcon';
+
 
 interface PostComposerProps {
   onPublish: () => Promise<void>;
@@ -25,8 +26,10 @@ interface PostComposerProps {
   onScheduleDateChange: (date: string) => void;
   error: string;
   aiClient: GoogleGenAI | null;
-  targets: Target[];
-  selectedTargetIds: string[];
+  managedTarget: Target;
+  linkedInstagramTarget: Target | null;
+  includeInstagram: boolean;
+  onIncludeInstagramChange: (checked: boolean) => void;
 }
 
 
@@ -67,10 +70,11 @@ const PostComposer: React.FC<PostComposerProps> = ({
   onScheduleDateChange,
   error,
   aiClient,
-  targets,
-  selectedTargetIds
+  managedTarget,
+  linkedInstagramTarget,
+  includeInstagram,
+  onIncludeInstagramChange,
 }) => {
-  // AI states remain local to the composer
   const [aiTopic, setAiTopic] = useState('');
   const [isGeneratingText, setIsGeneratingText] = useState(false);
   const [aiTextError, setAiTextError] = useState('');
@@ -80,14 +84,8 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const [isSuggestingTime, setIsSuggestingTime] = useState(false);
   const [aiTimeError, setAiTimeError] = useState('');
   
-  const selectedTargets = targets.filter(t => selectedTargetIds.includes(t.id));
-  const hasInstagramTarget = selectedTargets.some(t => t.type === 'instagram');
-
   const handleGenerateTextWithAI = async () => {
-      if (!aiClient) {
-          setAiTextError('يرجى إضافة مفتاح API من قائمة الإعدادات لتفعيل هذه الميزة.');
-          return;
-      }
+      if (!aiClient) return;
       if (!aiTopic.trim()) {
           setAiTextError('يرجى إدخال موضوع لتوليد منشور عنه.');
           return;
@@ -105,10 +103,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   };
 
   const handleGenerateImageWithAI = async () => {
-    if (!aiClient) {
-        setAiImageError('يرجى إضافة مفتاح API من قائمة الإعدادات لتفعيل هذه الميزة.');
-        return;
-    }
+    if (!aiClient) return;
     if (!aiImagePrompt.trim()) {
         setAiImageError('يرجى إدخال وصف لإنشاء الصورة.');
         return;
@@ -127,10 +122,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   };
   
   const handleSuggestTimeWithAI = async () => {
-    if (!aiClient) {
-        setAiTimeError('يرجى إضافة مفتاح API من قائمة الإعدادات لتفعيل هذه الميزة.');
-        return;
-    }
+    if (!aiClient) return;
     if (!postText.trim()) {
         setAiTimeError('اكتب نص المنشور أولاً لاقتراح وقت.');
         return;
@@ -157,7 +149,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const getPublishButtonText = () => {
     if (isPublishing) return 'جاري العمل...';
     if (isScheduled) {
-        return hasInstagramTarget ? 'حفظ كتذكير' : 'جدولة الآن';
+        return includeInstagram ? 'حفظ كتذكير' : 'جدولة الآن';
     }
     return 'انشر الآن';
   };
@@ -166,123 +158,63 @@ const PostComposer: React.FC<PostComposerProps> = ({
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg space-y-6">
       <h2 className="text-2xl font-bold text-gray-800 dark:text-white">إنشاء منشور جديد</h2>
       
-      {/* AI Text Assistant */}
       <div className="p-4 border border-blue-200 dark:border-blue-900 rounded-lg bg-blue-50 dark:bg-gray-700/50">
           <label htmlFor="ai-topic" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             مساعد النصوص بالذكاء الاصطناعي ✨
           </label>
           <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              id="ai-topic"
-              type="text"
-              value={aiTopic}
-              onChange={(e) => setAiTopic(e.target.value)}
-              placeholder="اكتب فكرة للمنشور، مثلاً: إطلاق منتج جديد"
-              className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500"
-              disabled={isGeneratingText || !aiClient}
-            />
-            <Button onClick={handleGenerateTextWithAI} isLoading={isGeneratingText} disabled={!aiClient}>
-              <SparklesIcon className="w-5 h-5 ml-2"/>
-              {isGeneratingText ? 'جاري التوليد...' : 'ولّد لي نصاً'}
-            </Button>
+            <input id="ai-topic" type="text" value={aiTopic} onChange={(e) => setAiTopic(e.target.value)} placeholder="اكتب فكرة للمنشور، مثلاً: إطلاق منتج جديد" className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500" disabled={isGeneratingText || !aiClient}/>
+            <Button onClick={handleGenerateTextWithAI} isLoading={isGeneratingText} disabled={!aiClient}><SparklesIcon className="w-5 h-5 ml-2"/>{isGeneratingText ? 'جاري التوليد...' : 'ولّد لي نصاً'}</Button>
           </div>
           {aiTextError && <p className="text-red-500 text-sm mt-2">{aiTextError}</p>}
           {aiHelperText}
       </div>
 
-      <textarea
-        value={postText}
-        onChange={(e) => onPostTextChange(e.target.value)}
-        placeholder="بماذا تفكر؟ اكتب منشورك هنا..."
-        className="w-full h-48 p-3 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition"
-      />
+      <textarea value={postText} onChange={(e) => onPostTextChange(e.target.value)} placeholder="بماذا تفكر؟ اكتب منشورك هنا..." className="w-full h-48 p-3 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition" />
 
       {imagePreview && (
         <div className="relative w-40">
           <img src={imagePreview} alt="Preview" className="rounded-lg w-full h-auto" />
-          <button
-            onClick={onImageRemove}
-            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 leading-none w-6 h-6 flex items-center justify-center text-lg"
-            aria-label="Remove image"
-          >
-            &times;
-          </button>
+          <button onClick={onImageRemove} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 leading-none w-6 h-6 flex items-center justify-center text-lg" aria-label="Remove image">&times;</button>
         </div>
       )}
       
-      {hasInstagramTarget && !imagePreview && (
+      {includeInstagram && !imagePreview && (
         <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 rounded-md text-sm">
           <b>ملاحظة:</b> منشورات انستجرام تتطلب وجود صورة. يرجى إضافة صورة للمتابعة.
         </div>
       )}
       
-      {/* AI Image Generation */}
       <div className="p-4 border border-purple-200 dark:border-purple-900 rounded-lg bg-purple-50 dark:bg-gray-700/50">
-          <label htmlFor="ai-image-prompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            مولّد الصور بالذكاء الاصطناعي 🤖
-          </label>
+          <label htmlFor="ai-image-prompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">مولّد الصور بالذكاء الاصطناعي 🤖</label>
           <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              id="ai-image-prompt"
-              type="text"
-              value={aiImagePrompt}
-              onChange={(e) => setAiImagePrompt(e.target.value)}
-              placeholder="وصف الصورة، مثلاً: رائد فضاء يقرأ على المريخ"
-              className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-purple-500 focus:border-purple-500"
-              disabled={isGeneratingImage || !aiClient}
-            />
-            <Button 
-                onClick={handleGenerateImageWithAI} 
-                isLoading={isGeneratingImage}
-                className="bg-purple-600 hover:bg-purple-700 focus:ring-purple-500"
-                disabled={!aiClient}
-            >
-              <PhotoIcon className="w-5 h-5 ml-2"/>
-              {isGeneratingImage ? 'جاري الإنشاء...' : 'إنشاء صورة'}
-            </Button>
+            <input id="ai-image-prompt" type="text" value={aiImagePrompt} onChange={(e) => setAiImagePrompt(e.target.value)} placeholder="وصف الصورة، مثلاً: رائد فضاء يقرأ على المريخ" className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-purple-500 focus:border-purple-500" disabled={isGeneratingImage || !aiClient}/>
+            <Button onClick={handleGenerateImageWithAI} isLoading={isGeneratingImage} className="bg-purple-600 hover:bg-purple-700 focus:ring-purple-500" disabled={!aiClient}><PhotoIcon className="w-5 h-5 ml-2"/>{isGeneratingImage ? 'جاري الإنشاء...' : 'إنشاء صورة'}</Button>
           </div>
           {aiImageError && <p className="text-red-500 text-sm mt-2">{aiImageError}</p>}
           {aiHelperText}
       </div>
       
       {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
-
-      {/* Scheduling */}
+      
+      {managedTarget.type === 'page' && <div className="p-4 border rounded-lg dark:border-gray-700">
+        <div className="flex items-center">
+            <input id="include-ig-checkbox" type="checkbox" checked={includeInstagram} onChange={e => onIncludeInstagramChange(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" disabled={!linkedInstagramTarget} />
+            <label htmlFor="include-ig-checkbox" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1"><InstagramIcon className="w-4 h-4"/> النشر على انستجرام أيضاً</label>
+        </div>
+        {!linkedInstagramTarget && <p className="text-xs text-gray-400 mt-1">لم يتم العثور على حساب انستجرام مرتبط بهذه الصفحة.</p>}
+      </div>}
+      
       <div className="p-4 border rounded-lg dark:border-gray-700">
         <div className="flex items-center">
-            <input 
-                id="schedule-checkbox"
-                type="checkbox" 
-                checked={isScheduled}
-                onChange={e => onIsScheduledChange(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-            />
-            <label htmlFor="schedule-checkbox" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                {hasInstagramTarget ? 'جدولة كتذكير' : 'جدولة المنشور'}
-            </label>
+            <input id="schedule-checkbox" type="checkbox" checked={isScheduled} onChange={e => onIsScheduledChange(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"/>
+            <label htmlFor="schedule-checkbox" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300">{includeInstagram ? 'جدولة كتذكير' : 'جدولة المنشور'}</label>
         </div>
-        {hasInstagramTarget && isScheduled && (
-            <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">
-                <b>ملاحظة:</b> لا تدعم واجهة انستجرام الجدولة التلقائية. سيتم حفظ هذا المنشور كتذكير، وستظهر لك بطاقة "جاهز للنشر" في الوقت المحدد لتنشره بنقرة واحدة.
-            </p>
-        )}
+        {includeInstagram && isScheduled && <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2"><b>ملاحظة:</b> سيتم جدولة المنشور على فيسبوك وحفظ تذكير للنشر على انستجرام.</p>}
         {isScheduled && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
-                <input
-                    type="datetime-local"
-                    value={scheduleDate}
-                    onChange={e => onScheduleDateChange(e.target.value)}
-                    className="p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500"
-                />
-                 <Button 
-                    variant="secondary"
-                    onClick={handleSuggestTimeWithAI}
-                    isLoading={isSuggestingTime}
-                    disabled={!postText.trim() || !aiClient}
-                 >
-                    <WandSparklesIcon className="w-5 h-5 ml-2"/>
-                    اقترح أفضل وقت
-                </Button>
+                <input type="datetime-local" value={scheduleDate} onChange={e => onScheduleDateChange(e.target.value)} className="p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500"/>
+                 <Button variant="secondary" onClick={handleSuggestTimeWithAI} isLoading={isSuggestingTime} disabled={!postText.trim() || !aiClient}><WandSparklesIcon className="w-5 h-5 ml-2"/>اقترح أفضل وقت</Button>
             </div>
         )}
         {aiTimeError && <p className="text-red-500 text-sm mt-2">{aiTimeError}</p>}
@@ -291,33 +223,12 @@ const PostComposer: React.FC<PostComposerProps> = ({
 
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-            <input
-                type="file"
-                id="imageUpload"
-                className="hidden"
-                accept="image/*"
-                onChange={onImageChange}
-            />
-            <Button
-                variant="secondary"
-                onClick={() => document.getElementById('imageUpload')?.click()}
-            >
-                <PhotoIcon className="w-5 h-5 ml-2" />
-                أضف صورة يدوياً
-            </Button>
+            <input type="file" id="imageUpload" className="hidden" accept="image/*" onChange={onImageChange}/>
+            <Button variant="secondary" onClick={() => document.getElementById('imageUpload')?.click()}><PhotoIcon className="w-5 h-5 ml-2" />أضف صورة يدوياً</Button>
         </div>
-        
         <div className="flex items-center gap-2">
-             <Button 
-                variant="secondary" 
-                onClick={onSaveDraft} 
-                disabled={isPublishing || (!postText.trim() && !imagePreview)}
-            >
-                حفظ كمسودة
-            </Button>
-            <Button onClick={onPublish} isLoading={isPublishing} disabled={(!postText.trim() && !imagePreview) || selectedTargetIds.length === 0 || (hasInstagramTarget && !imagePreview)}>
-              {getPublishButtonText()}
-            </Button>
+             <Button variant="secondary" onClick={onSaveDraft} disabled={isPublishing || (!postText.trim() && !imagePreview)}>حفظ كمسودة</Button>
+            <Button onClick={onPublish} isLoading={isPublishing} disabled={(!postText.trim() && !imagePreview) || (includeInstagram && !imagePreview)}>{getPublishButtonText()}</Button>
         </div>
       </div>
     </div>
