@@ -104,15 +104,15 @@ export interface PageProfile {
 
 // Types for AI Content Planner
 export interface ContentPlanRequest {
-  planType: 'engagement' | 'product_launch' | 'promotion';
+  sourceType: 'profile' | 'images';
+  planDuration: 'weekly' | 'monthly';
   audience: string;
   goals: string;
   tone: string;
-  productInfo?: string; // Optional field for product launches/promotions
 }
 
 export interface ContentPlanItem {
-  day: string; // e.g., "الاثنين"
+  day: string; // e.g., "الأسبوع 1 - الاثنين" or "الاثنين"
   theme: string; // e.g., "نصيحة الأسبوع"
   postSuggestion: string; // The full suggested post text
   contentType: string; // e.g., "صورة عالية الجودة", "سؤال تفاعلي"

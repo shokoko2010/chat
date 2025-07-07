@@ -438,12 +438,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setView('composer');
   };
   
-  const handleGeneratePlan = async (request: ContentPlanRequest) => {
+  const handleGeneratePlan = async (request: ContentPlanRequest, images?: File[]) => {
     if (!aiClient) return;
     setIsGeneratingPlan(true);
     setPlanError(null);
     try {
-        const plan = await generateContentPlan(aiClient, request, pageProfile);
+        const plan = await generateContentPlan(aiClient, request, pageProfile, images);
         setContentPlan(plan);
     } catch(e: any) {
         setPlanError(e.message);
@@ -670,7 +670,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             />;
         case 'planner':
             return <ContentPlannerPage aiClient={aiClient} isGenerating={isGeneratingPlan} error={planError} plan={contentPlan}
-                onGeneratePlan={handleGeneratePlan} onStartPost={handleStartPostFromPlan} targets={[managedTarget]} />;
+                onGeneratePlan={handleGeneratePlan} onStartPost={handleStartPostFromPlan} pageProfile={pageProfile} />;
         case 'drafts':
             return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;
         case 'calendar':
@@ -708,7 +708,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     <QueueListIcon className="w-5 h-5" /> الجدولة المجمعة
                 </button>
                 <button onClick={() => setView('planner')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'planner' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
-                    <BrainCircuitIcon className="w-5 h-5" /> المخطط الذكي
+                    <BrainCircuitIcon className="w-5 h-5" /> استراتيجيات المحتوى
                 </button>
                  <button onClick={() => setView('profile')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'profile' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <UserCircleIcon className="w-5 h-5" /> ملف الصفحة
