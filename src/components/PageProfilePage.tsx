@@ -1,6 +1,5 @@
 import React from 'react';
 import { PageProfile } from '../types';
-import Button from './ui/Button';
 
 interface PageProfilePageProps {
   profile: PageProfile;

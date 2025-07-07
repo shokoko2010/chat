@@ -10,7 +10,7 @@ import BulkSchedulerPage from './BulkSchedulerPage';
 import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePostInsights, generatePostSuggestion } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePostInsights } from '../services/geminiService';
 import PageProfilePage from './PageProfilePage';
 
 // Icons
