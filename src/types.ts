@@ -6,6 +6,8 @@ declare global {
   }
 }
 
+declare module '@tanstack/react-virtual';
+
 export interface Target {
   id: string;
   name:string;
