@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings } from '../types';
 import Header from './Header';
@@ -13,7 +11,7 @@ import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import InboxPage from './InboxPage';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData, generateSmartReplies } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, enhanceProfileFromFacebookData, generateSmartReplies, generatePostInsights } from '../services/geminiService';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
@@ -408,6 +406,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   }, [summaryData, aiClient, pageProfile, analyticsPeriod]);
   
+  const fetchMessageHistory = useCallback(async (conversationId: string) => {
+    const response: any = await new Promise(resolve => window.FB.api(`/${conversationId}/messages`, { fields: 'id,message,from,created_time', access_token: managedTarget.access_token }, (res: any) => resolve(res)));
+    if (response && response.data) {
+      setInboxItems(prevItems => prevItems.map(item => item.id === conversationId ? { ...item, messages: response.data.reverse() } : item));
+    }
+  }, [managedTarget.access_token]);
+
   const handleSendMessage = async (conversationId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {
         if(isSimulationMode) { resolve(true); return; }
@@ -443,7 +448,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       if (!commentSettings.realtimeEnabled && !messageSettings.realtimeEnabled) return;
       const itemsToProcess = currentInboxItems.filter(item => !autoRepliedItems.has(item.id));
       if (itemsToProcess.length === 0) return;
-      const newRepliedItems = new Set(autoRepliedItems);
+      const newRepliedItems = new Set<string>();
       const newRepliedUsers = { ...repliedUsersPerPost };
       let replyCount = 0;
       for (const item of itemsToProcess) {
@@ -469,17 +474,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
           }
           if (replied) { newRepliedItems.add(item.id); replyCount++; }
       }
-      setAutoRepliedItems(newRepliedItems);
+      setAutoRepliedItems(prev => new Set([...Array.from(prev), ...Array.from(newRepliedItems)]));
       setRepliedUsersPerPost(newRepliedUsers);
       if (replyCount > 0) showNotification('success', `تم إرسال ${replyCount} ردًا تلقائيًا.`);
-  }, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, showNotification]);
-
-  const fetchMessageHistory = async (conversationId: string) => {
-    const response: any = await new Promise(resolve => window.FB.api(`/${conversationId}/messages`, { fields: 'id,message,from,created_time', access_token: managedTarget.access_token }, (res: any) => resolve(res)));
-    if (response && response.data) {
-      setInboxItems(prevItems => prevItems.map(item => item.id === conversationId ? { ...item, messages: response.data.reverse() } : item));
-    }
-  };
+  }, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, showNotification, handleSendMessage, handleReplyToComment, handlePrivateReplyToComment]);
 
   useEffect(() => {
     if (view === 'inbox' && !isSimulationMode) {
@@ -542,7 +540,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 });
             };
             Promise.all([fetchAllComments(), fetchAllMessages()]).then(([comments, messages]) => {
-                const combinedItems = new Map<string, InboxItem>(inboxItems.map(item => [item.id, item]));
+                const combinedItems = new Map<string, InboxItem>();
+                 // Load existing items first to preserve message history
+                inboxItems.forEach(item => combinedItems.set(item.id, item));
+                
                 [...comments, ...messages].forEach(item => {
                     if (item.type === 'message' && combinedItems.has(item.id)) {
                         const existingItem = combinedItems.get(item.id);
@@ -550,14 +551,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     }
                     combinedItems.set(item.id, item);
                 });
+                
                 const allItems = Array.from(combinedItems.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
                 setInboxItems(allItems);
                 processAutoReplies(allItems);
-            }).catch(() => showNotification('error', 'فشل في جلب البريد الوارد.')).finally(() => setIsInboxLoading(false));
+            }).catch((err) => {
+                console.error("Error fetching inbox:", err);
+                showNotification('error', 'فشل في جلب البريد الوارد.');
+            }).finally(() => setIsInboxLoading(false));
         };
         fetchAllData();
     }
-  }, [view, managedTarget.id, managedTarget.access_token, linkedInstagramTarget, isSimulationMode, fetchWithPagination, showNotification, processAutoReplies, inboxItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, managedTarget.id]);
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.id, message);
@@ -615,11 +621,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         if (image) {
             apiPath = target.type === 'instagram' ? `/${target.id}/media` : `/${target.id}/photos`;
             if (target.type === 'instagram') {
-                // Instagram requires a publicly accessible URL for the image. This is a limitation of client-side only apps.
-                // We'll simulate this by rejecting, as we can't upload a File directly to /media.
-                // A server-side proxy would be needed.
-                // The correct flow is: upload to FB page, get ID, then post to IG using media_publish.
-                // We will simplify and assume direct photo upload for pages, and fail for IG.
                 reject({ targetName: target.name, success: false, error: { message: "النشر المباشر للصور على انستجرام يتطلب معالجة من الخادم وهو غير مدعوم حاليًا. استخدم الجدولة كتذكير." } });
                 return;
             }
