@@ -109,6 +109,8 @@ export interface PageProfile {
   contactInfo: string;
   website: string;
   currentOffers: string;
+  address: string;
+  country: string;
 }
 
 //--- Types for AI Content Planner ---

@@ -1,7 +1,5 @@
-
-
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { StrategyRequest, ContentPlanItem, PostAnalytics, PageProfile, PerformanceSummaryData } from "../types";
+import { StrategyRequest, ContentPlanItem, PostAnalytics, PageProfile, PerformanceSummaryData, Target } from "../types";
 
 const fileToGenerativePart = async (file: File) => {
   const base64EncodedDataPromise = new Promise<string>((resolve) => {
@@ -23,6 +21,8 @@ const createPageContext = (pageProfile?: PageProfile): string => {
     سياق الصفحة/العمل (استخدم هذه المعلومات في ردك):
     - وصف العمل: ${pageProfile.description || 'غير محدد'}
     - المنتجات/الخدمات: ${pageProfile.services || 'غير محدد'}
+    - العنوان: ${pageProfile.address || 'غير محدد'}
+    - البلد: ${pageProfile.country || 'غير محدد'}
     - معلومات الاتصال: ${pageProfile.contactInfo || 'غير محدد'}
     - الموقع الإلكتروني: ${pageProfile.website || 'غير محدد'}
     - العروض الحالية: ${pageProfile.currentOffers || 'غير محدد'}
@@ -43,38 +43,37 @@ export const initializeGoogleGenAI = (apiKey: string): GoogleGenAI | null => {
   }
 };
 
-export const analyzePageForProfile = async (ai: GoogleGenAI, pageName: string, pageCategory?: string): Promise<PageProfile> => {
+export const analyzePageForProfile = async (ai: GoogleGenAI, target: Target): Promise<PageProfile> => {
     const prompt = `
     أنت خبير استراتيجي في الأعمال والتسويق الرقمي.
-    بناءً على اسم الصفحة والفئة المعطاة، قم بإنشاء ملف تعريف (profile) افتراضي ومقترح لهذا العمل.
-    
-    - اسم الصفحة: "${pageName}"
-    - فئة الصفحة (إن وجدت): "${pageCategory || 'غير محدد'}"
-    
+    مهمتك هي البحث عبر الإنترنت عن صفحة فيسبوك أو حساب انستجرام معطى، ثم إنشاء ملف تعريف (profile) دقيق لهذا العمل بناءً على المعلومات الحقيقية التي تجدها.
+
+    - اسم الصفحة/الحساب: "${target.name}"
+    - نوعه: "${target.type}"
+    - رابط محتمل: "https://www.facebook.com/${target.id}"
+
+    الخطوات:
+    1.  استخدم بحث Google للبحث عن معلومات حول "${target.name}". ابحث عن موقعهم الرسمي، صفحاتهم على وسائل التواصل الاجتماعي، أو أي دليل أعمال يذكرهم.
+    2.  بناءً على نتائج البحث، استخلص المعلومات التالية.
+    3.  إذا لم تجد معلومة معينة، حاول استنتاجها بذكاء أو اتركها فارغة.
+
     المطلوب:
     أرجع كائن JSON فقط، بدون أي نص إضافي أو علامات markdown.
-    يجب أن يحتوي الكائن على المفاتيح التالية بقيم مقترحة ومقنعة باللغة العربية:
+    يجب أن يحتوي الكائن على المفاتيح التالية بقيم حقيقية ومقنعة باللغة العربية:
     - "description": (string) وصف موجز وجذاب للعمل (من نحن؟).
-    - "services": (string) قائمة بالمنتجات أو الخدمات المحتملة التي يقدمها العمل، مفصولة بفاصلة.
-    - "contactInfo": (string) معلومات اتصال افتراضية (هاتف، بريد إلكتروني).
-    - "website": (string) رابط موقع إلكتروني افتراضي.
-    - "currentOffers": (string) اقتراح لعرض خاص أو حملة حالية (مثال: خصم ترحيبي 15%).
-    
-    مثال على الإجابة لصفحة اسمها "مقهى ركن القهوة":
-    {
-      "description": "مقهى ركن القهوة هو وجهتكم المثالية للاستمتاع بأجود أنواع القهوة المختصة والمشروبات المبتكرة في أجواء مريحة وملهمة. نفخر بتقديم تجربة فريدة تجمع بين النكهة الأصيلة والإبداع.",
-      "services": "قهوة مختصة، مشروبات باردة وساخنة، مخبوزات طازجة، حلويات، حبوب بن للبيع",
-      "contactInfo": "966555123456+، hello@cornercafe.com",
-      "website": "https://cornercafe.sa",
-      "currentOffers": "خصم 15% على أول طلب عبر التطبيق"
-    }
+    - "services": (string) قائمة بالمنتجات أو الخدمات التي يقدمها العمل، مفصولة بفاصلة.
+    - "address": (string) العنوان الفعلي للعمل إن وجد.
+    - "country": (string) البلد الذي يعمل فيه العمل بشكل رئيسي.
+    - "contactInfo": (string) معلومات الاتصال (هاتف، بريد إلكتروني).
+    - "website": (string) رابط الموقع الإلكتروني الرسمي.
+    - "currentOffers": (string) أي عروض خاصة حالية تجدها، أو اتركها فارغة.
   `;
 
   const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-preview-04-17',
       contents: prompt,
       config: {
-        responseMimeType: 'application/json',
+        tools: [{googleSearch: {}}],
       },
   });
 

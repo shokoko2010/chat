@@ -49,7 +49,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [publishingReminderId, setPublishingReminderId] = useState<string | null>(null);
   
   // Data state, managed per target
-  const [pageProfile, setPageProfile] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '' });
+  const [pageProfile, setPageProfile] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   
@@ -192,7 +192,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         savedData = {};
     }
 
-    setPageProfile(savedData.pageProfile || { description: '', services: '', contactInfo: '', website: '', currentOffers: '' });
+    setPageProfile(savedData.pageProfile || { description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
     setDrafts(savedData.drafts || []);
     setScheduledPosts(savedData.scheduledPosts || []);
     setContentPlan(savedData.contentPlan || null);
@@ -587,7 +587,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setIsAnalyzingProfile(true);
     setPlanError(null);
     try {
-      const generatedProfile = await analyzePageForProfile(aiClient, managedTarget.name, managedTarget.type);
+      const generatedProfile = await analyzePageForProfile(aiClient, managedTarget);
       setPageProfile(generatedProfile);
       showNotification('success', 'تم تحليل الصفحة وملء البيانات بنجاح.');
     } catch (e: any) {
