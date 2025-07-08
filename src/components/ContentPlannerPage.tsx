@@ -184,7 +184,7 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
                     disabled={isFetchingProfile}
                     variant="secondary"
                 >
-                  📥 استرداد البيانات من فيسبوك
+                  📥 استرداد وتحسين بالذكاء الاصطناعي
                 </Button>
               </div>
               

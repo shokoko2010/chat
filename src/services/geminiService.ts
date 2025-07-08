@@ -30,6 +30,67 @@ const createPageContext = (pageProfile?: PageProfile): string => {
   `;
 };
 
+export const enhanceProfileFromFacebookData = async (
+  ai: GoogleGenAI,
+  facebookData: { about?: string; category?: string; contact?: string; website?: string; address?: string, country?: string }
+): Promise<PageProfile> => {
+  const prompt = `
+    أنت خبير في الهوية التجارية والتسويق الرقمي. مهمتك هي أخذ البيانات الأولية لصفحة فيسبوك وتحويلها إلى ملف تعريف احترافي وجذاب.
+    
+    البيانات الأولية من فيسبوك:
+    - الوصف (About): "${facebookData.about || 'غير متوفر'}"
+    - الفئة (Category): "${facebookData.category || 'غير متوفر'}"
+    - معلومات الاتصال: "${facebookData.contact || 'غير متوفر'}"
+    - الموقع الإلكتروني: "${facebookData.website || 'غير متوفر'}"
+    - العنوان: "${facebookData.address || 'غير متوفر'}"
+    - البلد: "${facebookData.country || 'غير متوفر'}"
+
+    المطلوب:
+    قم بإنشاء كائن JSON فقط، بدون أي نص إضافي أو علامات markdown، يحتوي على المفاتيح التالية بالقيم المحسنة:
+    1. "description": (string) أعد كتابة الوصف ليكون أكثر جاذبية وتسويقية. اجعله موجزًا ويركز على القيمة المقدمة للعميل.
+    2. "services": (string) من خلال الوصف والفئة، استنتج قائمة بالمنتجات أو الخدمات الرئيسية التي يقدمها العمل. افصل بينها بفاصلة.
+    3. "contactInfo": (string) قم بتنظيم معلومات الاتصال التي تم استردادها في سلسلة نصية واضحة.
+    4. "website": (string) استخدم رابط الموقع كما هو.
+    5. "address": (string) استخدم العنوان كما هو.
+    6. "country": (string) استخدم البلد كما هو.
+    7. "currentOffers": (string) اترك هذا الحقل فارغًا ("").
+
+    إذا كانت إحدى المعلومات غير متوفرة في البيانات الأولية، فاترك الحقل المقابل لها فارغًا في الـ JSON. لا تخمن أي معلومات.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { responseMimeType: 'application/json' },
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("لم يتمكن الذكاء الاصطناعي من تحسين الملف الشخصي (استجابة فارغة).");
+    }
+    
+    let jsonStr = text.trim();
+    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
+    const match = jsonStr.match(fenceRegex);
+    if (match && match[2]) {
+      jsonStr = match[2].trim();
+    }
+
+    const enhancedProfile = JSON.parse(jsonStr);
+    
+    if (enhancedProfile && typeof enhancedProfile.description === 'string') {
+        return enhancedProfile;
+    }
+    
+    throw new Error("فشل الذكاء الاصطناعي في إنشاء ملف شخصي بالتنسيق المطلوب.");
+    
+  } catch (error) {
+    console.error("Error enhancing profile from Facebook data:", error);
+    throw new Error("حدث خطأ أثناء تحسين بيانات الصفحة بالذكاء الاصطناعي.");
+  }
+};
+
 export const initializeGoogleGenAI = (apiKey: string): GoogleGenAI | null => {
   if (!apiKey) {
     console.warn("API key is empty. Gemini client not initialized.");

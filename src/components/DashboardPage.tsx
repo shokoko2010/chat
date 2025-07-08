@@ -10,7 +10,7 @@ import BulkSchedulerPage from './BulkSchedulerPage';
 import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData } from '../services/geminiService';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
@@ -92,10 +92,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setIncludeInstagram(!!linkedInstagramTarget);
   }, [linkedInstagramTarget]);
 
-  const showNotification = (type: 'success' | 'error' | 'partial', message: string) => {
+  const showNotification = useCallback((type: 'success' | 'error' | 'partial', message: string) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 8000);
-  };
+  }, []);
   
   const handleFetchProfile = useCallback(async () => {
     if (isSimulationMode) {
@@ -111,37 +111,73 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       showNotification('success', 'تم استرداد بيانات الصفحة التجريبية.');
       return;
     }
+
     if (!window.FB) return;
     setIsFetchingProfile(true);
     setPlanError(null);
+
     try {
-      const fields = 'about,category,location,emails,phone,website,single_line_address';
-      window.FB.api(`/${managedTarget.id}?fields=${fields}`, (response: any) => {
-        if (response && !response.error) {
-          const profileData: PageProfile = {
-            description: response.about || '',
-            services: response.category || '',
-            contactInfo: [...(response.emails || []), response.phone || ''].filter(Boolean).join(', '),
-            website: response.website || '',
-            address: response.single_line_address || '',
-            country: response.location?.country || '',
-            currentOffers: pageProfile.currentOffers, // Keep existing offers as this is not from FB
-          };
-          setPageProfile(profileData);
-          showNotification('success', 'تم استرداد بيانات الصفحة بنجاح من فيسبوك.');
+        // Step 1: Fetch raw data from Facebook
+        const fields = 'about,category,location,emails,phone,website,single_line_address';
+        const fbResponse: any = await new Promise(resolve => {
+            window.FB.api(`/${managedTarget.id}?fields=${fields}`, (res: any) => resolve(res));
+        });
+
+        if (fbResponse && !fbResponse.error) {
+            const rawProfileData = {
+                about: fbResponse.about || '',
+                category: fbResponse.category || '',
+                contact: [...(fbResponse.emails || []), fbResponse.phone || ''].filter(Boolean).join(', '),
+                website: fbResponse.website || '',
+                address: fbResponse.single_line_address || '',
+                country: fbResponse.location?.country || '',
+            };
+
+            if (aiClient) {
+                showNotification('success', 'تم استرداد البيانات من فيسبوك، جاري تحسينها بالذكاء الاصطناعي...');
+                try {
+                    // Step 2: Enhance with AI
+                    const enhancedProfile = await enhanceProfileFromFacebookData(aiClient, rawProfileData);
+                    setPageProfile(prev => ({ ...enhancedProfile, currentOffers: prev.currentOffers })); 
+                    showNotification('success', 'تم استرداد وتحسين بيانات الصفحة بنجاح!');
+                } catch (aiError: any) {
+                    // Fallback to raw data if AI fails
+                    console.error("AI enhancement failed:", aiError);
+                    showNotification('partial', 'تم استرداد البيانات بنجاح، لكن فشل التحسين بالـ AI. سيتم استخدام البيانات الأولية.');
+                    setPageProfile(prev => ({
+                        description: rawProfileData.about,
+                        services: rawProfileData.category,
+                        contactInfo: rawProfileData.contact,
+                        website: rawProfileData.website,
+                        address: rawProfileData.address,
+                        country: rawProfileData.country,
+                        currentOffers: prev.currentOffers,
+                    }));
+                }
+            } else {
+                // Fallback if AI is not configured
+                setPageProfile(prev => ({
+                    description: rawProfileData.about,
+                    services: rawProfileData.category,
+                    contactInfo: rawProfileData.contact,
+                    website: rawProfileData.website,
+                    address: rawProfileData.address,
+                    country: rawProfileData.country,
+                    currentOffers: prev.currentOffers,
+                }));
+                showNotification('success', 'تم استرداد بيانات الصفحة بنجاح من فيسبوك.');
+            }
         } else {
-          const errorMessage = response?.error?.message || 'فشل استرداد بيانات الصفحة. قد لا تتوفر هذه البيانات بشكل عام.';
-          showNotification('error', errorMessage);
-          setPlanError(errorMessage);
+            const errorMessage = fbResponse?.error?.message || 'فشل استرداد بيانات الصفحة. قد لا تتوفر هذه البيانات بشكل عام.';
+            throw new Error(errorMessage);
         }
-        setIsFetchingProfile(false);
-      });
     } catch (e: any) {
-      showNotification('error', e.message);
-      setPlanError(e.message);
-      setIsFetchingProfile(false);
+        showNotification('error', e.message);
+        setPlanError(e.message);
+    } finally {
+        setIsFetchingProfile(false);
     }
-  }, [managedTarget.id, isSimulationMode, pageProfile.currentOffers]);
+  }, [managedTarget.id, isSimulationMode, aiClient, showNotification, setPlanError, setPageProfile]);
 
 
   const rescheduleBulkPosts = useCallback((postsToReschedule: BulkPostItem[], strategy: 'even' | 'weekly', weeklySettings: WeeklyScheduleSettings) => {
@@ -502,7 +538,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     } finally {
         setIsPublishing(false);
     }
-  }, [postText, selectedImage, isScheduled, scheduleDate, managedTarget, includeInstagram, linkedInstagramTarget, clearComposer]);
+  }, [postText, selectedImage, isScheduled, scheduleDate, managedTarget, includeInstagram, linkedInstagramTarget, clearComposer, showNotification]);
   
   const handlePublishReminder = async (postId: string) => {
     const post = scheduledPosts.find(p => p.id === postId);
