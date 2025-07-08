@@ -129,7 +129,7 @@ const InboxPage: React.FC<InboxPageProps> = ({
 
     return (
         <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
-            {rowVirtualizer.getVirtualItems().map(virtualItem => {
+            {rowVirtualizer.getVirtualItems().map((virtualItem: any) => {
                 const item = filteredItems[virtualItem.index];
                 if (!item) return null;
                 const Icon = item.type === 'message' ? ChatBubbleLeftEllipsisIcon : ChatBubbleOvalLeftEllipsisIcon;
