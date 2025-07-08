@@ -84,8 +84,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [isInboxLoading, setIsInboxLoading] = useState(true);
   const [autoResponderSettings, setAutoResponderSettings] = useState<AutoResponderSettings>({
-    comments: { enabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
-    messages: { enabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
+    comments: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
+    messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
   });
   const [autoRepliedItems, setAutoRepliedItems] = useState<Set<string>>(new Set());
 
@@ -297,11 +297,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setScheduledPosts(savedData.scheduledPosts || []);
     setContentPlan(savedData.contentPlan || null);
     setStrategyHistory(savedData.strategyHistory || []);
+    setPublishedPosts(savedData.publishedPosts?.map((p:any) => ({...p, publishedAt: new Date(p.publishedAt)})) || []);
     setAutoResponderSettings(savedData.autoResponderSettings || { 
-        comments: { enabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
-        messages: { enabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
+        comments: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
+        messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
     });
     setAutoRepliedItems(new Set(savedData.autoRepliedItems || []));
+    setInboxItems(savedData.inboxItems?.map((i:any) => ({...i, timestamp: new Date(i.timestamp).toISOString()})) || []);
     
     // We clear bulk posts on page change to avoid complexity with non-serializable File objects.
     setBulkPosts([]);
@@ -309,41 +311,39 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
     // Reset composer and session-based state
     clearComposer();
-    setPublishedPosts([]);
     setPublishedPostsLoading(true);
     setView('composer');
 
     // Fetch real published posts
     if (isSimulationMode) {
       setPublishedPostsLoading(false);
-      setPublishedPosts([{
-        id: 'mock_post_1', pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url,
-        text: 'هذا منشور تجريبي تم جلبه لهذه الصفحة.', imagePreview: 'https://via.placeholder.com/400x300/CCCCCC/FFFFFF?text=Published',
-        publishedAt: new Date(Date.now() - 24 * 60 * 60 * 1000), analytics: { likes: 12, comments: 3, shares: 1, reach: 150, loading: false, lastUpdated: new Date(), isGeneratingInsights: false, }
-      }]);
       return;
     }
     
-    window.FB.api(
-      `/${managedTarget.id}/published_posts?fields=id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}`,
-      (response: any) => {
-        if (response && response.data) {
-          const fetchedPosts: PublishedPost[] = response.data.map((post: any) => ({
-            id: post.id, pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url, text: post.message || '',
-            imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
-            analytics: {
-              likes: post.likes?.summary?.total_count ?? 0, comments: post.comments?.summary?.total_count ?? 0, shares: post.shares?.count ?? 0,
-              reach: post.insights?.data?.[0]?.values?.[0]?.value ?? 0,
-              loading: false, lastUpdated: new Date(), isGeneratingInsights: false
+    if (!savedData.publishedPosts) {
+        window.FB.api(
+        `/${managedTarget.id}/published_posts?fields=id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}`,
+        (response: any) => {
+            if (response && response.data) {
+            const fetchedPosts: PublishedPost[] = response.data.map((post: any) => ({
+                id: post.id, pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url, text: post.message || '',
+                imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
+                analytics: {
+                likes: post.likes?.summary?.total_count ?? 0, comments: post.comments?.summary?.total_count ?? 0, shares: post.shares?.count ?? 0,
+                reach: post.insights?.data?.[0]?.values?.[0]?.value ?? 0,
+                loading: false, lastUpdated: new Date(), isGeneratingInsights: false
+                }
+            }));
+            setPublishedPosts(fetchedPosts);
+            } else if (response.error) {
+                console.error(`Error fetching posts for ${managedTarget.name}:`, response.error);
             }
-          }));
-          setPublishedPosts(fetchedPosts);
-        } else if (response.error) {
-            console.error(`Error fetching posts for ${managedTarget.name}:`, response.error);
+            setPublishedPostsLoading(false);
         }
+        );
+    } else {
         setPublishedPostsLoading(false);
-      }
-    );
+    }
     
   }, [managedTarget.id, isSimulationMode, clearComposer]);
   
@@ -359,6 +359,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             scheduledPosts: scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imageUrl: imageFile ? rest.imageUrl : null })),
             contentPlan,
             strategyHistory,
+            publishedPosts,
+            inboxItems,
             autoResponderSettings,
             autoRepliedItems: Array.from(autoRepliedItems)
         };
@@ -366,7 +368,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     } catch(e) {
         console.error("Could not save data to localStorage:", e);
     }
-  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, autoResponderSettings, autoRepliedItems, managedTarget.id]);
+  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, publishedPosts, inboxItems, autoResponderSettings, autoRepliedItems, managedTarget.id]);
 
   const filteredPosts = useMemo(() => {
     const now = new Date();
@@ -435,136 +437,86 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     };
 
 
-    const processAutoReplies = useCallback(async (items: InboxItem[]) => {
-      if (isSimulationMode) return;
-      const newAutoRepliedItems = new Set(autoRepliedItems);
-      let repliedCount = 0;
+    useEffect(() => {
+        if (view === 'inbox') {
+            setIsInboxLoading(true);
 
-      for (const item of items) {
-        if (autoRepliedItems.has(item.id)) continue;
+            const fetchComments = new Promise<InboxItem[]>(resolve => {
+                const targetIds = [managedTarget.id, linkedInstagramTarget?.id].filter(Boolean);
+                const batchRequest = targetIds.map(id => ({
+                    method: 'GET',
+                    relative_url: `${id}/posts?fields=comments.limit(25).order(reverse_chronological){id,from{id,name,picture},message,created_time,post},message,full_picture&limit=25`
+                }));
 
-        let settings;
-        if (item.type === 'comment' && autoResponderSettings.comments.enabled) {
-          settings = autoResponderSettings.comments;
-        } else if (item.type === 'message' && autoResponderSettings.messages.enabled) {
-          settings = autoResponderSettings.messages;
-        } else {
-          continue;
-        }
-        
-        const keywords = settings.keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
-        if (keywords.length === 0 || !keywords.some(keyword => item.text.toLowerCase().includes(keyword))) {
-          continue;
-        }
+                if (batchRequest.length === 0) return resolve([]);
 
-        let success = false;
-        if (item.type === 'comment') {
-          const commentSettings = autoResponderSettings.comments;
-          const userPostKey = `${item.post!.id}_${item.authorId}`;
-          if (autoRepliedItems.has(userPostKey) && commentSettings.replyOncePerUser) continue;
-          
-          if (commentSettings.publicReplyEnabled && commentSettings.publicReplyMessage) {
-            const message = commentSettings.publicReplyMessage.replace('{user_name}', item.authorName);
-            await handleReplyToComment(item.id, message);
-            success = true;
-          }
-          if (commentSettings.privateReplyEnabled && commentSettings.privateReplyMessage) {
-            const message = commentSettings.privateReplyMessage.replace('{user_name}', item.authorName);
-            await new Promise(resolve => window.FB.api(`/${item.id}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (res: any) => resolve(res)));
-            success = true;
-          }
-          if (success) newAutoRepliedItems.add(userPostKey);
-
-        } else if (item.type === 'message') {
-          const messageSettings = autoResponderSettings.messages;
-          const message = messageSettings.replyMessage.replace('{user_name}', item.authorName);
-          await handleSendMessage(item.id, message);
-          success = true;
-        }
-
-        if (success) {
-          newAutoRepliedItems.add(item.id);
-          repliedCount++;
-        }
-      }
-
-      setAutoRepliedItems(newAutoRepliedItems);
-      if (repliedCount > 0) {
-        showNotification('success', `تم إرسال ${repliedCount} من الردود التلقائية.`);
-      }
-  }, [autoResponderSettings, autoRepliedItems, managedTarget.access_token, showNotification, isSimulationMode]);
-
-  useEffect(() => {
-    if (view === 'inbox') {
-      setIsInboxLoading(true);
-
-      const fetchComments = new Promise<InboxItem[]>(resolve => {
-        const targetIds = [managedTarget.id, linkedInstagramTarget?.id].filter(Boolean);
-        const batchRequest = targetIds.map(id => ({
-          method: 'GET',
-          relative_url: `${id}/posts?fields=comments.limit(25).order(reverse_chronological){id,from{id,name,picture},message,created_time,post},message,full_picture&limit=25`
-        }));
-        
-        if(batchRequest.length === 0) return resolve([]);
-        
-        window.FB.api('/', 'POST', { batch: batchRequest, access_token: managedTarget.access_token }, (response: any) => {
-            const allComments: InboxItem[] = [];
-            if (response && !response.error) {
-                response.forEach((res: any) => {
-                    if(res.code === 200) {
-                        const body = JSON.parse(res.body);
-                        body.data?.forEach((post: any) => {
-                            post.comments?.data?.forEach((comment: any) => {
-                                allComments.push({
-                                    id: comment.id, type: 'comment', text: comment.message,
-                                    authorName: comment.from.name, authorId: comment.from.id, authorPictureUrl: comment.from.picture.data.url,
-                                    timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }
+                window.FB.api('/', 'POST', { batch: batchRequest, access_token: managedTarget.access_token }, (response: any) => {
+                    const allComments: InboxItem[] = [];
+                    if (response && !response.error) {
+                        response.forEach((res: any) => {
+                            if (res.code === 200) {
+                                const body = JSON.parse(res.body);
+                                body.data?.forEach((post: any) => {
+                                    post.comments?.data?.forEach((comment: any) => {
+                                        allComments.push({
+                                            id: comment.id, type: 'comment', text: comment.message,
+                                            authorName: comment.from.name, authorId: comment.from.id, authorPictureUrl: comment.from.picture.data.url,
+                                            timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }
+                                        });
+                                    });
                                 });
-                            });
+                            }
                         });
+                    } else {
+                        console.error("Error fetching comments:", response?.error);
                     }
+                    resolve(allComments);
                 });
-            } else {
-                console.error("Error fetching comments:", response?.error);
-            }
-            resolve(allComments);
-        });
-      });
+            });
 
-      const fetchMessages = new Promise<InboxItem[]>(resolve => {
-        window.FB.api(`/${managedTarget.id}/conversations`, { fields: 'id,snippet,updated_time,participants', access_token: managedTarget.access_token }, (response: any) => {
-            const allMessages: InboxItem[] = [];
-            if (response && response.data) {
-              response.data.forEach((convo: any) => {
-                const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
-                if(participant) {
-                    allMessages.push({
-                      id: convo.id, type: 'message', text: convo.snippet, authorName: participant.name,
-                      authorId: participant.id, authorPictureUrl: `https://graph.facebook.com/${participant.id}/picture`,
-                      timestamp: convo.updated_time, conversationId: convo.id
-                    });
-                }
-              });
-            } else {
-              console.error("Error fetching messages:", response?.error);
-            }
-            resolve(allMessages);
-        });
-      });
+            const fetchMessages = new Promise<InboxItem[]>(resolve => {
+                window.FB.api(`/${managedTarget.id}/conversations`, { fields: 'id,snippet,updated_time,participants', access_token: managedTarget.access_token }, (response: any) => {
+                    const allMessages: InboxItem[] = [];
+                    if (response && response.data) {
+                        response.data.forEach((convo: any) => {
+                            const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
+                            if (participant) {
+                                allMessages.push({
+                                    id: convo.id, type: 'message', text: convo.snippet, authorName: participant.name,
+                                    authorId: participant.id, authorPictureUrl: `https://graph.facebook.com/${participant.id}/picture`,
+                                    timestamp: convo.updated_time, conversationId: convo.id
+                                });
+                            }
+                        });
+                    } else {
+                        console.error("Error fetching messages:", response?.error);
+                    }
+                    resolve(allMessages);
+                });
+            });
 
-      Promise.all([fetchComments, fetchMessages]).then(([comments, messages]) => {
-        const allItems = [...comments, ...messages];
-        allItems.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        setInboxItems(allItems);
-        processAutoReplies(allItems.filter(item => !autoRepliedItems.has(item.id)));
-      }).catch(err => {
-        console.error("Error fetching inbox items:", err);
-        showNotification('error', 'فشل في جلب البريد الوارد.');
-      }).finally(() => {
-        setIsInboxLoading(false);
-      });
-    }
-  }, [view, managedTarget.id, linkedInstagramTarget?.id, managedTarget.access_token, showNotification, processAutoReplies]);
+            Promise.all([fetchComments, fetchMessages]).then(([comments, messages]) => {
+                const combinedItems = new Map<string, InboxItem>();
+                
+                // Add existing items first to be potentially overwritten by fresher data
+                inboxItems.forEach(item => combinedItems.set(item.id, item));
+
+                // Add new data
+                [...comments, ...messages].forEach(item => combinedItems.set(item.id, item));
+                
+                const allItems = Array.from(combinedItems.values());
+                allItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                
+                setInboxItems(allItems);
+                
+            }).catch(err => {
+                console.error("Error fetching inbox items:", err);
+                showNotification('error', 'فشل في جلب البريد الوارد.');
+            }).finally(() => {
+                setIsInboxLoading(false);
+            });
+        }
+    }, [view, managedTarget.id, linkedInstagramTarget?.id, managedTarget.access_token, showNotification]);
   
   const handleSendMessage = async (conversationId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {

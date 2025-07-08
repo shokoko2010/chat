@@ -5,7 +5,7 @@ import DashboardPage from './src/components/DashboardPage';
 import HomePage from './src/components/HomePage';
 import { GoogleGenAI } from '@google/genai';
 import { initializeGoogleGenAI } from './src/services/geminiService';
-import { Target } from './src/types';
+import { Target, PublishedPost, InboxItem } from './src/types';
 import SettingsModal from './src/components/SettingsModal';
 
 const isSimulation = window.location.protocol === 'http:';
@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [syncingTargetId, setSyncingTargetId] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -141,6 +142,24 @@ const App: React.FC = () => {
     });
     return igAccounts;
   }, []);
+  
+  const fetchWithPagination = useCallback(async (initialPath: string): Promise<any[]> => {
+      let allData: any[] = [];
+      let path: string | null = initialPath;
+      let counter = 0; // safety break to avoid infinite loops
+      while (path && counter < 20) { // Limit to 20 pages max for safety
+          const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
+          if (response && response.data && response.data.length > 0) {
+              allData = allData.concat(response.data);
+              path = response.paging?.next ? new URL(response.paging.next).pathname + new URL(response.paging.next).search : null;
+          } else {
+              if (response.error) console.error(`Error fetching paginated data for path ${path}:`, response.error);
+              path = null;
+          }
+          counter++;
+      }
+      return allData;
+  }, []);
 
   useEffect(() => {
     if (authStatus !== 'connected') {
@@ -154,22 +173,6 @@ const App: React.FC = () => {
         return;
     }
     
-    const fetchWithPagination = async (initialPath: string): Promise<any[]> => {
-        let allData: any[] = [];
-        let path: string | null = initialPath;
-        while (path) {
-            const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
-            if (response && response.data && response.data.length > 0) {
-                allData = allData.concat(response.data);
-                path = response.paging?.next ? new URL(response.paging.next).pathname + new URL(response.paging.next).search : null;
-            } else {
-                if (response.error) console.error(`Error fetching paginated data for path ${path}:`, response.error);
-                path = null;
-            }
-        }
-        return allData;
-    };
-
     const fetchAllData = async () => {
         setTargetsLoading(true);
         setTargetsError(null);
@@ -197,7 +200,63 @@ const App: React.FC = () => {
         }
     };
     fetchAllData();
-  }, [authStatus, isSimulationMode, fetchInstagramAccounts]);
+  }, [authStatus, isSimulationMode, fetchInstagramAccounts, fetchWithPagination]);
+
+  const handleFullHistorySync = useCallback(async (target: Target) => {
+    if (isSimulationMode) {
+      alert("لا يمكن مزامنة السجل في وضع المحاكاة.");
+      return;
+    }
+    setSyncingTargetId(target.id);
+    try {
+        const postsPath = `/${target.id}/published_posts?fields=id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}&limit=100`;
+        const allPostsData = await fetchWithPagination(postsPath);
+        
+        const fetchedPosts: PublishedPost[] = allPostsData.map((post: any) => ({
+            id: post.id, pageId: target.id, pageName: target.name, pageAvatarUrl: target.picture.data.url, text: post.message || '',
+            imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
+            analytics: {
+                likes: post.likes?.summary?.total_count ?? 0, comments: post.comments?.summary?.total_count ?? 0, shares: post.shares?.count ?? 0,
+                reach: post.insights?.data?.[0]?.values?.[0]?.value ?? 0,
+                loading: false, lastUpdated: new Date(), isGeneratingInsights: false
+            }
+        }));
+
+        const convosPath = `/${target.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`;
+        const allConvosData = await fetchWithPagination(convosPath);
+
+        const fetchedInboxItems: InboxItem[] = allConvosData.map((convo: any) => {
+            const participant = convo.participants.data.find((p: any) => p.id !== target.id);
+            return {
+                id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'Unknown',
+                authorId: participant?.id || 'Unknown', authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture`,
+                timestamp: convo.updated_time, conversationId: convo.id
+            };
+        });
+
+        // For simplicity, we'll just replace the history. A more robust solution might merge.
+        const dataKey = `zex-pages-data-${target.id}`;
+        const rawData = localStorage.getItem(dataKey);
+        const data = rawData ? JSON.parse(rawData) : {};
+        
+        const updatedData = {
+          ...data,
+          publishedPosts: fetchedPosts,
+          inboxItems: fetchedInboxItems, // We might need to merge this with comments later. For now, this is simpler.
+          syncedAt: new Date().toISOString()
+        };
+        localStorage.setItem(dataKey, JSON.stringify(updatedData));
+
+        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${fetchedInboxItems.length} محادثة بنجاح للصفحة ${target.name}.`);
+
+    } catch(error) {
+      console.error("Error during full history sync:", error);
+      alert(`فشلت مزامنة السجل للصفحة ${target.name}.`);
+    } finally {
+      setSyncingTargetId(null);
+    }
+  }, [fetchWithPagination, isSimulationMode]);
+
 
   const handleLogin = useCallback(() => {
     if (isSimulationMode) {
@@ -210,7 +269,7 @@ const App: React.FC = () => {
         if (response.authResponse) setAuthStatus('connected');
         else setAuthStatus('not_authorized');
       }, { 
-        scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights',
+        scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,groups_show_list,pages_messaging,read_page_mailboxes',
         auth_type: 'rerequest'
       });
   }, [isSimulationMode]);
@@ -257,6 +316,8 @@ const App: React.FC = () => {
           onSelectTarget={handleSelectTarget}
           onLogout={handleLogout}
           onSettingsClick={() => setIsSettingsOpen(true)}
+          onSyncHistory={handleFullHistorySync}
+          syncingTargetId={syncingTargetId}
         />
       );
   };

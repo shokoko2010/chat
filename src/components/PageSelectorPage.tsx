@@ -15,6 +15,8 @@ interface PageSelectorPageProps {
   onLoadPagesFromBusiness?: (businessId: string) => void;
   loadingBusinessId?: string | null;
   loadedBusinessIds?: Set<string>;
+  onSyncHistory: (target: Target) => void;
+  syncingTargetId: string | null;
   isLoading: boolean;
   error: string | null;
   onSelectTarget: (target: Target) => void;
@@ -22,31 +24,45 @@ interface PageSelectorPageProps {
   onSettingsClick: () => void;
 }
 
-const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void }> = ({ target, linkedInstagram, onSelect }) => {
+const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void; onSync: () => void; isSyncing: boolean }> = ({ target, linkedInstagram, onSelect, onSync, isSyncing }) => {
     const typeText = target.type === 'page' ? 'صفحة فيسبوك' : 'مجموعة فيسبوك';
 
     return (
-        <button
-            onClick={onSelect}
-            className="w-full text-right bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col h-full"
-        >
-            <div className="p-5 flex-grow">
-                <div className="flex items-center gap-4">
-                    <img src={target.picture.data.url} alt={target.name} className="w-16 h-16 rounded-lg object-cover" />
-                    <div className="flex-grow">
-                        <p className="font-bold text-lg text-gray-900 dark:text-white line-clamp-2">{target.name}</p>
+        <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col h-full">
+            <button
+                onClick={onSelect}
+                className="w-full text-right hover:-translate-y-1 transition-transform duration-300"
+            >
+                <div className="p-5 flex-grow">
+                    <div className="flex items-center gap-4">
+                        <img src={target.picture.data.url} alt={target.name} className="w-16 h-16 rounded-lg object-cover" />
+                        <div className="flex-grow">
+                            <p className="font-bold text-lg text-gray-900 dark:text-white line-clamp-2">{target.name}</p>
+                        </div>
                     </div>
                 </div>
+                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 flex items-center gap-2">
+                    <FacebookIcon className="w-5 h-5 text-blue-600" />
+                    {linkedInstagram && <InstagramIcon className="w-5 h-5" />}
+                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                        {typeText}
+                        {linkedInstagram && ' + انستجرام'}
+                    </span>
+                </div>
+            </button>
+            <div className="p-2 border-t border-gray-100 dark:border-gray-700/50">
+                 <Button
+                    size="sm"
+                    variant="secondary"
+                    className="w-full"
+                    onClick={onSync}
+                    isLoading={isSyncing}
+                    disabled={isSyncing}
+                 >
+                   🔄 {isSyncing ? 'جاري المزامنة...' : 'مزامنة السجل الكامل'}
+                 </Button>
             </div>
-            <div className="p-3 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-100 dark:border-gray-700/50 rounded-b-lg flex items-center gap-2">
-                <FacebookIcon className="w-5 h-5 text-blue-600" />
-                {linkedInstagram && <InstagramIcon className="w-5 h-5" />}
-                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    {typeText}
-                    {linkedInstagram && ' + انستجرام'}
-                </span>
-            </div>
-        </button>
+        </div>
     );
 };
 
@@ -57,6 +73,8 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
   onLoadPagesFromBusiness,
   loadingBusinessId,
   loadedBusinessIds,
+  onSyncHistory,
+  syncingTargetId,
   isLoading,
   error,
   onSelectTarget,
@@ -107,6 +125,8 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
                             target={target}
                             linkedInstagram={linkedInstagram || null}
                             onSelect={() => onSelectTarget(target)}
+                            onSync={() => onSyncHistory(target)}
+                            isSyncing={syncingTargetId === target.id}
                         />
                     );
                 })}
@@ -134,7 +154,7 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
             <div className="max-w-7xl mx-auto">
               <div className="md:flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold mb-4 md:mb-0 text-gray-900 dark:text-white">اختر وجهة لإدارتها</h1>
-                {isLoading && <p className="text-gray-500">جاري تحديث القائمة...</p>}
+                {(isLoading || syncingTargetId) && <p className="text-gray-500 animate-pulse">{syncingTargetId ? 'جاري مزامنة السجل...' : 'جاري تحديث القائمة...'}</p>}
               </div>
               
               {businesses && businesses.length > 0 && onLoadPagesFromBusiness && loadingBusinessId !== undefined && loadedBusinessIds && (

@@ -6,7 +6,7 @@ import DashboardPage from './components/DashboardPage';
 import HomePage from './components/HomePage';
 import { GoogleGenAI } from '@google/genai';
 import { initializeGoogleGenAI } from './services/geminiService';
-import { Target, Business } from './types';
+import { Target, Business, PublishedPost, InboxItem } from './types';
 import SettingsModal from './components/SettingsModal';
 
 const isSimulation = window.location.protocol === 'http:';
@@ -39,6 +39,7 @@ const App: React.FC = () => {
   
   const [loadingBusinessId, setLoadingBusinessId] = useState<string | null>(null);
   const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set());
+  const [syncingTargetId, setSyncingTargetId] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -105,7 +106,8 @@ const App: React.FC = () => {
   const fetchWithPagination = useCallback(async (initialPath: string): Promise<any[]> => {
       let allData: any[] = [];
       let path: string | null = initialPath;
-      while (path) {
+      let counter = 0; // safety break to avoid infinite loops
+      while (path && counter < 20) { // Limit to 20 pages max for safety
           const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
           if (response && response.data && response.data.length > 0) {
               allData = allData.concat(response.data);
@@ -114,6 +116,7 @@ const App: React.FC = () => {
               if (response.error) console.error(`Error fetching paginated data for path ${path}:`, response.error);
               path = null;
           }
+          counter++;
       }
       return allData;
   }, []);
@@ -238,11 +241,66 @@ const App: React.FC = () => {
 
     } catch(error) {
       console.error(`Error loading pages for business ${businessId}:`, error);
-      // Maybe set an error state to show in the UI
     } finally {
       setLoadingBusinessId(null);
     }
   }, [fetchWithPagination, fetchInstagramAccounts]);
+
+
+  const handleFullHistorySync = useCallback(async (target: Target) => {
+    if (isSimulationMode) {
+      alert("لا يمكن مزامنة السجل في وضع المحاكاة.");
+      return;
+    }
+    setSyncingTargetId(target.id);
+    try {
+        const postsPath = `/${target.id}/published_posts?fields=id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}&limit=100`;
+        const allPostsData = await fetchWithPagination(postsPath);
+        
+        const fetchedPosts: PublishedPost[] = allPostsData.map((post: any) => ({
+            id: post.id, pageId: target.id, pageName: target.name, pageAvatarUrl: target.picture.data.url, text: post.message || '',
+            imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
+            analytics: {
+                likes: post.likes?.summary?.total_count ?? 0, comments: post.comments?.summary?.total_count ?? 0, shares: post.shares?.count ?? 0,
+                reach: post.insights?.data?.[0]?.values?.[0]?.value ?? 0,
+                loading: false, lastUpdated: new Date(), isGeneratingInsights: false
+            }
+        }));
+
+        const convosPath = `/${target.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`;
+        const allConvosData = await fetchWithPagination(convosPath);
+
+        const fetchedInboxItems: InboxItem[] = allConvosData.map((convo: any) => {
+            const participant = convo.participants.data.find((p: any) => p.id !== target.id);
+            return {
+                id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'Unknown',
+                authorId: participant?.id || 'Unknown', authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture`,
+                timestamp: convo.updated_time, conversationId: convo.id
+            };
+        });
+
+        // For simplicity, we'll just replace the history. A more robust solution might merge.
+        const dataKey = `zex-pages-data-${target.id}`;
+        const rawData = localStorage.getItem(dataKey);
+        const data = rawData ? JSON.parse(rawData) : {};
+        
+        const updatedData = {
+          ...data,
+          publishedPosts: fetchedPosts,
+          inboxItems: fetchedInboxItems, // We might need to merge this with comments later. For now, this is simpler.
+          syncedAt: new Date().toISOString()
+        };
+        localStorage.setItem(dataKey, JSON.stringify(updatedData));
+
+        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${fetchedInboxItems.length} محادثة بنجاح للصفحة ${target.name}.`);
+
+    } catch(error) {
+      console.error("Error during full history sync:", error);
+      alert(`فشلت مزامنة السجل للصفحة ${target.name}.`);
+    } finally {
+      setSyncingTargetId(null);
+    }
+  }, [fetchWithPagination, isSimulationMode]);
 
 
   const handleLogin = useCallback(() => {
@@ -302,6 +360,8 @@ const App: React.FC = () => {
           onLoadPagesFromBusiness={handleLoadPagesFromBusiness}
           loadingBusinessId={loadingBusinessId}
           loadedBusinessIds={loadedBusinessIds}
+          onSyncHistory={handleFullHistorySync}
+          syncingTargetId={syncingTargetId}
           isLoading={targetsLoading}
           error={targetsError}
           onSelectTarget={handleSelectTarget}

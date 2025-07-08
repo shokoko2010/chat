@@ -197,7 +197,7 @@ export interface InboxItem {
 
 export interface AutoResponderSettings {
   comments: {
-    enabled: boolean;
+    realtimeEnabled: boolean;
     keywords: string; // Comma-separated
     replyOncePerUser: boolean;
     publicReplyEnabled: boolean;
@@ -206,7 +206,7 @@ export interface AutoResponderSettings {
     privateReplyMessage: string;
   };
   messages: {
-    enabled: boolean;
+    realtimeEnabled: boolean;
     keywords: string;
     replyMessage: string;
   };

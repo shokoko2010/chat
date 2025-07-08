@@ -199,6 +199,43 @@ const InboxPage: React.FC<InboxPageProps> = ({
         </div>
     )
   }
+  
+  const AutoResponderSection: React.FC<{
+      type: 'comments' | 'messages';
+      settings: AutoResponderSettings['comments'] | AutoResponderSettings['messages'];
+      onSettingsChange: (updates: Partial<AutoResponderSettings['comments'] | AutoResponderSettings['messages']>) => void;
+  }> = ({ type, settings, onSettingsChange }) => {
+      const title = type === 'comments' ? 'الرد التلقائي على التعليقات' : 'الرد التلقائي على الرسائل';
+      const keywordsLabel = type === 'comments' ? 'الرد فقط على التعليقات التي تحتوي على:' : 'الرد فقط على الرسائل الجديدة التي تحتوي على:';
+      const commonSettings = (
+          <>
+             <div><label htmlFor={`ar-${type}-keywords`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{keywordsLabel}</label><input id={`ar-${type}-keywords`} type="text" value={settings.keywords} onChange={e => onSettingsChange({ keywords: e.target.value })} placeholder="مثال: السعر, بكم, تفاصيل" className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm" disabled={!settings.realtimeEnabled}/><p className="text-xs text-gray-500 dark:text-gray-400 mt-1">افصل بين الكلمات بفاصلة ( , ).</p></div>
+          </>
+      );
+      return (
+           <details className="group">
+              <summary className="font-bold text-gray-800 dark:text-white cursor-pointer">{title}</summary>
+              <div className="mt-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                       <p className="text-sm font-medium text-gray-700 dark:text-gray-300">تفعيل الرد التلقائي الفوري:</p>
+                       <label htmlFor={`ar-${type}-toggle`} className="flex items-center cursor-pointer"><div className="relative"><input type="checkbox" id={`ar-${type}-toggle`} className="sr-only" checked={settings.realtimeEnabled} onChange={e => onSettingsChange({ realtimeEnabled: e.target.checked })} /><div className="block bg-gray-600 w-14 h-8 rounded-full"></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition ${settings.realtimeEnabled ? 'translate-x-6 bg-green-400' : ''}`}></div></div></label>
+                  </div>
+                  <div className={`space-y-4 transition-opacity duration-300 ${settings.realtimeEnabled ? 'opacity-100' : 'opacity-50'}`}>
+                      {commonSettings}
+                      {type === 'comments' && 'publicReplyEnabled' in settings && (
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><div className="flex items-center mb-2"><input type="checkbox" id="public-reply-enabled" checked={settings.publicReplyEnabled} onChange={e => onSettingsChange({publicReplyEnabled: e.target.checked})} className="h-4 w-4 rounded border-gray-300" disabled={!settings.realtimeEnabled}/><label htmlFor="public-reply-enabled" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">تفعيل الرد العام</label></div><textarea value={settings.publicReplyMessage} onChange={e => onSettingsChange({ publicReplyMessage: e.target.value })} placeholder="اكتب نص الرد العام هنا..." className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm" rows={2} disabled={!settings.realtimeEnabled || !settings.publicReplyEnabled}/></div><div><div className="flex items-center mb-2"><input type="checkbox" id="private-reply-enabled" checked={settings.privateReplyEnabled} onChange={e => onSettingsChange({privateReplyEnabled: e.target.checked})} className="h-4 w-4 rounded border-gray-300" disabled={!settings.realtimeEnabled}/><label htmlFor="private-reply-enabled" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">تفعيل الرد الخاص</label></div><textarea value={settings.privateReplyMessage} onChange={e => onSettingsChange({ privateReplyMessage: e.target.value })} placeholder="اكتب نص الرسالة الخاصة هنا..." className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm" rows={2} disabled={!settings.realtimeEnabled || !settings.privateReplyEnabled}/></div></div>
+                          <div className="flex items-center"><input type="checkbox" id="reply-once-enabled" checked={settings.replyOncePerUser} onChange={e => onSettingsChange({replyOncePerUser: e.target.checked})} className="h-4 w-4 rounded border-gray-300" disabled={!settings.realtimeEnabled}/><label htmlFor="reply-once-enabled" className="block text-sm text-gray-700 dark:text-gray-300 mr-2">الرد مرة واحدة فقط لكل مستخدم على نفس المنشور (موصى به).</label></div>
+                        </>
+                      )}
+                      {type === 'messages' && 'replyMessage' in settings && (
+                        <div><label htmlFor="ar-messages-reply" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">نص الرد التلقائي للرسالة:</label><textarea value={settings.replyMessage} onChange={e => onSettingsChange({ replyMessage: e.target.value })} placeholder="اكتب نص الرسالة التلقائية هنا..." className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm" rows={2} disabled={!settings.realtimeEnabled}/></div>
+                      )}
+                  </div>
+              </div>
+          </details>
+      )
+  }
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-250px)] bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden fade-in">
@@ -219,34 +256,17 @@ const InboxPage: React.FC<InboxPageProps> = ({
               {renderDetail()}
             </div>
             <div className="p-4 bg-gray-50 dark:bg-gray-900/50 border-t dark:border-gray-700 flex-shrink-0 space-y-4">
-                <details className="group">
-                    <summary className="font-bold text-gray-800 dark:text-white cursor-pointer">إعدادات الرد التلقائي على التعليقات</summary>
-                    <div className="mt-4 space-y-4">
-                        <div className="flex items-center justify-between">
-                             <p className="text-sm font-medium text-gray-700 dark:text-gray-300">تفعيل الرد التلقائي على التعليقات:</p>
-                             <label htmlFor="ar-comments-toggle" className="flex items-center cursor-pointer"><div className="relative"><input type="checkbox" id="ar-comments-toggle" className="sr-only" checked={autoResponderSettings.comments.enabled} onChange={e => handleSettingsChange('comments', { enabled: e.target.checked })} /><div className="block bg-gray-600 w-14 h-8 rounded-full"></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition ${autoResponderSettings.comments.enabled ? 'translate-x-6 bg-green-400' : ''}`}></div></div></label>
-                        </div>
-                        <div className={`space-y-4 transition-opacity duration-300 ${autoResponderSettings.comments.enabled ? 'opacity-100' : 'opacity-50'}`}>
-                             <div><label htmlFor="ar-comments-keywords" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الرد فقط على التعليقات التي تحتوي على:</label><input id="ar-comments-keywords" type="text" value={autoResponderSettings.comments.keywords} onChange={e => handleSettingsChange('comments', { keywords: e.target.value })} placeholder="مثال: السعر, بكم, تفاصيل" className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm" disabled={!autoResponderSettings.comments.enabled}/><p className="text-xs text-gray-500 dark:text-gray-400 mt-1">افصل بين الكلمات بفاصلة ( , ).</p></div>
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><div className="flex items-center mb-2"><input type="checkbox" id="public-reply-enabled" checked={autoResponderSettings.comments.publicReplyEnabled} onChange={e => handleSettingsChange('comments', {publicReplyEnabled: e.target.checked})} className="h-4 w-4 rounded border-gray-300" disabled={!autoResponderSettings.comments.enabled}/><label htmlFor="public-reply-enabled" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">تفعيل الرد العام</label></div><textarea value={autoResponderSettings.comments.publicReplyMessage} onChange={e => handleSettingsChange('comments', { publicReplyMessage: e.target.value })} placeholder="اكتب نص الرد العام هنا..." className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm" rows={2} disabled={!autoResponderSettings.comments.enabled || !autoResponderSettings.comments.publicReplyEnabled}/></div><div><div className="flex items-center mb-2"><input type="checkbox" id="private-reply-enabled" checked={autoResponderSettings.comments.privateReplyEnabled} onChange={e => handleSettingsChange('comments', {privateReplyEnabled: e.target.checked})} className="h-4 w-4 rounded border-gray-300" disabled={!autoResponderSettings.comments.enabled}/><label htmlFor="private-reply-enabled" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">تفعيل الرد الخاص</label></div><textarea value={autoResponderSettings.comments.privateReplyMessage} onChange={e => handleSettingsChange('comments', { privateReplyMessage: e.target.value })} placeholder="اكتب نص الرسالة الخاصة هنا..." className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm" rows={2} disabled={!autoResponderSettings.comments.enabled || !autoResponderSettings.comments.privateReplyEnabled}/></div></div>
-                             <div className="flex items-center"><input type="checkbox" id="reply-once-enabled" checked={autoResponderSettings.comments.replyOncePerUser} onChange={e => handleSettingsChange('comments', {replyOncePerUser: e.target.checked})} className="h-4 w-4 rounded border-gray-300" disabled={!autoResponderSettings.comments.enabled}/><label htmlFor="reply-once-enabled" className="block text-sm text-gray-700 dark:text-gray-300 mr-2">الرد مرة واحدة فقط لكل مستخدم على نفس المنشور (موصى به).</label></div>
-                        </div>
-                    </div>
-                </details>
-                 <details className="group">
-                    <summary className="font-bold text-gray-800 dark:text-white cursor-pointer">إعدادات الرد التلقائي على الرسائل</summary>
-                    <div className="mt-4 space-y-4">
-                        <div className="flex items-center justify-between">
-                             <p className="text-sm font-medium text-gray-700 dark:text-gray-300">تفعيل الرد التلقائي على الرسائل:</p>
-                             <label htmlFor="ar-messages-toggle" className="flex items-center cursor-pointer"><div className="relative"><input type="checkbox" id="ar-messages-toggle" className="sr-only" checked={autoResponderSettings.messages.enabled} onChange={e => handleSettingsChange('messages', { enabled: e.target.checked })} /><div className="block bg-gray-600 w-14 h-8 rounded-full"></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition ${autoResponderSettings.messages.enabled ? 'translate-x-6 bg-green-400' : ''}`}></div></div></label>
-                        </div>
-                        <div className={`space-y-4 transition-opacity duration-300 ${autoResponderSettings.messages.enabled ? 'opacity-100' : 'opacity-50'}`}>
-                            <div><label htmlFor="ar-messages-keywords" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الرد فقط على الرسائل الجديدة التي تحتوي على:</label><input id="ar-messages-keywords" type="text" value={autoResponderSettings.messages.keywords} onChange={e => handleSettingsChange('messages', { keywords: e.target.value })} placeholder="مثال: السعر, بكم, تفاصيل" className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm" disabled={!autoResponderSettings.messages.enabled}/></div>
-                            <div><label htmlFor="ar-messages-reply" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">نص الرد التلقائي للرسالة:</label><textarea value={autoResponderSettings.messages.replyMessage} onChange={e => handleSettingsChange('messages', { replyMessage: e.target.value })} placeholder="اكتب نص الرسالة التلقائية هنا..." className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm" rows={2} disabled={!autoResponderSettings.messages.enabled}/></div>
-                        </div>
-                    </div>
-                </details>
-                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">ملاحظة: سيتم إرسال الردود التلقائية عند تحديث البريد الوارد. استخدم {`{user_name}`} ليتم استبداله باسم المستخدم.</p>
+                <AutoResponderSection 
+                    type="comments"
+                    settings={autoResponderSettings.comments}
+                    onSettingsChange={(updates) => handleSettingsChange('comments', updates)}
+                />
+                 <AutoResponderSection 
+                    type="messages"
+                    settings={autoResponderSettings.messages}
+                    onSettingsChange={(updates) => handleSettingsChange('messages', updates)}
+                />
+                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">ملاحظة: الرد التلقائي الفوري يرد على العناصر الجديدة عند تحديث البريد الوارد. استخدم {`{user_name}`} ليتم استبداله باسم المستخدم.</p>
             </div>
         </div>
     </div>
