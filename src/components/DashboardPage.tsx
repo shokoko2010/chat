@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings } from '../types';
+import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, InboxMessage } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import PostPreview from './PostPreview';
@@ -413,9 +413,24 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   }, [managedTarget.access_token]);
 
-  const handleSendMessage = async (conversationId: string, message: string): Promise<boolean> => {
+  const handleSendMessage = useCallback(async (conversationId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {
-        if(isSimulationMode) { resolve(true); return; }
+        if(isSimulationMode) {
+          setInboxItems(prev => prev.map(item => {
+              if (item.id === conversationId) {
+                  const newMessage: InboxMessage = {
+                      id: `sim_msg_${Date.now()}`,
+                      from: { name: 'You', id: 'me' },
+                      message: message,
+                      created_time: new Date().toISOString()
+                  };
+                  return { ...item, messages: [...(item.messages || []), newMessage] };
+              }
+              return item;
+          }));
+          resolve(true);
+          return;
+        }
         window.FB.api(`/${conversationId}/messages`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
             if(response && !response.error) {
                 fetchMessageHistory(conversationId);
@@ -423,25 +438,25 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             } else { resolve(false); }
         });
     });
-  };
+  }, [isSimulationMode, managedTarget.access_token, fetchMessageHistory]);
 
-  const handleReplyToComment = async (commentId: string, message: string): Promise<boolean> => {
+  const handleReplyToComment = useCallback(async (commentId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {
         if(isSimulationMode) { resolve(true); return; }
         window.FB.api(`/${commentId}/comments`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
             resolve(response && !response.error);
         });
     });
-  };
+  }, [isSimulationMode, managedTarget.access_token]);
 
-  const handlePrivateReplyToComment = async (commentId: string, message: string): Promise<boolean> => {
+  const handlePrivateReplyToComment = useCallback(async (commentId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {
         if (isSimulationMode) { resolve(true); return; }
         window.FB.api(`/${commentId}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
             resolve(response && response.success);
         });
     });
-  };
+  }, [isSimulationMode, managedTarget.access_token]);
 
   const processAutoReplies = useCallback(async (currentInboxItems: InboxItem[]) => {
       const { comments: commentSettings, messages: messageSettings } = autoResponderSettings;
@@ -480,15 +495,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, showNotification, handleSendMessage, handleReplyToComment, handlePrivateReplyToComment]);
 
   useEffect(() => {
-    if (view === 'inbox' && !isSimulationMode) {
+    const fetchAndProcessInbox = async () => {
+        if (view !== 'inbox' || isSimulationMode) return;
+
         setIsInboxLoading(true);
-        const fetchAllData = async () => {
+        try {
             const fetchAllComments = async (): Promise<InboxItem[]> => {
                 let allPosts: {id: string, message?: string, full_picture?: string}[] = [];
                 const postFields = "id,message,full_picture";
                 let postPath = '';
 
-                if (managedTarget.type === 'page') {
+                if (managedTarget.type === 'page' && managedTarget.access_token) {
                     postPath = `/${managedTarget.id}/feed?fields=${postFields}&limit=50&access_token=${managedTarget.access_token}`;
                 } else if (managedTarget.type === 'group') {
                     postPath = `/${managedTarget.id}/feed?fields=${postFields}&limit=50`;
@@ -498,7 +515,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     allPosts.push(...await fetchWithPagination(postPath));
                 }
                 
-                if (linkedInstagramTarget) {
+                if (linkedInstagramTarget && linkedInstagramTarget.access_token) {
                     const igPosts = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp&limit=50&access_token=${linkedInstagramTarget.access_token}`);
                     allPosts.push(...igPosts.map(p => ({ id: p.id, message: p.caption, full_picture: p.media_url })));
                 }
@@ -528,8 +545,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
                 return allComments;
             };
+
             const fetchAllMessages = async (): Promise<InboxItem[]> => {
-                if (managedTarget.type !== 'page') return [];
+                if (managedTarget.type !== 'page' || !managedTarget.access_token) return [];
                 const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100&access_token=${managedTarget.access_token}`);
                 return convosData.map((convo: any) => {
                     const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
@@ -539,31 +557,39 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     };
                 });
             };
-            Promise.all([fetchAllComments(), fetchAllMessages()]).then(([comments, messages]) => {
+
+            const [comments, messages] = await Promise.all([fetchAllComments(), fetchAllMessages()]);
+            const fetchedItems = [...comments, ...messages];
+
+            setInboxItems(prevItems => {
                 const combinedItems = new Map<string, InboxItem>();
-                 // Load existing items first to preserve message history
-                inboxItems.forEach(item => combinedItems.set(item.id, item));
-                
-                [...comments, ...messages].forEach(item => {
+                prevItems.forEach(item => combinedItems.set(item.id, item));
+
+                fetchedItems.forEach(item => {
                     if (item.type === 'message' && combinedItems.has(item.id)) {
                         const existingItem = combinedItems.get(item.id);
-                        if (existingItem?.messages) item.messages = existingItem.messages;
+                        if (existingItem?.messages) {
+                            item.messages = existingItem.messages;
+                        }
                     }
                     combinedItems.set(item.id, item);
                 });
-                
+
                 const allItems = Array.from(combinedItems.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                setInboxItems(allItems);
                 processAutoReplies(allItems);
-            }).catch((err) => {
-                console.error("Error fetching inbox:", err);
-                showNotification('error', 'فشل في جلب البريد الوارد.');
-            }).finally(() => setIsInboxLoading(false));
-        };
-        fetchAllData();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, managedTarget.id]);
+                return allItems;
+            });
+
+        } catch (err: any) {
+            console.error("Error fetching inbox:", err);
+            showNotification('error', `فشل في جلب البريد الوارد: ${err.message || 'خطأ غير معروف'}`);
+        } finally {
+            setIsInboxLoading(false);
+        }
+    };
+
+    fetchAndProcessInbox();
+  }, [view, isSimulationMode, managedTarget, linkedInstagramTarget, fetchWithPagination, processAutoReplies, showNotification]);
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.id, message);
