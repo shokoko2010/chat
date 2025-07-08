@@ -43,58 +43,6 @@ export const initializeGoogleGenAI = (apiKey: string): GoogleGenAI | null => {
   }
 };
 
-export const analyzePageForProfile = async (ai: GoogleGenAI, target: Target): Promise<PageProfile> => {
-    const prompt = `
-    أنت خبير استراتيجي في الأعمال والتسويق الرقمي.
-    مهمتك هي البحث عبر الإنترنت عن صفحة فيسبوك أو حساب انستجرام معطى، ثم إنشاء ملف تعريف (profile) دقيق لهذا العمل بناءً على المعلومات الحقيقية التي تجدها.
-
-    - اسم الصفحة/الحساب: "${target.name}"
-    - نوعه: "${target.type}"
-    - رابط محتمل: "https://www.facebook.com/${target.id}"
-
-    الخطوات:
-    1.  استخدم بحث Google للبحث عن معلومات حول "${target.name}". ابحث عن موقعهم الرسمي، صفحاتهم على وسائل التواصل الاجتماعي، أو أي دليل أعمال يذكرهم.
-    2.  بناءً على نتائج البحث، استخلص المعلومات التالية.
-    3.  إذا لم تجد معلومة معينة، حاول استنتاجها بذكاء أو اتركها فارغة.
-
-    المطلوب:
-    أرجع كائن JSON فقط، بدون أي نص إضافي أو علامات markdown.
-    يجب أن يحتوي الكائن على المفاتيح التالية بقيم حقيقية ومقنعة باللغة العربية:
-    - "description": (string) وصف موجز وجذاب للعمل (من نحن؟).
-    - "services": (string) قائمة بالمنتجات أو الخدمات التي يقدمها العمل، مفصولة بفاصلة.
-    - "address": (string) العنوان الفعلي للعمل إن وجد.
-    - "country": (string) البلد الذي يعمل فيه العمل بشكل رئيسي.
-    - "contactInfo": (string) معلومات الاتصال (هاتف، بريد إلكتروني).
-    - "website": (string) رابط الموقع الإلكتروني الرسمي.
-    - "currentOffers": (string) أي عروض خاصة حالية تجدها، أو اتركها فارغة.
-  `;
-
-  const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-04-17',
-      contents: prompt,
-      config: {
-        tools: [{googleSearch: {}}],
-      },
-  });
-
-  const text = response.text;
-  if (!text) {
-      throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء ملف تعريف (استجابة فارغة).");
-  }
-  let jsonStr = text.trim();
-  const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
-  const match = jsonStr.match(fenceRegex);
-  if (match && match[2]) {
-    jsonStr = match[2].trim();
-  }
-  
-  const data = JSON.parse(jsonStr);
-  if (data && data.description) {
-      return data;
-  }
-  throw new Error("فشل التحليل في إعادة البيانات بالتنسيق المطلوب.");
-};
-
 export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string, pageProfile?: PageProfile): Promise<string> => {
   try {
     const pageContext = createPageContext(pageProfile);
@@ -112,7 +60,7 @@ export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string, pag
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-04-17',
+      model: 'gemini-2.5-flash',
       contents: prompt,
     });
 
@@ -174,7 +122,7 @@ export const getBestPostingTime = async (ai: GoogleGenAI, postText: string): Pro
       مثال: {"suggested_time_iso": "2024-08-25T17:00:00.000Z"}
     `;
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-04-17',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -237,7 +185,7 @@ export const generateDescriptionForImage = async (ai: GoogleGenAI, imageFile: Fi
     };
     
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-04-17',
+      model: 'gemini-2.5-flash',
       contents: { parts: [imagePart, textPart] },
     });
     
@@ -367,7 +315,7 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
     contentParts.push({ text: mainPrompt });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-04-17',
+      model: 'gemini-2.5-flash',
       contents: { parts: contentParts },
       config: {
         responseMimeType: 'application/json',
@@ -434,7 +382,7 @@ export const generateOptimalSchedule = async (ai: GoogleGenAI, plan: ContentPlan
   `;
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-preview-04-17',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 responseMimeType: 'application/json',
@@ -504,7 +452,7 @@ export const generatePostInsights = async (
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-04-17',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -572,7 +520,7 @@ export const generatePerformanceSummary = async (
     
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-preview-04-17',
+            model: 'gemini-2.5-flash',
             contents: prompt,
         });
         return response.text ?? 'لم يتمكن الذكاء الاصطناعي من إنشاء الملخص.';

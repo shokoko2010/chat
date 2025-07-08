@@ -15,8 +15,8 @@ import ClockHistoryIcon from './icons/ClockHistoryIcon';
 interface ContentPlannerPageProps {
   aiClient: GoogleGenAI | null;
   isGenerating: boolean;
-  isAnalyzing: boolean;
-  onAnalyze: () => void;
+  isFetchingProfile: boolean;
+  onFetchProfile: () => void;
   error: string | null;
   plan: ContentPlanItem[] | null;
   onGeneratePlan: (request: StrategyRequest, images?: File[]) => void;
@@ -50,8 +50,8 @@ const StepIndicator: React.FC<{step: number, title: string, active: boolean}> = 
 const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({ 
   aiClient,
   isGenerating,
-  isAnalyzing,
-  onAnalyze,
+  isFetchingProfile,
+  onFetchProfile,
   error,
   plan,
   onGeneratePlan,
@@ -179,12 +179,12 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
                   <p className="text-gray-600 dark:text-gray-400">هذه البيانات هي "دماغ" الذكاء الاصطناعي. كلما كانت أكثر دقة، كانت الاستراتيجيات أفضل.</p>
                 </div>
                 <Button 
-                    onClick={onAnalyze} 
-                    isLoading={isAnalyzing} 
-                    disabled={!aiClient || isAnalyzing}
+                    onClick={onFetchProfile} 
+                    isLoading={isFetchingProfile} 
+                    disabled={isFetchingProfile}
                     variant="secondary"
                 >
-                  🤖 تحليل الصفحة بالذكاء الاصطناعي
+                  📥 استرداد البيانات من فيسبوك
                 </Button>
               </div>
               

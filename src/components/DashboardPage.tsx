@@ -10,7 +10,7 @@ import BulkSchedulerPage from './BulkSchedulerPage';
 import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, analyzePageForProfile, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights } from '../services/geminiService';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
@@ -65,7 +65,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   // Content Planner State
   const [contentPlan, setContentPlan] = useState<ContentPlanItem[] | null>(null);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
-  const [isAnalyzingProfile, setIsAnalyzingProfile] = useState(false);
+  const [isFetchingProfile, setIsFetchingProfile] = useState(false);
   const [isSchedulingStrategy, setIsSchedulingStrategy] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
   const [strategyHistory, setStrategyHistory] = useState<StrategyHistoryItem[]>([]);
@@ -91,6 +91,58 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setIsScheduled(false);
     setIncludeInstagram(!!linkedInstagramTarget);
   }, [linkedInstagramTarget]);
+
+  const showNotification = (type: 'success' | 'error' | 'partial', message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 8000);
+  };
+  
+  const handleFetchProfile = useCallback(async () => {
+    if (isSimulationMode) {
+      setPageProfile({
+        description: 'متجر تجريبي يقدم أفضل المنتجات الوهمية.',
+        services: 'منتجات, استشارات, تطوير',
+        contactInfo: '123-456-7890, sim@example.com',
+        website: 'https://example.com',
+        currentOffers: 'خصم 20% على كل شيء',
+        address: '123 شارع المحاكاة، مدينة وهمية',
+        country: 'بلد المحاكاة'
+      });
+      showNotification('success', 'تم استرداد بيانات الصفحة التجريبية.');
+      return;
+    }
+    if (!window.FB) return;
+    setIsFetchingProfile(true);
+    setPlanError(null);
+    try {
+      const fields = 'about,category,location,emails,phone,website,single_line_address';
+      window.FB.api(`/${managedTarget.id}?fields=${fields}`, (response: any) => {
+        if (response && !response.error) {
+          const profileData: PageProfile = {
+            description: response.about || '',
+            services: response.category || '',
+            contactInfo: [...(response.emails || []), response.phone || ''].filter(Boolean).join(', '),
+            website: response.website || '',
+            address: response.single_line_address || '',
+            country: response.location?.country || '',
+            currentOffers: pageProfile.currentOffers, // Keep existing offers as this is not from FB
+          };
+          setPageProfile(profileData);
+          showNotification('success', 'تم استرداد بيانات الصفحة بنجاح من فيسبوك.');
+        } else {
+          const errorMessage = response?.error?.message || 'فشل استرداد بيانات الصفحة. قد لا تتوفر هذه البيانات بشكل عام.';
+          showNotification('error', errorMessage);
+          setPlanError(errorMessage);
+        }
+        setIsFetchingProfile(false);
+      });
+    } catch (e: any) {
+      showNotification('error', e.message);
+      setPlanError(e.message);
+      setIsFetchingProfile(false);
+    }
+  }, [managedTarget.id, isSimulationMode, pageProfile.currentOffers]);
+
 
   const rescheduleBulkPosts = useCallback((postsToReschedule: BulkPostItem[], strategy: 'even' | 'weekly', weeklySettings: WeeklyScheduleSettings) => {
     if (postsToReschedule.length === 0) return [];
@@ -310,11 +362,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         generateSummary();
     }
   }, [summaryData, aiClient, pageProfile, analyticsPeriod]);
-
-  const showNotification = (type: 'success' | 'error' | 'partial', message: string) => {
-    setNotification({ type, message });
-    setTimeout(() => setNotification(null), 8000);
-  };
 
   // --- Start Drafts Logic ---
   const handleSaveDraft = () => {
@@ -581,22 +628,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   };
 
-
-  const handleAnalyzeProfile = async () => {
-    if (!aiClient) return;
-    setIsAnalyzingProfile(true);
-    setPlanError(null);
-    try {
-      const generatedProfile = await analyzePageForProfile(aiClient, managedTarget);
-      setPageProfile(generatedProfile);
-      showNotification('success', 'تم تحليل الصفحة وملء البيانات بنجاح.');
-    } catch (e: any) {
-        setPlanError(e.message);
-    } finally {
-        setIsAnalyzingProfile(false);
-    }
-  };
-
   // --- Start Bulk Logic ---
   const handleAddBulkPosts = (files: FileList) => {
     if (!files || files.length === 0) return;
@@ -819,8 +850,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             return <ContentPlannerPage 
                 aiClient={aiClient} 
                 isGenerating={isGeneratingPlan} 
-                isAnalyzing={isAnalyzingProfile}
-                onAnalyze={handleAnalyzeProfile}
+                isFetchingProfile={isFetchingProfile}
+                onFetchProfile={handleFetchProfile}
                 error={planError} 
                 plan={contentPlan}
                 onGeneratePlan={handleGeneratePlan}
