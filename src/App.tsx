@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -372,7 +373,7 @@ const App: React.FC = () => {
         if (response.authResponse) setAuthStatus('connected');
         else setAuthStatus('not_authorized');
       }, { 
-        scope: 'business_management,email,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_manage_posts,pages_messaging,pages_read_engagement,pages_read_user_content,pages_show_list,public_profile,read_insights,user_managed_groups',
+        scope: 'business_management,email,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_manage_posts,pages_messaging,pages_read_engagement,pages_read_user_content,pages_show_list,public_profile,read_insights',
         auth_type: 'rerequest'
       });
   }, [isSimulationMode]);
