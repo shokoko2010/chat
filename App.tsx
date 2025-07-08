@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import PageSelectorPage from './src/components/PageSelectorPage';
 import DashboardPage from './src/components/DashboardPage';
@@ -305,6 +306,7 @@ const App: React.FC = () => {
             isSimulationMode={isSimulationMode}
             aiClient={aiClient}
             onSettingsClick={() => setIsSettingsOpen(true)}
+            fetchWithPagination={fetchWithPagination}
           />
         );
       }

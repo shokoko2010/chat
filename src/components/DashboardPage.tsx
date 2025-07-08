@@ -31,9 +31,10 @@ interface DashboardPageProps {
   isSimulationMode: boolean;
   aiClient: GoogleGenAI | null;
   onSettingsClick: () => void;
+  fetchWithPagination: (path: string) => Promise<any[]>;
 }
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick, fetchWithPagination }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'inbox'>('composer');
   
   // Composer state
@@ -324,11 +325,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
     
     if (!savedData.publishedPosts) {
-        window.FB.api(
-        `/${managedTarget.id}/published_posts?fields=id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}`,
-        (response: any) => {
-            if (response && response.data) {
-            const fetchedPosts: PublishedPost[] = response.data.map((post: any) => ({
+        fetchWithPagination(`/${managedTarget.id}/published_posts?fields=id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}&limit=100`)
+        .then((response: any) => {
+            if (response) {
+            const fetchedPosts: PublishedPost[] = response.map((post: any) => ({
                 id: post.id, pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url, text: post.message || '',
                 imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
                 analytics: {
@@ -338,17 +338,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
             }));
             setPublishedPosts(fetchedPosts);
-            } else if (response.error) {
-                console.error(`Error fetching posts for ${managedTarget.name}:`, response.error);
             }
+        }).catch(error => {
+            console.error(`Error fetching posts for ${managedTarget.name}:`, error);
+        }).finally(() => {
             setPublishedPostsLoading(false);
-        }
-        );
+        });
     } else {
         setPublishedPostsLoading(false);
     }
     
-  }, [managedTarget.id, isSimulationMode, clearComposer]);
+  }, [managedTarget.id, isSimulationMode, clearComposer, fetchWithPagination]);
   
   // Save data to localStorage whenever it changes
   useEffect(() => {
@@ -562,61 +562,61 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         if (view === 'inbox') {
             setIsInboxLoading(true);
 
-            const fetchComments = new Promise<InboxItem[]>(resolve => {
+            const fetchAllComments = async (): Promise<InboxItem[]> => {
                 const targetIds = [managedTarget.id, linkedInstagramTarget?.id].filter(Boolean);
-                const batchRequest = targetIds.map(id => ({
+                if (targetIds.length === 0) return [];
+
+                // First, fetch all posts with pagination
+                const postsPromises = targetIds.map(id => 
+                    fetchWithPagination(`/${id}/posts?fields=id,message,full_picture&limit=100`)
+                );
+                const postsResponses = await Promise.all(postsPromises);
+                const allPosts = postsResponses.flat();
+
+                // Then, fetch comments for each post (non-paginated for simplicity in batch)
+                const commentsBatchRequest = allPosts.map(post => ({
                     method: 'GET',
-                    relative_url: `${id}/posts?fields=comments.limit(25).order(reverse_chronological){id,from{id,name,picture},message,created_time,post},message,full_picture&limit=25`
+                    relative_url: `${post.id}/comments?fields=id,from{id,name,picture},message,created_time&limit=25&order=reverse_chronological`
                 }));
 
-                if (batchRequest.length === 0) return resolve([]);
-
-                window.FB.api('/', 'POST', { batch: batchRequest, access_token: managedTarget.access_token }, (response: any) => {
-                    const allComments: InboxItem[] = [];
-                    if (response && !response.error) {
-                        response.forEach((res: any) => {
-                            if (res.code === 200) {
-                                const body = JSON.parse(res.body);
-                                body.data?.forEach((post: any) => {
-                                    post.comments?.data?.forEach((comment: any) => {
-                                        allComments.push({
-                                            id: comment.id, type: 'comment', text: comment.message,
-                                            authorName: comment.from.name, authorId: comment.from.id, authorPictureUrl: comment.from.picture.data.url,
-                                            timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }
-                                        });
-                                    });
+                if (commentsBatchRequest.length === 0) return [];
+                
+                const commentsResponse: any = await new Promise(resolve => window.FB.api('/', 'POST', { batch: commentsBatchRequest, access_token: managedTarget.access_token }, (res: any) => resolve(res)));
+                
+                const allComments: InboxItem[] = [];
+                 if (commentsResponse && !commentsResponse.error) {
+                    commentsResponse.forEach((res: any, index: number) => {
+                        if (res.code === 200) {
+                            const body = JSON.parse(res.body);
+                            const originalPost = allPosts[index];
+                            body.data?.forEach((comment: any) => {
+                                allComments.push({
+                                    id: comment.id, type: 'comment', text: comment.message,
+                                    authorName: comment.from.name, authorId: comment.from.id, authorPictureUrl: comment.from.picture.data.url,
+                                    timestamp: comment.created_time, post: { id: originalPost.id, message: originalPost.message, picture: originalPost.full_picture }
                                 });
-                            }
-                        });
-                    } else {
-                        console.error("Error fetching comments:", response?.error);
-                    }
-                    resolve(allComments);
-                });
-            });
+                            });
+                        }
+                    });
+                } else {
+                    console.error("Error fetching comments batch:", commentsResponse?.error);
+                }
+                return allComments;
+            };
 
-            const fetchMessages = new Promise<InboxItem[]>(resolve => {
-                window.FB.api(`/${managedTarget.id}/conversations`, { fields: 'id,snippet,updated_time,participants', access_token: managedTarget.access_token }, (response: any) => {
-                    const allMessages: InboxItem[] = [];
-                    if (response && response.data) {
-                        response.data.forEach((convo: any) => {
-                            const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
-                            if (participant) {
-                                allMessages.push({
-                                    id: convo.id, type: 'message', text: convo.snippet, authorName: participant.name,
-                                    authorId: participant.id, authorPictureUrl: `https://graph.facebook.com/${participant.id}/picture`,
-                                    timestamp: convo.updated_time, conversationId: convo.id
-                                });
-                            }
-                        });
-                    } else {
-                        console.error("Error fetching messages:", response?.error);
-                    }
-                    resolve(allMessages);
+            const fetchAllMessages = async (): Promise<InboxItem[]> => {
+                const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`);
+                return convosData.map((convo: any) => {
+                    const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
+                    return {
+                        id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'Unknown',
+                        authorId: participant?.id || 'Unknown', authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture`,
+                        timestamp: convo.updated_time, conversationId: convo.id
+                    };
                 });
-            });
+            };
 
-            Promise.all([fetchComments, fetchMessages]).then(([comments, messages]) => {
+            Promise.all([fetchAllComments(), fetchAllMessages()]).then(([comments, messages]) => {
                 const combinedItems = new Map<string, InboxItem>();
                 
                 // Add existing items first to be potentially overwritten by fresher data
@@ -638,7 +638,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 setIsInboxLoading(false);
             });
         }
-    }, [view, managedTarget.id, linkedInstagramTarget?.id, managedTarget.access_token, showNotification, processAutoReplies]);
+    }, [view, managedTarget.id, linkedInstagramTarget?.id, managedTarget.access_token, showNotification, processAutoReplies, fetchWithPagination]);
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       if (selectedItem.type === 'comment') {
