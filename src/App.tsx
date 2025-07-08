@@ -348,7 +348,10 @@ const App: React.FC = () => {
         existingInbox.forEach((item: InboxItem) => combinedInboxMap.set(item.id, item));
         combinedInboxItems.forEach((item: InboxItem) => combinedInboxMap.set(item.id, item));
         
-        const sortedInboxItems = Array.from(combinedInboxMap.values()).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        const validatedInboxItems = Array.from(combinedInboxMap.values())
+            .filter(item => item && item.timestamp && !isNaN(new Date(item.timestamp).getTime()));
+
+        const sortedInboxItems = validatedInboxItems.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         
         const updatedData = {
           ...data,
@@ -358,7 +361,7 @@ const App: React.FC = () => {
         };
         localStorage.setItem(dataKey, JSON.stringify(updatedData));
 
-        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${combinedInboxItems.length} عنصرًا في البريد الوارد (رسائل وتعليقات) بنجاح للهدف ${target.name}.`);
+        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${sortedInboxItems.length} عنصرًا في البريد الوارد (رسائل وتعليقات) بنجاح للهدف ${target.name}.`);
 
     } catch(error) {
       console.error("Error during full history sync:", error);
