@@ -517,28 +517,22 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     const fetchAllInboxData = async () => {
         setIsInboxLoading(true);
         try {
-            const fetchAllComments = async (): Promise<InboxItem[]> => {
-                let allPosts: {id: string, message?: string, full_picture?: string}[] = [];
-                const postFields = "id,message,full_picture";
-                let postPath = '';
-
-                if (managedTarget.type === 'page' && managedTarget.access_token) {
-                    postPath = `/${managedTarget.id}/feed?fields=${postFields}&limit=50&access_token=${managedTarget.access_token}`;
-                } else if (managedTarget.type === 'group') {
-                    postPath = `/${managedTarget.id}/feed?fields=${postFields}&limit=50`;
-                }
-
-                if (postPath) allPosts.push(...await fetchWithPagination(postPath));
+            const fetchFacebookAndGroupComments = async (): Promise<InboxItem[]> => {
+                if (managedTarget.type !== 'page' && managedTarget.type !== 'group') return [];
                 
-                if (linkedInstagramTarget && linkedInstagramTarget.access_token) {
-                    const igPosts = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp&limit=50&access_token=${linkedInstagramTarget.access_token}`);
-                    allPosts.push(...igPosts.map(p => ({ id: p.id, message: p.caption, full_picture: p.media_url })));
+                const postFields = "id,message,full_picture";
+                const edge = 'feed';
+                let postPath = `/${managedTarget.id}/${edge}?fields=${postFields}&limit=50`;
+                if (managedTarget.access_token) {
+                    postPath += `&access_token=${managedTarget.access_token}`;
                 }
-
+    
+                const allPosts = await fetchWithPagination(postPath);
                 if (allPosts.length === 0) return [];
-
-                const commentsBatchRequest = allPosts.map(post => ({ method: 'GET', relative_url: `${post.id}/comments?fields=id,from{id,name,picture{url}},message,created_time&limit=25&order=reverse_chronological` }));
+    
+                const commentsBatchRequest = allPosts.map(post => ({ method: 'GET', relative_url: `${post.id}/comments?fields=id,from{id,name,picture{url}},message,created_time,parent&limit=25&order=reverse_chronological` }));
                 const commentsResponse: any = await new Promise(resolve => window.FB.api('/', 'POST', { batch: commentsBatchRequest, access_token: managedTarget.access_token }, (res: any) => resolve(res)));
+                
                 const allComments: InboxItem[] = [];
                 if (commentsResponse && !commentsResponse.error) {
                     commentsResponse.forEach((res: any, index: number) => {
@@ -551,37 +545,80 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                                         id: comment.id, type: 'comment', text: comment.message,
                                         authorName: comment.from?.name || 'مستخدم غير معروف', authorId: comment.from?.id || 'Unknown',
                                         authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
-                                        timestamp: comment.created_time, post: { id: originalPost.id, message: originalPost.message, picture: originalPost.full_picture }
+                                        timestamp: comment.created_time, post: { id: originalPost.id, message: originalPost.message, picture: originalPost.full_picture },
+                                        isReply: !!comment.parent,
                                     }));
                                 }
-                            } catch (e) { /* ignore parse error */ }
+                            } catch (e) { /* ignore */ }
                         }
                     });
                 }
                 return allComments;
             };
 
+            const fetchInstagramComments = async (): Promise<InboxItem[]> => {
+                if (!linkedInstagramTarget?.access_token) return [];
+                
+                const igMedia = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp&limit=50&access_token=${linkedInstagramTarget.access_token}`);
+                if (igMedia.length === 0) return [];
+                
+                const commentsBatchRequest = igMedia.map(media => ({
+                    method: 'GET',
+                    relative_url: `${media.id}/comments?fields=id,from{id,username},text,timestamp,parent_id&limit=25&order=reverse_chronological`
+                }));
+                
+                const commentsResponse: any = await new Promise(resolve => window.FB.api('/', 'POST', { batch: commentsBatchRequest, access_token: linkedInstagramTarget.access_token }, (res: any) => resolve(res)));
+                
+                const allComments: InboxItem[] = [];
+                if (commentsResponse && !commentsResponse.error) {
+                    commentsResponse.forEach((res: any, index: number) => {
+                        if (res.code === 200) {
+                            try {
+                                const body = JSON.parse(res.body);
+                                const originalPost = igMedia[index];
+                                if (body.data) {
+                                    body.data.forEach((comment: any) => allComments.push({
+                                        id: comment.id, type: 'comment', text: comment.text,
+                                        authorName: comment.from?.username || 'مستخدم غير معروف', authorId: comment.from?.id || 'Unknown',
+                                        authorPictureUrl: `https://graph.facebook.com/${comment.from?.id}/picture`,
+                                        timestamp: comment.timestamp,
+                                        post: { id: originalPost.id, message: originalPost.caption, picture: originalPost.media_url },
+                                        isReply: !!comment.parent_id,
+                                    }));
+                                }
+                            } catch (e) { /* ignore */ }
+                        }
+                    });
+                }
+                return allComments;
+            };
+            
             const fetchAllMessages = async (): Promise<InboxItem[]> => {
                 if (managedTarget.type !== 'page' || !managedTarget.access_token) return [];
                 const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100&access_token=${managedTarget.access_token}`);
                 return convosData.map((convo: any) => {
                     const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
-                    return { id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف', authorId: participant?.id || 'Unknown',
+                    return { 
+                        id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف', authorId: participant?.id || 'Unknown',
                         authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture`,
                         timestamp: convo.updated_time, conversationId: convo.id
                     };
                 });
             };
 
-            const [comments, messages] = await Promise.all([fetchAllComments(), fetchAllMessages()]);
-            const fetchedItems = [...comments, ...messages];
+            const [fbAndGroupComments, igComments, messages] = await Promise.all([
+                fetchFacebookAndGroupComments(),
+                fetchInstagramComments(),
+                fetchAllMessages()
+            ]);
+            
+            const fetchedItems = [...fbAndGroupComments, ...igComments, ...messages];
 
             setInboxItems(prevItems => {
                 const combinedItems = new Map<string, InboxItem>();
                 prevItems.forEach(item => combinedItems.set(item.id, item));
                 fetchedItems.forEach(item => {
                     const existingItem = combinedItems.get(item.id);
-                    // Preserve message history if it exists
                     if (item.type === 'message' && existingItem?.messages) {
                         item.messages = existingItem.messages;
                     }
@@ -599,7 +636,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     };
 
     fetchAllInboxData();
-  }, [view, isSimulationMode, managedTarget.id, managedTarget.access_token, linkedInstagramTarget, fetchWithPagination, showNotification]);
+  }, [view, isSimulationMode, managedTarget.id, managedTarget.type, managedTarget.access_token, linkedInstagramTarget, fetchWithPagination, showNotification]);
 
   // EFFECT 2: Process auto-replies when inbox items change or settings are toggled.
   useEffect(() => {
