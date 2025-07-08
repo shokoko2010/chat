@@ -296,7 +296,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     });
     setAutoRepliedItems(new Set(savedData.autoRepliedItems || []));
     setRepliedUsersPerPost(savedData.repliedUsersPerPost || {});
-    setInboxItems(savedData.inboxItems?.map((i:any) => ({...i, timestamp: new Date(i.timestamp).toISOString()})) || []);
+
+    const parsedInboxItems = savedData.inboxItems?.map((item: any) => {
+        if (!item || !item.timestamp) {
+            return null;
+        }
+        const d = new Date(item.timestamp);
+        if (isNaN(d.getTime())) {
+            console.warn('Discarding inbox item with invalid timestamp:', item);
+            return null;
+        }
+        return { ...item, timestamp: d.toISOString() };
+    }).filter(Boolean) || [];
+    setInboxItems(parsedInboxItems as InboxItem[]);
     
     setBulkPosts([]);
     clearComposer();
