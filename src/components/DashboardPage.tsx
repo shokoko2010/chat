@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings } from '../types';
 import Header from './Header';
@@ -324,7 +325,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       return;
     }
     
-    if (!savedData.publishedPosts) {
+    if (!savedData.publishedPosts || savedData.publishedPosts.length === 0) {
         const endpoint = managedTarget.type === 'group' ? 'feed' : 'published_posts';
         const fields = managedTarget.type === 'group' 
             ? 'id,message,full_picture,created_time,likes.summary(true),comments.summary(true)'
@@ -567,104 +568,116 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         if (view === 'inbox' && !isSimulationMode) {
             setIsInboxLoading(true);
 
-            const fetchAllComments = async (): Promise<InboxItem[]> => {
-                let allPosts: any[] = [];
-                let batchParams: any = {};
-                const postFields = "id,message,full_picture";
-
-                if (managedTarget.type === 'page') {
-                    const pagePosts = await fetchWithPagination(`/${managedTarget.id}/posts?fields=${postFields}&limit=100`);
-                    allPosts.push(...pagePosts);
-                    if (linkedInstagramTarget) {
-                        const igPosts = await fetchWithPagination(`/${linkedInstagramTarget.id}/posts?fields=${postFields}&limit=100`);
-                        allPosts.push(...igPosts);
+            const fetchAllData = async () => {
+                const fetchAllComments = async (): Promise<InboxItem[]> => {
+                    let allPosts: {id: string, message?: string, full_picture?: string}[] = [];
+                    let batchParams: any = {};
+                    const postFields = "id,message,full_picture";
+    
+                    if (managedTarget.type === 'page') {
+                        // Use /feed to get all posts, not just ones published by the page
+                        const pagePosts = await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=50`);
+                        allPosts.push(...pagePosts);
+                        if (linkedInstagramTarget) {
+                           // For IG, use /media and normalize fields. Note: IG comment fetching via batch can be tricky.
+                           // The /posts endpoint is not standard for IG. This is a best-effort fix on the FB part.
+                            const igPosts = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp&limit=50`);
+                            const normalizedIgPosts = igPosts.map(p => ({ id: p.id, message: p.caption, full_picture: p.media_url }));
+                            allPosts.push(...normalizedIgPosts);
+                        }
+                        batchParams.access_token = managedTarget.access_token;
+                    } else if (managedTarget.type === 'group') {
+                        const groupPosts = await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=50`);
+                        allPosts.push(...groupPosts);
                     }
-                    batchParams.access_token = managedTarget.access_token;
-                } else if (managedTarget.type === 'group') {
-                    const groupPosts = await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=100`);
-                    allPosts.push(...groupPosts);
-                }
-                
-                if (allPosts.length === 0) return [];
-
-                const commentsBatchRequest = allPosts.map(post => ({
-                    method: 'GET',
-                    relative_url: `${post.id}/comments?fields=id,from{id,name,picture{url}},message,created_time&limit=25&order=reverse_chronological`
-                }));
-
-                const commentsResponse: any = await new Promise(resolve => 
-                    window.FB.api('/', 'POST', { batch: commentsBatchRequest, ...batchParams }, (res: any) => resolve(res))
-                );
-                
-                const allComments: InboxItem[] = [];
-                 if (commentsResponse && !commentsResponse.error) {
-                    commentsResponse.forEach((res: any, index: number) => {
-                        if (res.code === 200) {
-                            try {
-                                const body = JSON.parse(res.body);
-                                const originalPost = allPosts[index];
-                                if (body.data) {
-                                    body.data.forEach((comment: any) => {
-                                        allComments.push({
-                                            id: comment.id, type: 'comment', text: comment.message,
-                                            authorName: comment.from.name, authorId: comment.from.id, authorPictureUrl: comment.from.picture.data.url,
-                                            timestamp: comment.created_time, post: { id: originalPost.id, message: originalPost.message, picture: originalPost.full_picture }
+                    
+                    if (allPosts.length === 0) return [];
+    
+                    const commentsBatchRequest = allPosts.map(post => ({
+                        method: 'GET',
+                        relative_url: `${post.id}/comments?fields=id,from{id,name,picture{url}},message,created_time&limit=25&order=reverse_chronological`
+                    }));
+    
+                    const commentsResponse: any = await new Promise(resolve => 
+                        window.FB.api('/', 'POST', { batch: commentsBatchRequest, ...batchParams }, (res: any) => resolve(res))
+                    );
+                    
+                    const allComments: InboxItem[] = [];
+                     if (commentsResponse && !commentsResponse.error) {
+                        commentsResponse.forEach((res: any, index: number) => {
+                            if (res.code === 200) {
+                                try {
+                                    const body = JSON.parse(res.body);
+                                    const originalPost = allPosts[index];
+                                    if (body.data) {
+                                        body.data.forEach((comment: any) => {
+                                            allComments.push({
+                                                id: comment.id, type: 'comment', text: comment.message,
+                                                authorName: comment.from?.name || 'Unknown User', 
+                                                authorId: comment.from?.id || 'Unknown',
+                                                authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
+                                                timestamp: comment.created_time, 
+                                                post: { id: originalPost.id, message: originalPost.message, picture: originalPost.full_picture }
+                                            });
                                         });
-                                    });
+                                    }
+                                } catch (e) {
+                                    console.error("Error parsing comment response body:", e, res.body);
                                 }
-                            } catch (e) {
-                                console.error("Error parsing comment response body:", e, res.body);
+                            }
+                        });
+                    } else {
+                        console.error("Error fetching comments batch:", commentsResponse?.error);
+                    }
+                    return allComments;
+                };
+    
+                const fetchAllMessages = async (): Promise<InboxItem[]> => {
+                    if (managedTarget.type !== 'page') return [];
+                    const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`);
+                    return convosData.map((convo: any) => {
+                        const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
+                        return {
+                            id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'Unknown',
+                            authorId: participant?.id || 'Unknown', authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture`,
+                            timestamp: convo.updated_time, conversationId: convo.id
+                        };
+                    });
+                };
+
+                Promise.all([fetchAllComments(), fetchAllMessages()]).then(([comments, messages]) => {
+                    const combinedItems = new Map<string, InboxItem>();
+                    
+                    inboxItems.forEach(item => combinedItems.set(item.id, item));
+    
+                    [...comments, ...messages].forEach(item => {
+                        if(item.type === 'message' && combinedItems.has(item.id)) {
+                            const existingItem = combinedItems.get(item.id);
+                            if(existingItem && existingItem.messages) {
+                                item.messages = existingItem.messages;
                             }
                         }
+                        combinedItems.set(item.id, item);
                     });
-                } else {
-                    console.error("Error fetching comments batch:", commentsResponse?.error);
-                }
-                return allComments;
-            };
-
-            const fetchAllMessages = async (): Promise<InboxItem[]> => {
-                if (managedTarget.type !== 'page') return [];
-                const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`);
-                return convosData.map((convo: any) => {
-                    const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
-                    return {
-                        id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'Unknown',
-                        authorId: participant?.id || 'Unknown', authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture`,
-                        timestamp: convo.updated_time, conversationId: convo.id
-                    };
+                    
+                    const allItems = Array.from(combinedItems.values());
+                    allItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                    
+                    setInboxItems(allItems);
+                    processAutoReplies(allItems);
+                    
+                }).catch(err => {
+                    console.error("Error fetching inbox items:", err);
+                    showNotification('error', 'فشل في جلب البريد الوارد.');
+                }).finally(() => {
+                    setIsInboxLoading(false);
                 });
             };
+            
+            fetchAllData();
 
-            Promise.all([fetchAllComments(), fetchAllMessages()]).then(([comments, messages]) => {
-                const combinedItems = new Map<string, InboxItem>();
-                
-                inboxItems.forEach(item => combinedItems.set(item.id, item));
-
-                [...comments, ...messages].forEach(item => {
-                    if(item.type === 'message' && combinedItems.has(item.id)) {
-                        const existingItem = combinedItems.get(item.id);
-                        if(existingItem && existingItem.messages) {
-                            item.messages = existingItem.messages;
-                        }
-                    }
-                    combinedItems.set(item.id, item);
-                });
-                
-                const allItems = Array.from(combinedItems.values());
-                allItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                
-                setInboxItems(allItems);
-                processAutoReplies(allItems);
-                
-            }).catch(err => {
-                console.error("Error fetching inbox items:", err);
-                showNotification('error', 'فشل في جلب البريد الوارد.');
-            }).finally(() => {
-                setIsInboxLoading(false);
-            });
         }
-    }, [view, managedTarget, linkedInstagramTarget, showNotification, processAutoReplies, fetchWithPagination, isSimulationMode, inboxItems]);
+    }, [view, managedTarget.id, linkedInstagramTarget?.id, isSimulationMode]); // Rerun when view or target changes
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       if (selectedItem.type === 'comment') {
