@@ -188,5 +188,10 @@ export interface InboxItem {
 
 export interface AutoResponderSettings {
   enabled: boolean;
-  message: string;
+  keywords: string; // Comma-separated
+  replyOncePerUser: boolean;
+  publicReplyEnabled: boolean;
+  publicReplyMessage: string;
+  privateReplyEnabled: boolean;
+  privateReplyMessage: string;
 }
