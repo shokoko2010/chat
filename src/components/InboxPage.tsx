@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { InboxItem, AutoResponderSettings, InboxMessage } from '../types';
 import Button from './ui/Button';
 import SparklesIcon from './icons/SparklesIcon';
@@ -54,13 +55,21 @@ const InboxPage: React.FC<InboxPageProps> = ({
   const [smartReplies, setSmartReplies] = useState<string[]>([]);
   const [isGeneratingReplies, setIsGeneratingReplies] = useState(false);
   const [viewFilter, setViewFilter] = useState<'all' | 'messages' | 'comments'>('all');
+  const listRef = useRef<HTMLDivElement>(null);
 
-  const filteredItems = React.useMemo(() => {
+  const filteredItems = useMemo(() => {
     if (viewFilter === 'all') return items;
     if (viewFilter === 'messages') return items.filter(i => i.type === 'message');
     if (viewFilter === 'comments') return items.filter(i => i.type === 'comment');
     return [];
   }, [items, viewFilter]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: filteredItems.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 77, // p-3 (24px) + img-h-10 (40px) + border (1px) + gap (12px) ~= 77px
+    overscan: 10,
+  });
 
   useEffect(() => {
     if(!selectedItem && filteredItems.length > 0) {
@@ -71,6 +80,9 @@ const InboxPage: React.FC<InboxPageProps> = ({
         }
     } else if (filteredItems.length === 0) {
         setSelectedItem(null);
+    } else if (selectedItem && !filteredItems.some(item => item.id === selectedItem.id)) {
+        // If the selected item is not in the new filtered list, select the first one
+        setSelectedItem(filteredItems[0] || null);
     }
   }, [filteredItems, selectedItem, onFetchMessageHistory]);
 
@@ -112,27 +124,44 @@ const InboxPage: React.FC<InboxPageProps> = ({
   };
   
   const renderList = () => {
-    if(isLoading) return <div className="p-4 text-center text-gray-500">جاري تحميل البريد الوارد...</div>;
+    if(isLoading && items.length === 0) return <div className="p-4 text-center text-gray-500">جاري تحميل البريد الوارد...</div>;
     if(filteredItems.length === 0) return <div className="p-4 text-center text-gray-500">لا يوجد شيء لعرضه.</div>;
 
-    return filteredItems.map(item => {
-        const Icon = item.type === 'message' ? ChatBubbleLeftEllipsisIcon : ChatBubbleOvalLeftEllipsisIcon;
-        return (
-            <button key={item.id} onClick={() => handleItemSelect(item)} className={`w-full text-right p-3 border-b dark:border-gray-700 flex items-center gap-3 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors ${selectedItem?.id === item.id ? 'bg-blue-50 dark:bg-gray-700' : ''}`}>
-                <div className="relative">
-                    <img src={item.authorPictureUrl} alt={item.authorName} className="w-10 h-10 rounded-full flex-shrink-0" />
-                    <Icon className={`absolute -bottom-1 -right-1 w-5 h-5 bg-white dark:bg-gray-700 rounded-full p-0.5 ${item.type === 'message' ? 'text-blue-500' : 'text-gray-500'}`} />
-                </div>
-                <div className="flex-grow overflow-hidden">
-                    <div className="flex justify-between items-baseline">
-                        <p className="font-bold text-gray-800 dark:text-white truncate">{item.authorName}</p>
-                        <p className="text-xs text-gray-400 flex-shrink-0">{timeSince(item.timestamp)}</p>
+    return (
+        <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
+            {rowVirtualizer.getVirtualItems().map(virtualItem => {
+                const item = filteredItems[virtualItem.index];
+                if (!item) return null;
+                const Icon = item.type === 'message' ? ChatBubbleLeftEllipsisIcon : ChatBubbleOvalLeftEllipsisIcon;
+                return (
+                    <div 
+                        key={item.id} 
+                        style={{ 
+                            position: 'absolute', 
+                            top: 0, 
+                            left: 0, 
+                            width: '100%', 
+                            transform: `translateY(${virtualItem.start}px)` 
+                        }}
+                    >
+                        <button onClick={() => handleItemSelect(item)} className={`w-full h-full text-right p-3 border-b dark:border-gray-700 flex items-center gap-3 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors ${selectedItem?.id === item.id ? 'bg-blue-50 dark:bg-gray-700' : ''}`}>
+                             <div className="relative">
+                                <img src={item.authorPictureUrl} alt={item.authorName} className="w-10 h-10 rounded-full flex-shrink-0" />
+                                <Icon className={`absolute -bottom-1 -right-1 w-5 h-5 bg-white dark:bg-gray-700 rounded-full p-0.5 ${item.type === 'message' ? 'text-blue-500' : 'text-gray-500'}`} />
+                            </div>
+                            <div className="flex-grow overflow-hidden">
+                                <div className="flex justify-between items-baseline">
+                                    <p className="font-bold text-gray-800 dark:text-white truncate">{item.authorName}</p>
+                                    <p className="text-xs text-gray-400 flex-shrink-0">{timeSince(item.timestamp)}</p>
+                                </div>
+                                <p className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.text}</p>
+                            </div>
+                        </button>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.text}</p>
-                </div>
-            </button>
-        )
-    });
+                );
+            })}
+        </div>
+    );
   }
   
   const renderDetail = () => {
@@ -238,7 +267,7 @@ const InboxPage: React.FC<InboxPageProps> = ({
   }
 
   return (
-    <div className="flex flex-col lg:flex-row bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden fade-in">
+    <div className="flex flex-col lg:flex-row bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden fade-in h-[calc(100vh-160px)]">
         <div className="w-full lg:w-1/3 border-r dark:border-gray-700 flex flex-col">
           <div className="p-3 border-b dark:border-gray-700 flex-shrink-0">
             <div className="flex items-center gap-2">
@@ -247,7 +276,7 @@ const InboxPage: React.FC<InboxPageProps> = ({
                 <FilterButton label="التعليقات" active={viewFilter === 'comments'} onClick={() => setViewFilter('comments')} />
             </div>
           </div>
-          <div className="overflow-y-auto">
+          <div ref={listRef} className="overflow-y-auto flex-grow">
             {renderList()}
           </div>
         </div>
