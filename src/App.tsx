@@ -314,7 +314,7 @@ const App: React.FC = () => {
         if (response.authResponse) setAuthStatus('connected');
         else setAuthStatus('not_authorized');
       }, { 
-        scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_messaging,read_page_mailboxes',
+        scope: 'public_profile,email,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,user_managed_groups,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_messaging',
         auth_type: 'rerequest'
       });
   }, [isSimulationMode]);
