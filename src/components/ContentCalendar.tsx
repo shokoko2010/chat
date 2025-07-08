@@ -3,12 +3,14 @@ import React, { useState } from 'react';
 import { ScheduledPost } from '../types';
 import PhotoIcon from './icons/PhotoIcon';
 import BellIcon from './icons/BellIcon'; // Import the new icon
+import TrashIcon from './icons/TrashIcon';
 
 interface ContentCalendarProps {
     posts: ScheduledPost[];
+    onDelete: (postId: string) => void;
 }
 
-const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts }) => {
+const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts, onDelete }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
 
     const daysOfWeek = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
@@ -84,18 +86,28 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts }) => {
                             </div>
                             <div className="mt-1 space-y-2">
                                 {postsForDay.map(post => (
-                                    <div key={post.id} className={`p-2 rounded-md shadow-sm border-l-4 ${post.isReminder ? 'border-yellow-500' : 'border-blue-500'} bg-white dark:bg-gray-700`}>
-                                        <p className="text-xs font-medium text-gray-800 dark:text-gray-100 truncate">{post.text}</p>
-                                        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                            <span className="font-semibold">{new Date(post.scheduledAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
-                                            <div className="flex items-center gap-1">
-                                                {post.isReminder && <span title="تذكير لنشر انستجرام"><BellIcon className="w-4 h-4 text-yellow-500" /></span>}
-                                                {post.imageUrl && <PhotoIcon className="w-4 h-4" />}
-                                                <div className="flex -space-x-2 overflow-hidden">
-                                                    {post.targetInfo && <img className="inline-block h-5 w-5 rounded-full ring-2 ring-white dark:ring-gray-700" src={post.targetInfo.avatarUrl} alt={post.targetInfo.name}/>}
+                                     <div key={post.id} className="group relative">
+                                        <div className={`p-2 rounded-md shadow-sm border-l-4 ${post.isReminder ? 'border-yellow-500' : 'border-blue-500'} bg-white dark:bg-gray-700`}>
+                                            <p className="text-xs font-medium text-gray-800 dark:text-gray-100 truncate pr-5">{post.text}</p>
+                                            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                <span className="font-semibold">{new Date(post.scheduledAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                <div className="flex items-center gap-1">
+                                                    {post.isReminder && <span title="تذكير لنشر انستجرام"><BellIcon className="w-4 h-4 text-yellow-500" /></span>}
+                                                    {post.imageUrl && <PhotoIcon className="w-4 h-4" />}
+                                                    <div className="flex -space-x-2 overflow-hidden">
+                                                        {post.targetInfo && <img className="inline-block h-5 w-5 rounded-full ring-2 ring-white dark:ring-gray-700" src={post.targetInfo.avatarUrl} alt={post.targetInfo.name}/>}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onDelete(post.id); }}
+                                            className="absolute top-1 left-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 z-10"
+                                            aria-label="حذف المنشور المجدول"
+                                            title="حذف المنشور المجدول"
+                                        >
+                                            <TrashIcon className="w-3 h-3" />
+                                        </button>
                                     </div>
                                 ))}
                             </div>

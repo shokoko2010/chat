@@ -534,7 +534,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 const allItems = Array.from(combinedItems.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
                 setInboxItems(allItems);
                 processAutoReplies(allItems);
-            }).catch(err => showNotification('error', 'فشل في جلب البريد الوارد.')).finally(() => setIsInboxLoading(false));
+            }).catch(() => showNotification('error', 'فشل في جلب البريد الوارد.')).finally(() => setIsInboxLoading(false));
         };
         fetchAllData();
     }
@@ -585,7 +585,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
         if (isSimulationMode) {
             if(scheduleAt){
-              const newScheduledPost: ScheduledPost = { id: `sim_scheduled_${Date.now()}`, text, scheduledAt, isReminder: false, targetId: target.id, imageUrl: image ? URL.createObjectURL(image) : undefined, targetInfo: { name: target.name, avatarUrl: target.picture.data.url, type: target.type } };
+              const newScheduledPost: ScheduledPost = { id: `sim_scheduled_${Date.now()}`, text, scheduledAt: scheduleAt, isReminder: false, targetId: target.id, imageUrl: image ? URL.createObjectURL(image) : undefined, targetInfo: { name: target.name, avatarUrl: target.picture.data.url, type: target.type } };
               setScheduledPosts(prev => [...prev, newScheduledPost]);
             }
             setTimeout(() => resolve({ targetName: target.name, success: true, response: { id: `sim_${Date.now()}` } }), 500);
@@ -615,7 +615,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         window.FB.api(apiPath, 'POST', apiParams, (response: any) => {
             if (response && !response.error) {
                 if(scheduleAt && !isReminder) {
-                    const newScheduledPost: ScheduledPost = { id: response.id, text, scheduledAt, isReminder: false, targetId: target.id, imageUrl: image ? URL.createObjectURL(image) : undefined, targetInfo: { name: target.name, avatarUrl: target.picture.data.url, type: target.type } };
+                    const newScheduledPost: ScheduledPost = { id: response.id, text, scheduledAt: scheduleAt, isReminder: false, targetId: target.id, imageUrl: image ? URL.createObjectURL(image) : undefined, targetInfo: { name: target.name, avatarUrl: target.picture.data.url, type: target.type } };
                     setScheduledPosts(prev => [...prev, newScheduledPost]);
                 }
                 resolve({ targetName: target.name, success: true, response });
@@ -695,13 +695,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         showNotification('success', 'تم حذف المنشور المجدول.');
         return;
     }
+    
+    const targetForPost = allTargets.find(t => t.id === postToDelete.targetId);
+    if (!targetForPost || !targetForPost.access_token) {
+        showNotification('error', 'لم يتم العثور على صلاحيات الوصول لحذف هذا المنشور.');
+        return;
+    }
 
-    window.FB.api(`/${postId}`, 'DELETE', { access_token: managedTarget.access_token }, (response: any) => {
+    window.FB.api(`/${postId}`, 'DELETE', { access_token: targetForPost.access_token }, (response: any) => {
         if (response && response.success) {
             setScheduledPosts(prev => prev.filter(p => p.id !== postId));
             showNotification('success', 'تم حذف المنشور المجدول بنجاح.');
         } else {
-            showNotification('error', 'فشل حذف المنشور المجدول.');
+            showNotification('error', `فشل حذف المنشور المجدول. ${response?.error?.message || ''}`);
         }
     });
   };
@@ -747,15 +753,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setIsSchedulingStrategy(true);
     try {
         const schedule = await generateOptimalSchedule(aiClient, contentPlan);
-        const newBulkPosts: BulkPostItem[] = schedule.map((item, index) => {
-            const planItem = contentPlan[index];
-            return {
-                id: `bulk_${Date.now()}_${index}`,
-                text: item.postSuggestion,
-                scheduleDate: item.scheduledAt,
-                targetIds: [managedTarget.id],
-            };
-        });
+        const newBulkPosts: BulkPostItem[] = schedule.map((item, index) => ({
+            id: `bulk_${Date.now()}_${index}`,
+            text: item.postSuggestion,
+            scheduleDate: item.scheduledAt,
+            targetIds: [managedTarget.id],
+        }));
         setBulkPosts(prev => [...prev, ...newBulkPosts]);
         showNotification('success', `تمت إضافة ${newBulkPosts.length} منشورًا إلى الجدولة المجمعة.`);
         setView('bulk');
@@ -765,6 +768,99 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         setIsSchedulingStrategy(false);
     }
   };
+
+    const onUpdateBulkPost = (id: string, updates: Partial<BulkPostItem>) => {
+        setBulkPosts(prev => prev.map(p => p.id === id ? { ...p, ...updates, error: updates.error ? updates.error : undefined } : p));
+    };
+
+    const onRemoveBulkPost = (id: string) => {
+        setBulkPosts(prev => prev.filter(p => p.id !== id));
+    };
+
+    const onAddBulkPosts = (files: FileList) => {
+        const newPosts: BulkPostItem[] = Array.from(files).map(file => {
+            return {
+                id: `bulk_${Date.now()}_${Math.random()}`,
+                imageFile: file,
+                imagePreview: URL.createObjectURL(file),
+                text: '',
+                scheduleDate: '',
+                targetIds: [managedTarget.id],
+            };
+        });
+        const combined = [...bulkPosts, ...newPosts];
+        const rescheduled = rescheduleBulkPosts(combined, schedulingStrategy, weeklyScheduleSettings);
+        setBulkPosts(rescheduled);
+    };
+
+    const onGenerateBulkDescription = async (id: string) => {
+        const post = bulkPosts.find(p => p.id === id);
+        if (!aiClient || !post || !post.imageFile) return;
+        onUpdateBulkPost(id, { isGeneratingDescription: true });
+        try {
+            const description = await generateDescriptionForImage(aiClient, post.imageFile, pageProfile);
+            onUpdateBulkPost(id, { text: description, isGeneratingDescription: false });
+        } catch (e: any) {
+            onUpdateBulkPost(id, { error: e.message, isGeneratingDescription: false });
+        }
+    };
+
+    const handleScheduleAll = async () => {
+        if (bulkPosts.length === 0) return;
+        setIsSchedulingAll(true);
+        showNotification('success', `بدأت جدولة ${bulkPosts.length} منشورًا...`);
+
+        const results = await Promise.all(bulkPosts.map(async (post) => {
+            try {
+                if (post.targetIds.length === 0) throw new Error('لم يتم تحديد وجهة للنشر.');
+                if (!post.scheduleDate) throw new Error('لم يتم تحديد تاريخ للجدولة.');
+                const scheduleAt = new Date(post.scheduleDate);
+                if (scheduleAt < new Date()) throw new Error('لا يمكن الجدولة في الماضي.');
+                const imageFile = post.imageFile || null;
+                const text = post.text;
+                const publishPromises = post.targetIds.map(targetId => {
+                    const target = allTargets.find(t => t.id === targetId);
+                    if (!target) throw new Error(`لم يتم العثور على الوجهة بالمعرف: ${targetId}`);
+                    if (target.type === 'instagram' && !imageFile) throw new Error(`منشورات انستجرام تتطلب صورة.`);
+                    const isReminder = target.type === 'instagram';
+                    return publishToTarget(target, text, imageFile, scheduleAt, isReminder);
+                });
+                await Promise.all(publishPromises);
+                return { id: post.id, success: true };
+            } catch (e: any) {
+                onUpdateBulkPost(post.id, { error: e.message });
+                return { id: post.id, success: false, error: e.message };
+            }
+        }));
+        
+        const successfulPosts = results.filter(r => r.success);
+        const failedPosts = results.filter(r => !r.success);
+        if (failedPosts.length === 0) {
+            showNotification('success', `تمت جدولة جميع المنشورات (${successfulPosts.length}) بنجاح.`);
+            setBulkPosts([]);
+        } else {
+            showNotification('partial', `تمت جدولة ${successfulPosts.length} منشورًا. فشل ${failedPosts.length}.`);
+            setBulkPosts(prev => prev.filter(p => failedPosts.some(f => f.id === p.id)));
+        }
+        setIsSchedulingAll(false);
+    };
+
+    const handleGenerateInsights = useCallback(async (postId: string) => {
+        if (!aiClient) return;
+        const post = publishedPosts.find(p => p.id === postId);
+        if (!post) return;
+        setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: true } } : p));
+        try {
+            const postComments = inboxItems
+                .filter(item => item.type === 'comment' && item.post?.id === postId)
+                .map(item => ({ message: item.text }));
+            const insights = await generatePostInsights(aiClient, post.text, post.analytics, postComments);
+            setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: false, aiSummary: insights.performanceSummary, sentiment: insights.sentiment, lastUpdated: new Date() } } : p));
+        } catch (e: any) {
+            setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: false, aiSummary: 'فشل تحليل المنشور.' } } : p));
+            showNotification('error', `فشل تحليل المنشور: ${e.message}`);
+        }
+    }, [aiClient, publishedPosts, inboxItems, showNotification]);
 
   const pendingReminders = useMemo(() => {
     const now = new Date();
@@ -823,13 +919,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         case 'inbox':
             return <InboxPage items={inboxItems} isLoading={isInboxLoading} onReply={handleReplySubmit} onGenerateSmartReplies={handleGenerateSmartReplies} onFetchMessageHistory={fetchMessageHistory} autoResponderSettings={autoResponderSettings} onAutoResponderSettingsChange={setAutoResponderSettings} />;
         case 'calendar':
-            return <ContentCalendar posts={scheduledPosts} />;
+            return <ContentCalendar posts={scheduledPosts} onDelete={handleDeleteScheduledPost} />;
         case 'drafts':
             return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;
         case 'analytics':
-            return <AnalyticsPage period={analyticsPeriod} onPeriodChange={setAnalyticsPeriod} summaryData={summaryData} aiSummary={performanceSummaryText} isGeneratingSummary={isGeneratingSummary} posts={filteredPosts} isLoading={publishedPostsLoading} onFetchAnalytics={() => {}} onGenerateInsights={() => {}} />;
+            return <AnalyticsPage period={analyticsPeriod} onPeriodChange={setAnalyticsPeriod} summaryData={summaryData} aiSummary={performanceSummaryText} isGeneratingSummary={isGeneratingSummary} posts={filteredPosts} isLoading={publishedPostsLoading} onFetchAnalytics={() => {}} onGenerateInsights={handleGenerateInsights} />;
         case 'bulk':
-            return <BulkSchedulerPage bulkPosts={bulkPosts} onAddPosts={() => {}} onUpdatePost={() => {}} onRemovePost={() => {}} onScheduleAll={() => {}} isSchedulingAll={isSchedulingAll} targets={allTargets} aiClient={aiClient} onGenerateDescription={() => {}} schedulingStrategy={schedulingStrategy} onSchedulingStrategyChange={setSchedulingStrategy} weeklyScheduleSettings={weeklyScheduleSettings} onWeeklyScheduleSettingsChange={setWeeklyScheduleSettings} onReschedule={handleReschedule} />;
+            return <BulkSchedulerPage bulkPosts={bulkPosts} onAddPosts={onAddBulkPosts} onUpdatePost={onUpdateBulkPost} onRemovePost={onRemoveBulkPost} onScheduleAll={handleScheduleAll} isSchedulingAll={isSchedulingAll} targets={allTargets} aiClient={aiClient} onGenerateDescription={onGenerateBulkDescription} schedulingStrategy={schedulingStrategy} onSchedulingStrategyChange={setSchedulingStrategy} weeklyScheduleSettings={weeklyScheduleSettings} onWeeklyScheduleSettingsChange={setWeeklyScheduleSettings} onReschedule={handleReschedule} />;
         case 'planner':
             return <ContentPlannerPage aiClient={aiClient} isGenerating={isGeneratingPlan} isFetchingProfile={isFetchingProfile} onFetchProfile={handleFetchProfile} error={planError} plan={contentPlan} onGeneratePlan={handleGeneratePlan} isSchedulingStrategy={isSchedulingStrategy} onScheduleStrategy={handleScheduleStrategy} onStartPost={handleStartPostFromPlan} pageProfile={pageProfile} onProfileChange={setPageProfile} strategyHistory={strategyHistory} onLoadFromHistory={setContentPlan} onDeleteFromHistory={(id) => setStrategyHistory(prev => prev.filter(h => h.id !== id))} />;
         default: return null;
