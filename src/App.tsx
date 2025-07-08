@@ -110,7 +110,7 @@ const App: React.FC = () => {
           const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
           if (response && response.data && response.data.length > 0) {
               allData = allData.concat(response.data);
-              path = response.paging?.next ? new URL(response.paging.next).pathname + new URL(response.paging.next).search : null;
+              path = response.paging?.next ? response.paging.next.replace('https://graph.facebook.com', '') : null;
           } else {
               if (response.error) console.error(`Error fetching paginated data for path ${path}:`, response.error);
               path = null;
@@ -262,7 +262,7 @@ const App: React.FC = () => {
         let apiParams: any = { limit: 100 };
 
         if (target.type === 'page') {
-            postEdge = 'published_posts'; // Use posts published by the page for a cleaner history
+            postEdge = 'published_posts';
             apiParams.fields = `${postBaseFields}${pageSpecificPostFields}`;
             postsPath = `/${target.id}/${postEdge}`;
         } else if (target.type === 'group') {
@@ -291,16 +291,20 @@ const App: React.FC = () => {
         }));
 
         const allComments: InboxItem[] = [];
+        const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
+
         allPostsData.forEach((post: any) => {
             if (post.comments && post.comments.data) {
                 post.comments.data.forEach((comment: any) => {
+                    const authorId = comment.from?.id;
+                    const authorPicture = comment.from?.picture?.data?.url;
                     allComments.push({
                         id: comment.id,
                         type: 'comment',
                         text: comment.message,
-                        authorName: comment.from?.name || 'Unknown User',
-                        authorId: comment.from?.id || 'Unknown',
-                        authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture?type=normal`,
+                        authorName: comment.from?.name || 'مستخدم غير معروف',
+                        authorId: authorId || 'Unknown',
+                        authorPictureUrl: authorPicture || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture),
                         timestamp: comment.created_time,
                         post: { id: post.id, message: post.message, picture: post.full_picture },
                         isReply: !!comment.parent,
@@ -315,10 +319,11 @@ const App: React.FC = () => {
             const allConvosData = await fetchWithPagination(convosPath);
             allMessages = allConvosData.map((convo: any) => {
                 const participant = convo.participants.data.find((p: any) => p.id !== target.id);
+                const participantId = participant?.id;
                 return {
-                    id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'Unknown',
-                    authorId: participant?.id || 'Unknown',
-                    authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture?type=normal`,
+                    id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف',
+                    authorId: participantId || 'Unknown',
+                    authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture,
                     timestamp: convo.updated_time, conversationId: convo.id
                 };
             });
@@ -367,7 +372,7 @@ const App: React.FC = () => {
         if (response.authResponse) setAuthStatus('connected');
         else setAuthStatus('not_authorized');
       }, { 
-        scope: 'public_profile,email,pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_messaging',
+        scope: 'business_management,email,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_manage_posts,pages_messaging,pages_read_engagement,pages_read_user_content,pages_show_list,public_profile,read_insights,user_managed_groups',
         auth_type: 'rerequest'
       });
   }, [isSimulationMode]);

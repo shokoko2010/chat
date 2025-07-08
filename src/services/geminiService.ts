@@ -1,5 +1,6 @@
 
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+
+import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { StrategyRequest, ContentPlanItem, PostAnalytics, PageProfile, PerformanceSummaryData } from "../types";
 
 const fileToGenerativePart = async (file: File) => {
@@ -63,7 +64,21 @@ export const enhanceProfileFromFacebookData = async (
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
-      config: { responseMimeType: 'application/json' },
+      config: {
+         responseMimeType: "application/json",
+         responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+                description: { type: Type.STRING },
+                services: { type: Type.STRING },
+                contactInfo: { type: Type.STRING },
+                website: { type: Type.STRING },
+                address: { type: Type.STRING },
+                country: { type: Type.STRING },
+                currentOffers: { type: Type.STRING }
+            }
+         }
+      },
     });
 
     const text = response.text;
@@ -160,10 +175,8 @@ export const generateImageFromPrompt = async (ai: GoogleGenAI, prompt: string): 
         if (error.message.includes('API key not valid')) {
             throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
         }
-        // Surface the actual error from the API to help debug configuration issues.
         detailedMessage = error.message;
     }
-    // Provide a more informative error message to the user.
     throw new Error(`حدث خطأ أثناء إنشاء الصورة. السبب: ${detailedMessage}. يرجى التحقق من تفعيل الفوترة وواجهة Vertex AI API في مشروع Google Cloud.`);
   }
 };
@@ -188,6 +201,12 @@ export const getBestPostingTime = async (ai: GoogleGenAI, postText: string): Pro
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
+        responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+                suggested_time_iso: { type: Type.STRING }
+            }
+        }
       },
     });
 
@@ -267,7 +286,6 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
     const pageContext = createPageContext(pageProfile);
     let contentParts: any[] = [];
     
-    // --- Build Dynamic Prompt Parts ---
     let durationText: string;
     let postCountText: string;
     let strategyDetailsPrompt: string;
@@ -280,33 +298,18 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
 
     switch(request.type) {
       case 'standard':
-        strategyDetailsPrompt = `
-          - نوع الاستراتيجية: خطة محتوى قياسية.
-          - أعمدة المحتوى (Content Pillars) للتركيز عليها: ${request.pillars || 'متنوعة وشاملة'}.
-        `;
+        strategyDetailsPrompt = `- نوع الاستراتيجية: خطة محتوى قياسية.\n- أعمدة المحتوى (Content Pillars) للتركيز عليها: ${request.pillars || 'متنوعة وشاملة'}.`;
         break;
       case 'campaign':
-        strategyDetailsPrompt = `
-          - نوع الاستراتيجية: حملة تسويقية.
-          - اسم الحملة: ${request.campaignName || 'غير محدد'}
-          - هدف الحملة: ${request.campaignObjective || 'غير محدد'}
-        `;
+        strategyDetailsPrompt = `- نوع الاستراتيجية: حملة تسويقية.\n- اسم الحملة: ${request.campaignName || 'غير محدد'}\n- هدف الحملة: ${request.campaignObjective || 'غير محدد'}`;
         break;
       case 'occasion':
-        strategyDetailsPrompt = `
-          - نوع الاستراتيجية: حملة مبنية على مناسبة.
-          - المناسبة: "${request.occasion}"
-          - المطلوب: قم بإنشاء حملة تسويقية قصيرة ومتكاملة (3-5 أيام) حول هذه المناسبة. يجب أن تكون الحملة متوافقة تمامًا مع "سياق الصفحة/العمل" المقدم. يجب أن تتضمن الحملة منشورات متنوعة (مثلاً: تشويق، إعلان عن عرض، تفاعل، شكر).
-        `;
-        postCountText = '4 أفكار منشورات فريدة'; // Override for this strategy to get a multi-day campaign
+        strategyDetailsPrompt = `- نوع الاستراتيجية: حملة مبنية على مناسبة.\n- المناسبة: "${request.occasion}"\n- المطلوب: قم بإنشاء حملة تسويقية قصيرة ومتكاملة (3-5 أيام) حول هذه المناسبة.`;
+        postCountText = '4 أفكار منشورات فريدة';
         break;
       case 'pillar':
-        strategyDetailsPrompt = `
-          - نوع الاستراتيجية: المحتوى المحوري (Pillar Content).
-          - الموضوع المحوري الرئيسي: "${request.pillarTopic}"
-          - المطلوب: قم بإنشاء فكرة منشور محوري واحد (طويل ومفصل)، ثم أنشئ 5-6 أفكار منشورات عنقودية (أصغر ومترابطة) تدعم الموضوع الرئيسي.
-        `;
-        postCountText = '7 أفكار منشورات فريدة'; // Override for this strategy
+        strategyDetailsPrompt = `- نوع الاستراتيجية: المحتوى المحوري (Pillar Content).\n- الموضوع المحوري الرئيسي: "${request.pillarTopic}"\n- المطلوب: قم بإنشاء فكرة منشور محوري واحد (طويل ومفصل)، ثم أنشئ 5-6 أفكار منشورات عنقودية (أصغر ومترابطة) تدعم الموضوع الرئيسي.`;
+        postCountText = '7 أفكار منشورات فريدة';
         break;
       case 'images':
         if (images && images.length > 0) {
@@ -320,58 +323,25 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
         break;
     }
     
-    // --- Build Final Prompt ---
     let mainPrompt: string;
-    
+    const responseSchema = {
+        type: Type.ARRAY,
+        items: {
+            type: Type.OBJECT,
+            properties: {
+                day: { type: Type.STRING },
+                theme: { type: Type.STRING },
+                postSuggestion: { type: Type.STRING },
+                contentType: { type: Type.STRING },
+                cta: { type: Type.STRING },
+            }
+        }
+    };
+
     if (request.duration === 'annual') {
-       mainPrompt = `
-        ${pageContext}
-        أنت خبير استراتيجي محترف للمحتوى على وسائل التواصل الاجتماعي. مهمتك هي إنشاء **خطة محتوى سنوية عالية المستوى**.
-
-        تفاصيل الطلب:
-        ${strategyDetailsPrompt}
-        - مدة الخطة: ${durationText}.
-        - الجمهور المستهدف: ${request.audience}
-        - الأهداف السنوية: ${request.goals}
-        - النبرة المطلوبة: ${request.tone}
-
-        المطلوب:
-        اقترح **12 موضوعًا رئيسيًا (Theme)**، واحد لكل شهر من شهور السنة.
-        لكل موضوع، قدم شرحًا موجزًا من جملة واحدة.
-        
-        الرجاء إرجاع الإجابة كـ JSON فقط، بدون أي نص إضافي أو علامات markdown.
-        يجب أن تكون الإجابة عبارة عن مصفوفة JSON، حيث كل عنصر في المصفوفة هو كائن يمثل شهرًا واحدًا ويحتوي على المفاتيح التالية بالضبط:
-        - "day": (string) اسم الشهر (مثال: "يناير", "فبراير").
-        - "theme": (string) الموضوع الرئيسي المقترح للشهر.
-        - "postSuggestion": (string) شرح موجز للموضوع وأفكار للمحتوى خلاله.
-        - "contentType": (string) نوع المحتوى العام المقترح لهذا الشهر (مثال: "بناء الوعي", "إطلاق منتجات").
-        - "cta": (string) دعوة للعمل رئيسية للشهر (مثال: "تابعونا لتعرفوا المزيد").
-       `;
-    } else { // Weekly or Monthly
-      mainPrompt = `
-        ${pageContext}
-        أنت خبير استراتيجي محترف للمحتوى على وسائل التواصل الاجتماعي. مهمتك هي إنشاء خطة محتوى إبداعية ومتنوعة لصفحة فيسبوك بناءً على التفاصيل التالية.
-
-        تفاصيل الطلب:
-        ${strategyDetailsPrompt}
-        - مدة الخطة: ${durationText}.
-        - الجمهور المستهدف: ${request.audience}
-        - الأهداف: ${request.goals}
-        - النبرة المطلوبة: ${request.tone}
-
-        المطلوب:
-        أنشئ خطة محتوى تحتوي على ${postCountText}.
-        ${request.duration === 'monthly' ? 'قسّم الخطة إلى 4 أسابيع، مع تحديد থيم (موضوع) لكل أسبوع.' : ''}
-        ${request.type === 'occasion' ? 'قم بتسمية الأيام بشكل تسلسلي (مثال: اليوم 1: تشويق، اليوم 2: العرض الرئيسي).': ''}
-
-        الرجاء إرجاع الإجابة كـ JSON فقط، بدون أي نص إضافي أو علامات markdown.
-        يجب أن تكون الإجابة عبارة عن مصفوفة JSON، حيث كل عنصر في المصفوفة هو كائن يمثل يومًا واحدًا ويحتوي على المفاتيح التالية بالضبط:
-        - "day": (string) اليوم أو الأسبوع (مثال: "الأسبوع 1 - الاثنين" أو "السبت" أو "اليوم 1: التشويق").
-        - "theme": (string) الفكرة العامة أو الموضوع الرئيسي (مثال: "مشاركة من وراء الكواليس" أو "الاستعداد لليوم الوطني").
-        - "postSuggestion": (string) نص المنشور المقترح بالكامل، يجب أن يكون جذابًا ومتوافقًا مع سياق الصفحة والطلب، ويتضمن دعوة للعمل (CTA) وإيموجيز مناسبة.
-        - "contentType": (string) نوع المحتوى المقترح (مثال: "صورة عالية الجودة"، "فيديو قصير (Reel)"، "استطلاع رأي").
-        - "cta": (string) دعوة للعمل واضحة ومختصرة (مثال: "شاركنا رأيك في التعليقات!", "اطلب الآن عبر موقعنا").
-      `;
+       mainPrompt = `${pageContext}\nأنت خبير استراتيجي محترف للمحتوى. مهمتك هي إنشاء خطة محتوى سنوية عالية المستوى.\nتفاصيل الطلب:\n${strategyDetailsPrompt}\n- مدة الخطة: ${durationText}.\n- الجمهور المستهدف: ${request.audience}\n- الأهداف السنوية: ${request.goals}\n- النبرة المطلوبة: ${request.tone}\nالمطلوب:\nاقترح 12 موضوعًا رئيسيًا (Theme)، واحد لكل شهر. لكل موضوع، قدم شرحًا موجزًا.`;
+    } else {
+      mainPrompt = `${pageContext}\nأنت خبير استراتيجي محترف للمحتوى. مهمتك هي إنشاء خطة محتوى إبداعية ومتنوعة.\nتفاصيل الطلب:\n${strategyDetailsPrompt}\n- مدة الخطة: ${durationText}.\n- الجمهور المستهدف: ${request.audience}\n- الأهداف: ${request.goals}\n- النبرة المطلوبة: ${request.tone}\nالمطلوب:\nأنشئ خطة محتوى تحتوي على ${postCountText}.`;
     }
     
     contentParts.push({ text: mainPrompt });
@@ -381,34 +351,19 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
       contents: { parts: contentParts },
       config: {
         responseMimeType: 'application/json',
+        responseSchema: responseSchema
       },
     });
     
     const text = response.text;
-    if (!text) {
-        throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء خطة (استجابة فارغة).");
-    }
-
-    let jsonStr = text.trim();
-    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
-    const match = jsonStr.match(fenceRegex);
-    if (match && match[2]) {
-      jsonStr = match[2].trim();
-    }
-
-    const plan = JSON.parse(jsonStr);
-    
-    if (Array.isArray(plan) && plan.length > 0 && plan[0].day && plan[0].postSuggestion) {
-      return plan;
-    }
-
+    if (!text) throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء خطة (استجابة فارغة).");
+    const plan = JSON.parse(text.trim());
+    if (Array.isArray(plan) && plan.length > 0 && plan[0].day && plan[0].postSuggestion) return plan;
     throw new Error("فشل الذكاء الاصطناعي في إنشاء خطة بالتنسيق المطلوب.");
 
   } catch (error) {
     console.error("Error generating content plan:", error);
-    if (error instanceof Error && error.message.includes('API key not valid')) {
-        throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
-    }
+    if (error instanceof Error && error.message.includes('API key not valid')) throw new Error("مفتاح API غير صالح.");
     throw new Error("حدث خطأ أثناء إنشاء خطة المحتوى.");
   }
 };
@@ -417,30 +372,10 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
 export const generateOptimalSchedule = async (ai: GoogleGenAI, plan: ContentPlanItem[]): Promise<{ postSuggestion: string, scheduledAt: string }[]> => {
   const planText = plan.map((item, i) => `${i + 1}. ${item.postSuggestion}`).join('\n');
   const prompt = `
-    أنت خبير استراتيجي لجدولة المحتوى على وسائل التواصل الاجتماعي.
-    مهمتك هي أخذ قائمة من منشورات المحتوى واقتراح أفضل تاريخ ووقت لنشر كل منها خلال الشهر القادم لتحقيق أقصى قدر من التفاعل والوصول.
-
-    معلومات إضافية:
-    - تاريخ اليوم هو: ${new Date().toISOString()}
-    - يجب أن تكون جميع الأوقات المقترحة في المستقبل.
-    - وزّع المنشورات بذكاء على مدار الأيام والأسابيع. تجنب تكديس المنشورات في يوم واحد ما لم يكن ذلك جزءًا من حملة واضحة (مثل التشويق ثم الإعلان).
-    - ضع في اعتبارك أوقات الذروة الشائعة (مثل الأمسيات وعطلات نهاية الأسبوع).
-
-    قائمة المنشورات المطلوب جدولتها:
+    أنت خبير استراتيجي لجدولة المحتوى. مهمتك هي أخذ قائمة من منشورات المحتوى واقتراح أفضل تاريخ ووقت لنشر كل منها خلال الشهر القادم.
+    تاريخ اليوم هو: ${new Date().toISOString()}. يجب أن تكون جميع الأوقات المقترحة في المستقبل. وزّع المنشورات بذكاء.
+    قائمة المنشورات:
     ${planText}
-
-    المطلوب:
-    أرجع الإجابة كـ JSON فقط، بدون أي نص إضافي أو علامات markdown.
-    يجب أن تكون الإجابة عبارة عن مصفوفة JSON بنفس عدد عناصر قائمة المنشورات.
-    كل عنصر في المصفوفة يجب أن يكون كائنًا يحتوي على المفتاحين التاليين بالضبط:
-    - "postSuggestion": (string) النص الأصلي الكامل للمنشور المقترح.
-    - "scheduledAt": (string) التاريخ والوقت الأمثل المقترح للنشر بتنسيق ISO 8601.
-
-    مثال على الإجابة:
-    [
-      { "postSuggestion": "نص المنشور الأول...", "scheduledAt": "2024-09-10T19:00:00.000Z" },
-      { "postSuggestion": "نص المنشور الثاني...", "scheduledAt": "2024-09-12T17:30:00.000Z" }
-    ]
   `;
     try {
         const response = await ai.models.generateContent({
@@ -448,22 +383,22 @@ export const generateOptimalSchedule = async (ai: GoogleGenAI, plan: ContentPlan
             contents: prompt,
             config: {
                 responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            postSuggestion: { type: Type.STRING },
+                            scheduledAt: { type: Type.STRING }
+                        }
+                    }
+                }
             },
         });
         const text = response.text;
-        if (!text) {
-            throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء جدول زمني (استجابة فارغة).");
-        }
-        let jsonStr = text.trim();
-        const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
-        const match = jsonStr.match(fenceRegex);
-        if (match && match[2]) {
-            jsonStr = match[2].trim();
-        }
-        const schedule = JSON.parse(jsonStr);
-        if (Array.isArray(schedule) && schedule.length > 0 && schedule[0].scheduledAt) {
-            return schedule;
-        }
+        if (!text) throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء جدول زمني (استجابة فارغة).");
+        const schedule = JSON.parse(text.trim());
+        if (Array.isArray(schedule) && schedule.length > 0 && schedule[0].scheduledAt) return schedule;
         throw new Error("فشل الذكاء الاصطناعي في إنشاء جدول زمني بالتنسيق المطلوب.");
     } catch (error) {
         console.error("Error generating optimal schedule:", error);
@@ -481,36 +416,10 @@ export const generatePostInsights = async (
   try {
     const commentsSample = comments.map(c => c.message).join('\n- ');
     const prompt = `
-      أنت خبير تحليل وسائل التواصل الاجتماعي. مهمتك هي تحليل أداء منشور فيسبوك وتعليقاته وتقديم رؤى قابلة للتنفيذ باللغة العربية.
-
-      تفاصيل المنشور:
-      - النص: "${postText || '(منشور يحتوي على صورة فقط)'}"
-      - عدد الإعجابات: ${analytics.likes ?? 0}
-      - عدد التعليقات: ${analytics.comments ?? 0}
-      - عدد المشاركات: ${analytics.shares ?? 0}
-
-      عينة من التعليقات (أول 25 تعليق):
-      - ${commentsSample}
-
-      المطلوب:
-      أرجع ردك ككائن JSON فقط، بدون أي نص إضافي أو علامات markdown.
-      يجب أن يحتوي كائن JSON على المفاتيح التالية:
-      1.  "performanceSummary": (string) ملخص موجز ومتبصر (2-3 جمل) باللغة العربية حول أداء هذا المنشور. اشرح لماذا تعتقد أنه حقق هذا الأداء (مثلاً، هل السؤال المطروح كان جيدًا؟ هل الصورة كانت جذابة؟). إذا أمكن، قارن أداءه بشكل عام (مثلاً، "أداء أعلى من المتوسط"، "تفاعل جيد").
-      2.  "sentiment": (object) كائن يمثل تحليل المشاعر في التعليقات. يجب أن يحتوي على ثلاثة مفاتيح:
-          - "positive": (number) نسبة مئوية (من 0.0 إلى 1.0) للتعليقات الإيجابية.
-          - "negative": (number) نسبة مئوية (من 0.0 إلى 1.0) للتعليقات السلبية.
-          - "neutral": (number) نسبة مئوية (من 0.0 إلى 1.0) للتعليقات المحايدة.
-          (يجب أن يكون مجموع النسب الثلاثة يساوي 1.0)
-
-      مثال على الإجابة:
-      {
-        "performanceSummary": "حقق هذا المنشور تفاعلاً ممتازًا، خاصة في عدد التعليقات، مما يشير إلى أن السؤال المباشر للجمهور كان ناجحًا جدًا في إثارة النقاش. استخدام الإيموجي أضاف لمسة ودية وشجع على المشاركة.",
-        "sentiment": {
-          "positive": 0.85,
-          "negative": 0.05,
-          "neutral": 0.10
-        }
-      }
+      أنت خبير تحليل وسائل التواصل الاجتماعي. حلل أداء منشور فيسبوك وتعليقاته وقدم رؤى.
+      - النص: "${postText || '(صورة فقط)'}"
+      - إعجابات: ${analytics.likes ?? 0}, تعليقات: ${analytics.comments ?? 0}, مشاركات: ${analytics.shares ?? 0}
+      - عينة التعليقات: - ${commentsSample}
     `;
 
     const response = await ai.models.generateContent({
@@ -518,34 +427,32 @@ export const generatePostInsights = async (
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
+        responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+                performanceSummary: { type: Type.STRING },
+                sentiment: {
+                    type: Type.OBJECT,
+                    properties: {
+                        positive: { type: Type.NUMBER },
+                        negative: { type: Type.NUMBER },
+                        neutral: { type: Type.NUMBER }
+                    }
+                }
+            }
+        }
       },
     });
     
     const text = response.text;
-    if (!text) {
-        throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء التحليل (استجابة فارغة).");
-    }
-
-    let jsonStr = text.trim();
-    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
-    const match = jsonStr.match(fenceRegex);
-    if (match && match[2]) {
-      jsonStr = match[2].trim();
-    }
-    
-    const data = JSON.parse(jsonStr);
-
-    if (data && data.performanceSummary && data.sentiment) {
-      return data;
-    }
-
+    if (!text) throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء التحليل (استجابة فارغة).");
+    const data = JSON.parse(text.trim());
+    if (data && data.performanceSummary && data.sentiment) return data;
     throw new Error("فشل الذكاء الاصطناعي في إنشاء التحليل بالتنسيق المطلوب.");
 
   } catch (error) {
     console.error("Error generating post insights:", error);
-    if (error instanceof Error && error.message.includes('API key not valid')) {
-        throw new Error("مفتاح API غير صالح. يرجى التحقق منه في الإعدادات.");
-    }
+    if (error instanceof Error && error.message.includes('API key not valid')) throw new Error("مفتاح API غير صالح.");
     throw new Error("حدث خطأ أثناء إنشاء تحليل المنشور.");
   }
 };
@@ -562,22 +469,12 @@ export const generatePerformanceSummary = async (
 
     const prompt = `
     ${pageContext}
-    أنت خبير ومحلل بيانات تسويقية. مهمتك هي تحليل الأداء العام لصفحة على وسائل التواصل الاجتماعي وتقديم ملخص تنفيذي موجز وذكي باللغة العربية.
-
+    أنت محلل بيانات تسويقية. حلل الأداء العام لصفحة وقدم ملخصًا تنفيذيًا.
     بيانات الأداء لفترة ${periodText}:
-    - إجمالي الوصول (Reach): ${summaryData.totalReach}
-    - إجمالي التفاعل (Engagement): ${summaryData.totalEngagement}
-    - معدل التفاعل (Engagement Rate): ${(summaryData.engagementRate * 100).toFixed(2)}%
-    - عدد المنشورات: ${summaryData.postCount}
-    - أفضل المنشورات أداءً:
+    - الوصول: ${summaryData.totalReach}, التفاعل: ${summaryData.totalEngagement}, معدل التفاعل: ${(summaryData.engagementRate * 100).toFixed(2)}%, عدد المنشورات: ${summaryData.postCount}
+    - أفضل المنشورات:
     ${topPostsText}
-
-    المطلوب:
-    اكتب فقرة واحدة فقط (2-4 جمل) تلخص هذا الأداء.
-    - ابدأ ببيان عام (مثال: "أداء هذا الأسبوع كان قويًا...")
-    - اشرح السبب المحتمل وراء الأداء الجيد أو الضعيف بناءً على البيانات (مثال: "يبدو أن المنشورات التي تحتوي على أسئلة مباشرة تحقق أعلى تفاعل").
-    - اختتم بتوصية استراتيجية واضحة وقابلة للتنفيذ للخطوة التالية (مثال: "نوصي بالتركيز على إنشاء المزيد من محتوى الفيديو القصير").
-    - يجب أن يكون التحليل متوافقًا مع "سياق الصفحة/العمل" المقدم.
+    اكتب فقرة واحدة (2-4 جمل) تلخص هذا الأداء، مع شرح السبب وتوصية استراتيجية.
     `;
     
     try {
@@ -596,23 +493,8 @@ export const generateSmartReplies = async (ai: GoogleGenAI, commentText: string,
   const pageContext = createPageContext(pageProfile);
   const prompt = `
     ${pageContext}
-    أنت مدير مجتمع لعلامة تجارية على وسائل التواصل الاجتماعي. مهمتك هي اقتراح ردود قصيرة واحترافية وودودة على تعليق من أحد العملاء. ضع سياق العمل في اعتبارك عند الرد.
-
-    تعليق العميل:
+    أنت مدير مجتمع. اقترح 3 ردود قصيرة واحترافية على تعليق العميل التالي:
     "${commentText}"
-
-    المطلوب:
-    اقترح 3 ردود مختلفة ومناسبة لهذا التعليق. يجب أن تكون الردود متنوعة (مثلاً: رد بسيط، رد يحتوي على سؤال، رد يقدم مساعدة).
-    
-    أرجع الإجابة كـ JSON فقط، بدون أي نص إضافي أو علامات markdown.
-    يجب أن تكون الإجابة عبارة عن مصفوفة JSON تحتوي على 3 سلاسل نصية بالضبط.
-    
-    مثال على الإجابة:
-    [
-      "شكرًا جزيلاً لك! يسعدنا أن المنتج أعجبك 😊",
-      "أهلاً بك! لمزيد من التفاصيل، يمكنك زيارة موقعنا: ${pageProfile?.website || 'يرجى مراجعة موقعنا'}",
-      "تم الرد على استفسارك في الخاص. 📩"
-    ]
   `;
   try {
     const response = await ai.models.generateContent({
@@ -620,28 +502,18 @@ export const generateSmartReplies = async (ai: GoogleGenAI, commentText: string,
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
+        responseSchema: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING }
+        }
       },
     });
 
     const text = response.text;
-    if (!text) {
-      throw new Error("لم يتمكن الذكاء الاصطناعي من اقتراح ردود (استجابة فارغة).");
-    }
-
-    let jsonStr = text.trim();
-    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
-    const match = jsonStr.match(fenceRegex);
-    if (match && match[2]) {
-      jsonStr = match[2].trim();
-    }
-
-    const replies = JSON.parse(jsonStr);
-    if (Array.isArray(replies) && replies.length > 0) {
-      return replies.slice(0, 3);
-    }
-    
+    if (!text) throw new Error("لم يتمكن الذكاء الاصطناعي من اقتراح ردود (استجابة فارغة).");
+    const replies = JSON.parse(text.trim());
+    if (Array.isArray(replies) && replies.length > 0) return replies.slice(0, 3);
     throw new Error("فشل الذكاء الاصطناعي في إنشاء ردود بالتنسيق المطلوب.");
-
   } catch (error) {
     console.error("Error generating smart replies:", error);
     throw new Error("حدث خطأ أثناء اقتراح الردود الذكية.");
