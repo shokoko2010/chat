@@ -681,7 +681,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             successCount++;
             return { ...post, error: undefined }; // Mark as successful
         } catch (e: any) {
-            return { ...post, error: e.message || "فشل غير معروف" };
+            const errorMessage = e?.error?.message || e.message || "فشل في الجدولة، سبب غير معروف.";
+            return { ...post, error: `فشل في "${e?.targetName || 'وجهة غير محددة'}": ${errorMessage}` };
         }
     });
 
