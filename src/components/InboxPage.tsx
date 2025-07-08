@@ -238,7 +238,7 @@ const InboxPage: React.FC<InboxPageProps> = ({
   }
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-250px)] bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden fade-in">
+    <div className="flex flex-col lg:flex-row bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden fade-in">
         <div className="w-full lg:w-1/3 border-r dark:border-gray-700 flex flex-col">
           <div className="p-3 border-b dark:border-gray-700 flex-shrink-0">
             <div className="flex items-center gap-2">
