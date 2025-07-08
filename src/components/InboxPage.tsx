@@ -11,7 +11,6 @@ interface InboxPageProps {
   onGenerateSmartReplies: (commentText: string) => Promise<string[]>;
   autoResponderSettings: AutoResponderSettings;
   onAutoResponderSettingsChange: (settings: AutoResponderSettings) => void;
-  isSimMode: boolean;
 }
 
 const timeSince = (dateString: string) => {
@@ -37,7 +36,6 @@ const InboxPage: React.FC<InboxPageProps> = ({
   onGenerateSmartReplies,
   autoResponderSettings,
   onAutoResponderSettingsChange,
-  isSimMode,
 }) => {
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(items[0] || null);
   const [replyText, setReplyText] = useState('');

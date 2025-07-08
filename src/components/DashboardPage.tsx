@@ -1070,7 +1070,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 onGenerateSmartReplies={handleGenerateSmartReplies}
                 autoResponderSettings={autoResponderSettings}
                 onAutoResponderSettingsChange={setAutoResponderSettings}
-                isSimMode={isSimulationMode}
             />
         default: return null;
     }
