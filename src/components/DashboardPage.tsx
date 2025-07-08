@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings } from '../types';
 import Header from './Header';
@@ -156,7 +157,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     try {
         const fields = 'about,category,location,emails,phone,website,single_line_address';
         const fbResponse: any = await new Promise(resolve => {
-            window.FB.api(`/${managedTarget.id}?fields=${fields}`, (res: any) => resolve(res));
+            window.FB.api(
+                `/${managedTarget.id}`, 
+                { fields, access_token: managedTarget.access_token }, 
+                (res: any) => resolve(res)
+            );
         });
 
         if (fbResponse && !fbResponse.error) {
@@ -165,7 +170,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 category: fbResponse.category || '',
                 contact: [...(fbResponse.emails || []), fbResponse.phone || ''].filter(Boolean).join(', '),
                 website: fbResponse.website || '',
-                address: fbResponse.single_line_address || '',
+                address: fbResponse.single_line_address || fbResponse.location?.street || '',
                 country: fbResponse.location?.country || '',
             };
 
@@ -190,12 +195,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             throw new Error(fbResponse?.error?.message || 'فشل استرداد بيانات الصفحة.');
         }
     } catch (e: any) {
-        showNotification('error', e.message);
+        showNotification('error', `حدث خطأ: ${e.message}`);
         setPlanError(e.message);
     } finally {
         setIsFetchingProfile(false);
     }
-  }, [managedTarget.id, isSimulationMode, aiClient, showNotification]);
+  }, [managedTarget.id, managedTarget.access_token, isSimulationMode, aiClient, showNotification]);
 
 
   const rescheduleBulkPosts = useCallback((postsToReschedule: BulkPostItem[], strategy: 'even' | 'weekly', weeklySettings: WeeklyScheduleSettings) => {
@@ -310,8 +315,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         const fields = managedTarget.type === 'group' 
             ? 'id,message,full_picture,created_time,likes.summary(true),comments.summary(true)'
             : 'id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}';
+        
+        let path = `/${managedTarget.id}/${endpoint}?fields=${fields}&limit=100`;
+        if (managedTarget.type === 'page' && managedTarget.access_token) {
+            path += `&access_token=${managedTarget.access_token}`;
+        }
 
-        fetchWithPagination(`/${managedTarget.id}/${endpoint}?fields=${fields}&limit=100`)
+        fetchWithPagination(path)
         .then((response: any) => {
             if (response) {
             const fetchedPosts: PublishedPost[] = response.map((post: any) => ({
@@ -329,7 +339,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     } else {
         setPublishedPostsLoading(false);
     }
-  }, [managedTarget.id, isSimulationMode, clearComposer, fetchWithPagination, managedTarget.name, managedTarget.picture.data.url, managedTarget.type]);
+  }, [managedTarget.id, managedTarget.access_token, isSimulationMode, clearComposer, fetchWithPagination, managedTarget.name, managedTarget.picture.data.url, managedTarget.type]);
   
   useEffect(() => {
     try {
@@ -478,16 +488,25 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             const fetchAllComments = async (): Promise<InboxItem[]> => {
                 let allPosts: {id: string, message?: string, full_picture?: string}[] = [];
                 const postFields = "id,message,full_picture";
+                let postPath = '';
+
                 if (managedTarget.type === 'page') {
-                    allPosts.push(...await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=50`));
-                    if (linkedInstagramTarget) {
-                        const igPosts = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp&limit=50`);
-                        allPosts.push(...igPosts.map(p => ({ id: p.id, message: p.caption, full_picture: p.media_url })));
-                    }
+                    postPath = `/${managedTarget.id}/feed?fields=${postFields}&limit=50&access_token=${managedTarget.access_token}`;
                 } else if (managedTarget.type === 'group') {
-                    allPosts.push(...await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=50`));
+                    postPath = `/${managedTarget.id}/feed?fields=${postFields}&limit=50`;
                 }
+
+                if (postPath) {
+                    allPosts.push(...await fetchWithPagination(postPath));
+                }
+                
+                if (linkedInstagramTarget) {
+                    const igPosts = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp&limit=50&access_token=${linkedInstagramTarget.access_token}`);
+                    allPosts.push(...igPosts.map(p => ({ id: p.id, message: p.caption, full_picture: p.media_url })));
+                }
+
                 if (allPosts.length === 0) return [];
+
                 const commentsBatchRequest = allPosts.map(post => ({ method: 'GET', relative_url: `${post.id}/comments?fields=id,from{id,name,picture{url}},message,created_time&limit=25&order=reverse_chronological` }));
                 const commentsResponse: any = await new Promise(resolve => window.FB.api('/', 'POST', { batch: commentsBatchRequest, access_token: managedTarget.access_token }, (res: any) => resolve(res)));
                 const allComments: InboxItem[] = [];
@@ -513,7 +532,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             };
             const fetchAllMessages = async (): Promise<InboxItem[]> => {
                 if (managedTarget.type !== 'page') return [];
-                const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`);
+                const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100&access_token=${managedTarget.access_token}`);
                 return convosData.map((convo: any) => {
                     const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
                     return { id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف', authorId: participant?.id || 'Unknown',
@@ -538,7 +557,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         };
         fetchAllData();
     }
-  }, [view, managedTarget.id, linkedInstagramTarget?.id, isSimulationMode]);
+  }, [view, managedTarget.id, managedTarget.access_token, linkedInstagramTarget, isSimulationMode, fetchWithPagination, showNotification, processAutoReplies, inboxItems]);
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.id, message);
@@ -594,9 +613,20 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         
         let apiPath: string, apiParams: any;
         if (image) {
-            apiPath = `/${target.id}/photos`;
+            apiPath = target.type === 'instagram' ? `/${target.id}/media` : `/${target.id}/photos`;
+            if (target.type === 'instagram') {
+                let igParams: any = { image_url: '', caption: text };
+                // Instagram requires a publicly accessible URL for the image. This is a limitation of client-side only apps.
+                // We'll simulate this by rejecting, as we can't upload a File directly to /media.
+                // A server-side proxy would be needed.
+                // The correct flow is: upload to FB page, get ID, then post to IG using media_publish.
+                // We will simplify and assume direct photo upload for pages, and fail for IG.
+                reject({ targetName: target.name, success: false, error: { message: "النشر المباشر للصور على انستجرام يتطلب معالجة من الخادم وهو غير مدعوم حاليًا. استخدم الجدولة كتذكير." } });
+                return;
+            }
+
             const formData = new FormData();
-            if (target.type === 'page' || target.type === 'instagram') formData.append('access_token', target.access_token!);
+            if (target.access_token) formData.append('access_token', target.access_token);
             formData.append('source', image);
             if (text) formData.append('caption', text);
             if (scheduleAt) {
@@ -605,7 +635,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             }
             apiParams = formData;
         } else {
-            apiPath = `/${target.id}/feed`;
+            apiPath = target.type === 'instagram' ? `/${target.id}/media` : `/${target.id}/feed`;
+            if (target.type === 'instagram') {
+                reject({ targetName: target.name, success: false, error: { message: "منشورات انستجرام النصية فقط غير مدعومة. يجب إضافة صورة." } });
+                return;
+            }
             apiParams = { message: text, access_token: target.access_token };
             if (scheduleAt) {
                 apiParams.scheduled_publish_time = Math.floor(scheduleAt.getTime() / 1000);
@@ -615,7 +649,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         window.FB.api(apiPath, 'POST', apiParams, (response: any) => {
             if (response && !response.error) {
                 if(scheduleAt && !isReminder) {
-                    const newScheduledPost: ScheduledPost = { id: response.id, text, scheduledAt: scheduleAt, isReminder: false, targetId: target.id, imageUrl: image ? URL.createObjectURL(image) : undefined, targetInfo: { name: target.name, avatarUrl: target.picture.data.url, type: target.type } };
+                    const newScheduledPost: ScheduledPost = { id: response.id || `scheduled_${Date.now()}`, text, scheduledAt: scheduleAt, isReminder: false, targetId: target.id, imageUrl: image ? URL.createObjectURL(image) : undefined, targetInfo: { name: target.name, avatarUrl: target.picture.data.url, type: target.type } };
                     setScheduledPosts(prev => [...prev, newScheduledPost]);
                 }
                 resolve({ targetName: target.name, success: true, response });
@@ -652,6 +686,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     if (successCount === results.length) {
         showNotification('success', 'تم تنفيذ طلب النشر/الجدولة بنجاح.');
         clearComposer();
+    } else if (successCount > 0) {
+        const errors = results.filter(r => r.status === 'rejected').map((r: any) => r.reason.error.message).join(', ');
+        showNotification('partial', `تم النشر بنجاح على بعض الوجهات ولكن فشل البعض الآخر: ${errors}`);
     } else {
         const errors = results.filter(r => r.status === 'rejected').map((r: any) => r.reason.error.message).join(', ');
         showNotification('error', `حدثت أخطاء: ${errors}`);
@@ -907,7 +944,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     </div>
                     <div className="lg:col-span-2">
                         <PostPreview
-                            type={includeInstagram ? 'instagram' : 'facebook'}
+                            isCrosspostingInstagram={includeInstagram}
                             postText={postText}
                             imagePreview={imagePreview}
                             pageName={managedTarget.name}

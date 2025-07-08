@@ -111,7 +111,11 @@ const App: React.FC = () => {
           const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
           if (response && response.data && response.data.length > 0) {
               allData = allData.concat(response.data);
-              path = response.paging?.next ? response.paging.next.replace('https://graph.facebook.com', '') : null;
+              try {
+                path = response.paging?.next ? new URL(response.paging.next).pathname + new URL(response.paging.next).search : null;
+              } catch (e) {
+                path = null;
+              }
           } else {
               if (response.error) console.error(`Error fetching paginated data for path ${path}:`, response.error);
               path = null;
@@ -266,6 +270,9 @@ const App: React.FC = () => {
             postEdge = 'published_posts';
             apiParams.fields = `${postBaseFields}${pageSpecificPostFields}`;
             postsPath = `/${target.id}/${postEdge}`;
+             if (target.access_token) {
+                apiParams.access_token = target.access_token;
+            }
         } else if (target.type === 'group') {
             postEdge = 'feed';
             apiParams.fields = postBaseFields;
@@ -315,8 +322,8 @@ const App: React.FC = () => {
         });
 
         let allMessages: InboxItem[] = [];
-        if (target.type === 'page') {
-            const convosPath = `/${target.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`;
+        if (target.type === 'page' && target.access_token) {
+            const convosPath = `/${target.id}/conversations?fields=id,snippet,updated_time,participants&limit=100&access_token=${target.access_token}`;
             const allConvosData = await fetchWithPagination(convosPath);
             allMessages = allConvosData.map((convo: any) => {
                 const participant = convo.participants.data.find((p: any) => p.id !== target.id);
