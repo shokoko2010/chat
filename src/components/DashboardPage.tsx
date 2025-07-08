@@ -88,6 +88,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
   });
   const [autoRepliedItems, setAutoRepliedItems] = useState<Set<string>>(new Set());
+  const [repliedUsersPerPost, setRepliedUsersPerPost] = useState<Record<string, string[]>>({});
 
 
   const linkedInstagramTarget = useMemo(() => {
@@ -281,7 +282,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
               ...parsedData,
               drafts: parsedData.drafts?.map((d: any) => ({...d, imageFile: null})) || [],
               scheduledPosts: parsedData.scheduledPosts?.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt), imageFile: null })) || [],
-              autoRepliedItems: Array.from(parsedData.autoRepliedItems || [])
+              autoRepliedItems: Array.from(parsedData.autoRepliedItems || []),
+              repliedUsersPerPost: parsedData.repliedUsersPerPost || {}
             }
         } else {
             savedData = {};
@@ -303,6 +305,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
     });
     setAutoRepliedItems(new Set(savedData.autoRepliedItems || []));
+    setRepliedUsersPerPost(savedData.repliedUsersPerPost || {});
     setInboxItems(savedData.inboxItems?.map((i:any) => ({...i, timestamp: new Date(i.timestamp).toISOString()})) || []);
     
     // We clear bulk posts on page change to avoid complexity with non-serializable File objects.
@@ -362,13 +365,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             publishedPosts,
             inboxItems,
             autoResponderSettings,
-            autoRepliedItems: Array.from(autoRepliedItems)
+            autoRepliedItems: Array.from(autoRepliedItems),
+            repliedUsersPerPost
         };
         localStorage.setItem(dataKey, JSON.stringify(dataToStore));
     } catch(e) {
         console.error("Could not save data to localStorage:", e);
     }
-  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, publishedPosts, inboxItems, autoResponderSettings, autoRepliedItems, managedTarget.id]);
+  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, publishedPosts, inboxItems, autoResponderSettings, autoRepliedItems, repliedUsersPerPost, managedTarget.id]);
 
   const filteredPosts = useMemo(() => {
     const now = new Date();
@@ -419,6 +423,123 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         generateSummary();
     }
   }, [summaryData, aiClient, pageProfile, analyticsPeriod]);
+  
+  const handleSendMessage = async (conversationId: string, message: string): Promise<boolean> => {
+    return new Promise(resolve => {
+        if(isSimulationMode) {
+            console.log(`SIMULATING SEND MESSAGE to ${conversationId}: ${message}`);
+            resolve(true);
+            return;
+        }
+        window.FB.api(`/${conversationId}/messages`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
+            if(response && !response.error) {
+                fetchMessageHistory(conversationId); // Refresh conversation
+                resolve(true);
+            } else {
+                console.error("Error sending message:", response.error);
+                resolve(false);
+            }
+        });
+    });
+  };
+
+  const handleReplyToComment = async (commentId: string, message: string): Promise<boolean> => {
+    return new Promise(resolve => {
+        if(isSimulationMode) {
+            console.log(`SIMULATING REPLY to ${commentId}: ${message}`);
+            resolve(true);
+            return;
+        }
+        window.FB.api(`/${commentId}/comments`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
+            if(response && !response.error) {
+                resolve(true);
+            } else {
+                console.error("Error replying to comment:", response.error);
+                resolve(false);
+            }
+        });
+    });
+  };
+
+  const handlePrivateReplyToComment = async (commentId: string, message: string): Promise<boolean> => {
+    return new Promise(resolve => {
+        if (isSimulationMode) {
+            console.log(`SIMULATING PRIVATE REPLY to ${commentId}: ${message}`);
+            resolve(true);
+            return;
+        }
+        window.FB.api(`/${commentId}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
+            if (response && response.success) {
+                resolve(true);
+            } else {
+                console.error("Error sending private reply:", response?.error);
+                resolve(false);
+            }
+        });
+    });
+  };
+
+  const processAutoReplies = useCallback(async (currentInboxItems: InboxItem[]) => {
+      const { comments: commentSettings, messages: messageSettings } = autoResponderSettings;
+      if (!commentSettings.realtimeEnabled && !messageSettings.realtimeEnabled) {
+          return;
+      }
+
+      const itemsToProcess = currentInboxItems.filter(item => !autoRepliedItems.has(item.id));
+      if (itemsToProcess.length === 0) return;
+
+      const newRepliedItems = new Set(autoRepliedItems);
+      const newRepliedUsers = { ...repliedUsersPerPost };
+      let replyCount = 0;
+
+      for (const item of itemsToProcess) {
+          let replied = false;
+
+          if (item.type === 'message' && messageSettings.realtimeEnabled) {
+              const keywords = messageSettings.keywords.split(',').map(k => k.trim()).filter(Boolean);
+              if (keywords.length === 0 || keywords.some(k => item.text.toLowerCase().includes(k.toLowerCase()))) {
+                  const message = messageSettings.replyMessage.replace('{user_name}', item.authorName);
+                  await handleSendMessage(item.id, message);
+                  replied = true;
+              }
+          }
+
+          if (item.type === 'comment' && commentSettings.realtimeEnabled && item.post) {
+              const postId = item.post.id;
+              const keywords = commentSettings.keywords.split(',').map(k => k.trim()).filter(Boolean);
+              const alreadyRepliedToUser = newRepliedUsers[postId]?.includes(item.authorId);
+
+              if ((keywords.length === 0 || keywords.some(k => item.text.toLowerCase().includes(k.toLowerCase()))) &&
+                  (!commentSettings.replyOncePerUser || !alreadyRepliedToUser)) {
+                  
+                  if (commentSettings.publicReplyEnabled && commentSettings.publicReplyMessage) {
+                      await handleReplyToComment(item.id, commentSettings.publicReplyMessage.replace('{user_name}', item.authorName));
+                  }
+                  if (commentSettings.privateReplyEnabled && commentSettings.privateReplyMessage) {
+                      await handlePrivateReplyToComment(item.id, commentSettings.privateReplyMessage.replace('{user_name}', item.authorName));
+                  }
+                  
+                  if (commentSettings.replyOncePerUser) {
+                      if (!newRepliedUsers[postId]) newRepliedUsers[postId] = [];
+                      newRepliedUsers[postId].push(item.authorId);
+                  }
+                  replied = true;
+              }
+          }
+
+          if (replied) {
+              newRepliedItems.add(item.id);
+              replyCount++;
+          }
+      }
+
+      setAutoRepliedItems(newRepliedItems);
+      setRepliedUsersPerPost(newRepliedUsers);
+      if (replyCount > 0) {
+          showNotification('success', `تم إرسال ${replyCount} ردًا تلقائيًا.`);
+      }
+  }, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, managedTarget.access_token, showNotification]);
+
 
   // --- Start Inbox Logic ---
     const fetchMessageHistory = async (conversationId: string) => {
@@ -508,6 +629,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 allItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
                 
                 setInboxItems(allItems);
+                processAutoReplies(allItems);
                 
             }).catch(err => {
                 console.error("Error fetching inbox items:", err);
@@ -516,27 +638,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 setIsInboxLoading(false);
             });
         }
-    }, [view, managedTarget.id, linkedInstagramTarget?.id, managedTarget.access_token, showNotification]);
+    }, [view, managedTarget.id, linkedInstagramTarget?.id, managedTarget.access_token, showNotification, processAutoReplies]);
   
-  const handleSendMessage = async (conversationId: string, message: string): Promise<boolean> => {
-    return new Promise(resolve => {
-        if(isSimulationMode) {
-            console.log(`SIMULATING SEND MESSAGE to ${conversationId}: ${message}`);
-            resolve(true);
-            return;
-        }
-        window.FB.api(`/${conversationId}/messages`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
-            if(response && !response.error) {
-                fetchMessageHistory(conversationId); // Refresh conversation
-                resolve(true);
-            } else {
-                console.error("Error sending message:", response.error);
-                resolve(false);
-            }
-        });
-    });
-  };
-
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       if (selectedItem.type === 'comment') {
           return handleReplyToComment(selectedItem.id, message);
@@ -545,24 +648,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       }
   };
 
-
-  const handleReplyToComment = async (commentId: string, message: string): Promise<boolean> => {
-    return new Promise(resolve => {
-        if(isSimulationMode) {
-            console.log(`SIMULATING REPLY to ${commentId}: ${message}`);
-            resolve(true);
-            return;
-        }
-        window.FB.api(`/${commentId}/comments`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
-            if(response && !response.error) {
-                resolve(true);
-            } else {
-                console.error("Error replying to comment:", response.error);
-                resolve(false);
-            }
-        });
-    });
-  };
 
   const handleGenerateSmartReplies = async (commentText: string): Promise<string[]> => {
     if (!aiClient) {
