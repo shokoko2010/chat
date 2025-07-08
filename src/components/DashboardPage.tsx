@@ -615,7 +615,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         if (image) {
             apiPath = target.type === 'instagram' ? `/${target.id}/media` : `/${target.id}/photos`;
             if (target.type === 'instagram') {
-                let igParams: any = { image_url: '', caption: text };
                 // Instagram requires a publicly accessible URL for the image. This is a limitation of client-side only apps.
                 // We'll simulate this by rejecting, as we can't upload a File directly to /media.
                 // A server-side proxy would be needed.
