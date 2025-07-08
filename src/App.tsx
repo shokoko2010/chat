@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -254,74 +253,99 @@ const App: React.FC = () => {
     }
     setSyncingTargetId(target.id);
     try {
-        let allPostsData: any[] = [];
-        let fetchedPosts: PublishedPost[] = [];
-        let allConvosData: any[] = [];
-        let fetchedInboxItems: InboxItem[] = [];
+        const commentFields = 'comments.limit(50){id,from{id,name,picture{url}},message,created_time,parent}';
+        const postBaseFields = `id,message,full_picture,created_time,from,likes.summary(true),shares,comments.summary(true),${commentFields}`;
+        const pageSpecificPostFields = ',insights.metric(post_impressions_unique){values}';
+
+        let postsPath: string;
+        let postEdge: 'published_posts' | 'feed';
+        let apiParams: any = { limit: 100 };
 
         if (target.type === 'page') {
-            const postsPath = `/${target.id}/published_posts?fields=id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}&limit=100`;
-            allPostsData = await fetchWithPagination(postsPath);
-            
-            fetchedPosts = allPostsData.map((post: any) => ({
-                id: post.id, pageId: target.id, pageName: target.name, pageAvatarUrl: target.picture.data.url, text: post.message || '',
-                imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
-                analytics: {
-                    likes: post.likes?.summary?.total_count ?? 0, comments: post.comments?.summary?.total_count ?? 0, shares: post.shares?.count ?? 0,
-                    reach: post.insights?.data?.[0]?.values?.[0]?.value ?? 0,
-                    loading: false, lastUpdated: new Date(), isGeneratingInsights: false
-                }
-            }));
-
-            const convosPath = `/${target.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`;
-            allConvosData = await fetchWithPagination(convosPath);
-
-            fetchedInboxItems = allConvosData.map((convo: any) => {
-                const participant = convo.participants.data.find((p: any) => p.id !== target.id);
-                return {
-                    id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'Unknown',
-                    authorId: participant?.id || 'Unknown', authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture`,
-                    timestamp: convo.updated_time, conversationId: convo.id
-                };
-            });
+            postEdge = 'published_posts'; // Use posts published by the page for a cleaner history
+            apiParams.fields = `${postBaseFields}${pageSpecificPostFields}`;
+            postsPath = `/${target.id}/${postEdge}`;
         } else if (target.type === 'group') {
-            const postsPath = `/${target.id}/feed?fields=id,message,full_picture,created_time,from,likes.summary(true),comments.summary(true)&limit=100`;
-            allPostsData = await fetchWithPagination(postsPath);
-
-            fetchedPosts = allPostsData.map((post: any) => ({
-                id: post.id, pageId: target.id, pageName: target.name, pageAvatarUrl: target.picture.data.url, text: post.message || '',
-                imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
-                analytics: {
-                    likes: post.likes?.summary?.total_count ?? 0, comments: post.comments?.summary?.total_count ?? 0, shares: 0,
-                    reach: 0, // Not available for groups
-                    loading: false, lastUpdated: new Date(), isGeneratingInsights: false
-                }
-            }));
-            fetchedInboxItems = []; // No conversations for groups
+            postEdge = 'feed';
+            apiParams.fields = postBaseFields;
+            postsPath = `/${target.id}/${postEdge}`;
         } else {
              alert(`مزامنة السجل غير مدعومة حاليًا للنوع '${target.type}'.`);
              setSyncingTargetId(null);
              return;
         }
 
+        const fullPath = `${postsPath}?${new URLSearchParams(apiParams).toString()}`;
+        const allPostsData = await fetchWithPagination(fullPath);
+
+        const fetchedPosts: PublishedPost[] = allPostsData.map((post: any) => ({
+            id: post.id, pageId: target.id, pageName: target.name, pageAvatarUrl: target.picture.data.url, text: post.message || '',
+            imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
+            analytics: {
+                likes: post.likes?.summary?.total_count ?? 0,
+                comments: post.comments?.summary?.total_count ?? 0,
+                shares: post.shares?.count ?? 0,
+                reach: post.insights?.data?.[0]?.values?.[0]?.value ?? 0,
+                loading: false, lastUpdated: new Date(), isGeneratingInsights: false
+            }
+        }));
+
+        const allComments: InboxItem[] = [];
+        allPostsData.forEach((post: any) => {
+            if (post.comments && post.comments.data) {
+                post.comments.data.forEach((comment: any) => {
+                    allComments.push({
+                        id: comment.id,
+                        type: 'comment',
+                        text: comment.message,
+                        authorName: comment.from?.name || 'Unknown User',
+                        authorId: comment.from?.id || 'Unknown',
+                        authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture?type=normal`,
+                        timestamp: comment.created_time,
+                        post: { id: post.id, message: post.message, picture: post.full_picture },
+                        isReply: !!comment.parent,
+                    });
+                });
+            }
+        });
+
+        let allMessages: InboxItem[] = [];
+        if (target.type === 'page') {
+            const convosPath = `/${target.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`;
+            const allConvosData = await fetchWithPagination(convosPath);
+            allMessages = allConvosData.map((convo: any) => {
+                const participant = convo.participants.data.find((p: any) => p.id !== target.id);
+                return {
+                    id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'Unknown',
+                    authorId: participant?.id || 'Unknown',
+                    authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture?type=normal`,
+                    timestamp: convo.updated_time, conversationId: convo.id
+                };
+            });
+        }
+        
+        const combinedInboxItems = [...allMessages, ...allComments];
+
         const dataKey = `zex-pages-data-${target.id}`;
         const rawData = localStorage.getItem(dataKey);
         const data = rawData ? JSON.parse(rawData) : {};
         
         const existingInbox = data.inboxItems || [];
-        const combinedInboxMap = new Map();
+        const combinedInboxMap = new Map<string, InboxItem>();
         existingInbox.forEach((item: InboxItem) => combinedInboxMap.set(item.id, item));
-        fetchedInboxItems.forEach((item: InboxItem) => combinedInboxMap.set(item.id, item));
+        combinedInboxItems.forEach((item: InboxItem) => combinedInboxMap.set(item.id, item));
+        
+        const sortedInboxItems = Array.from(combinedInboxMap.values()).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         
         const updatedData = {
           ...data,
           publishedPosts: fetchedPosts,
-          inboxItems: Array.from(combinedInboxMap.values()),
+          inboxItems: sortedInboxItems,
           syncedAt: new Date().toISOString()
         };
         localStorage.setItem(dataKey, JSON.stringify(updatedData));
 
-        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${fetchedInboxItems.length} محادثة بنجاح للهدف ${target.name}.`);
+        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${combinedInboxItems.length} عنصرًا في البريد الوارد (رسائل وتعليقات) بنجاح للهدف ${target.name}.`);
 
     } catch(error) {
       console.error("Error during full history sync:", error);
