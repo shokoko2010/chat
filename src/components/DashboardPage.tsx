@@ -297,17 +297,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setAutoRepliedItems(new Set(savedData.autoRepliedItems || []));
     setRepliedUsersPerPost(savedData.repliedUsersPerPost || {});
 
-    const parsedInboxItems = savedData.inboxItems?.map((item: any) => {
-        if (!item || !item.timestamp) {
-            return null;
-        }
-        const d = new Date(item.timestamp);
-        if (isNaN(d.getTime())) {
+    const parsedInboxItems = (savedData.inboxItems || []).map((item: any) => {
+        if (!item || !item.timestamp || isNaN(new Date(item.timestamp).getTime())) {
             console.warn('Discarding inbox item with invalid timestamp:', item);
             return null;
         }
-        return { ...item, timestamp: d.toISOString() };
-    }).filter(Boolean) || [];
+        return item;
+    }).filter(Boolean);
     setInboxItems(parsedInboxItems as InboxItem[]);
     
     setBulkPosts([]);
@@ -349,7 +345,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     } else {
         setPublishedPostsLoading(false);
     }
-  }, [managedTarget.id, managedTarget.access_token, isSimulationMode, clearComposer, fetchWithPagination, managedTarget.name, managedTarget.picture.data.url, managedTarget.type]);
+  }, [managedTarget.id, isSimulationMode, clearComposer, fetchWithPagination]);
   
   useEffect(() => {
     try {
@@ -419,11 +415,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }, [summaryData, aiClient, pageProfile, analyticsPeriod]);
   
   const fetchMessageHistory = useCallback(async (conversationId: string) => {
+    if (isSimulationMode || !managedTarget.access_token) return;
     const response: any = await new Promise(resolve => window.FB.api(`/${conversationId}/messages`, { fields: 'id,message,from,created_time', access_token: managedTarget.access_token }, (res: any) => resolve(res)));
     if (response && response.data) {
       setInboxItems(prevItems => prevItems.map(item => item.id === conversationId ? { ...item, messages: response.data.reverse() } : item));
     }
-  }, [managedTarget.access_token]);
+  }, [managedTarget.access_token, isSimulationMode]);
 
   const handleSendMessage = useCallback(async (conversationId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {
@@ -473,11 +470,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const processAutoReplies = useCallback(async (currentInboxItems: InboxItem[]) => {
       const { comments: commentSettings, messages: messageSettings } = autoResponderSettings;
       if (!commentSettings.realtimeEnabled && !messageSettings.realtimeEnabled) return;
+
       const itemsToProcess = currentInboxItems.filter(item => !autoRepliedItems.has(item.id));
       if (itemsToProcess.length === 0) return;
+
       const newRepliedItems = new Set<string>();
       const newRepliedUsers = { ...repliedUsersPerPost };
       let replyCount = 0;
+
       for (const item of itemsToProcess) {
           let replied = false;
           if (item.type === 'message' && messageSettings.realtimeEnabled) {
@@ -501,15 +501,20 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
           }
           if (replied) { newRepliedItems.add(item.id); replyCount++; }
       }
+      
       setAutoRepliedItems(prev => new Set([...Array.from(prev), ...Array.from(newRepliedItems)]));
       setRepliedUsersPerPost(newRepliedUsers);
+      
       if (replyCount > 0) showNotification('success', `تم إرسال ${replyCount} ردًا تلقائيًا.`);
   }, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, showNotification, handleSendMessage, handleReplyToComment, handlePrivateReplyToComment]);
 
+  // EFFECT 1: Fetch inbox data when the view changes to 'inbox'.
   useEffect(() => {
-    const fetchAndProcessInbox = async () => {
-        if (view !== 'inbox' || isSimulationMode) return;
+    if (view !== 'inbox' || isSimulationMode) {
+      return;
+    }
 
+    const fetchAllInboxData = async () => {
         setIsInboxLoading(true);
         try {
             const fetchAllComments = async (): Promise<InboxItem[]> => {
@@ -523,9 +528,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     postPath = `/${managedTarget.id}/feed?fields=${postFields}&limit=50`;
                 }
 
-                if (postPath) {
-                    allPosts.push(...await fetchWithPagination(postPath));
-                }
+                if (postPath) allPosts.push(...await fetchWithPagination(postPath));
                 
                 if (linkedInstagramTarget && linkedInstagramTarget.access_token) {
                     const igPosts = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp&limit=50&access_token=${linkedInstagramTarget.access_token}`);
@@ -576,20 +579,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             setInboxItems(prevItems => {
                 const combinedItems = new Map<string, InboxItem>();
                 prevItems.forEach(item => combinedItems.set(item.id, item));
-
                 fetchedItems.forEach(item => {
-                    if (item.type === 'message' && combinedItems.has(item.id)) {
-                        const existingItem = combinedItems.get(item.id);
-                        if (existingItem?.messages) {
-                            item.messages = existingItem.messages;
-                        }
+                    const existingItem = combinedItems.get(item.id);
+                    // Preserve message history if it exists
+                    if (item.type === 'message' && existingItem?.messages) {
+                        item.messages = existingItem.messages;
                     }
                     combinedItems.set(item.id, item);
                 });
-
-                const allItems = Array.from(combinedItems.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                processAutoReplies(allItems);
-                return allItems;
+                return Array.from(combinedItems.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
             });
 
         } catch (err: any) {
@@ -600,8 +598,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         }
     };
 
-    fetchAndProcessInbox();
-  }, [view, isSimulationMode, managedTarget, linkedInstagramTarget, fetchWithPagination, processAutoReplies, showNotification]);
+    fetchAllInboxData();
+  }, [view, isSimulationMode, managedTarget.id, managedTarget.access_token, linkedInstagramTarget, fetchWithPagination, showNotification]);
+
+  // EFFECT 2: Process auto-replies when inbox items change or settings are toggled.
+  useEffect(() => {
+    if (inboxItems.length > 0 && (autoResponderSettings.comments.realtimeEnabled || autoResponderSettings.messages.realtimeEnabled)) {
+        processAutoReplies(inboxItems);
+    }
+  }, [inboxItems, autoResponderSettings, processAutoReplies]);
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.id, message);
