@@ -169,3 +169,24 @@ export interface StrategyHistoryItem {
   summary: string;
   createdAt: string; // ISO date string
 }
+
+// --- Types for Inbox ---
+export interface InboxItem {
+  id: string; // comment_id
+  text: string;
+  authorName: string;
+  authorId: string;
+  authorPictureUrl: string;
+  timestamp: string; // ISO string
+  post: { // a small summary of the post the comment is on
+    id: string; // post_id
+    message?: string;
+    picture?: string;
+  };
+  isReply?: boolean; // To indent replies in the UI
+}
+
+export interface AutoResponderSettings {
+  enabled: boolean;
+  message: string;
+}

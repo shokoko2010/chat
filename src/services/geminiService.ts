@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { StrategyRequest, ContentPlanItem, PostAnalytics, PageProfile, PerformanceSummaryData } from "../types";
 
@@ -589,4 +590,60 @@ export const generatePerformanceSummary = async (
         console.error("Error generating performance summary:", error);
         throw new Error("حدث خطأ أثناء إنشاء ملخص الأداء.");
     }
+};
+
+export const generateSmartReplies = async (ai: GoogleGenAI, commentText: string, pageProfile?: PageProfile): Promise<string[]> => {
+  const pageContext = createPageContext(pageProfile);
+  const prompt = `
+    ${pageContext}
+    أنت مدير مجتمع لعلامة تجارية على وسائل التواصل الاجتماعي. مهمتك هي اقتراح ردود قصيرة واحترافية وودودة على تعليق من أحد العملاء. ضع سياق العمل في اعتبارك عند الرد.
+
+    تعليق العميل:
+    "${commentText}"
+
+    المطلوب:
+    اقترح 3 ردود مختلفة ومناسبة لهذا التعليق. يجب أن تكون الردود متنوعة (مثلاً: رد بسيط، رد يحتوي على سؤال، رد يقدم مساعدة).
+    
+    أرجع الإجابة كـ JSON فقط، بدون أي نص إضافي أو علامات markdown.
+    يجب أن تكون الإجابة عبارة عن مصفوفة JSON تحتوي على 3 سلاسل نصية بالضبط.
+    
+    مثال على الإجابة:
+    [
+      "شكرًا جزيلاً لك! يسعدنا أن المنتج أعجبك 😊",
+      "أهلاً بك! لمزيد من التفاصيل، يمكنك زيارة موقعنا: ${pageProfile?.website || 'يرجى مراجعة موقعنا'}",
+      "تم الرد على استفسارك في الخاص. 📩"
+    ]
+  `;
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("لم يتمكن الذكاء الاصطناعي من اقتراح ردود (استجابة فارغة).");
+    }
+
+    let jsonStr = text.trim();
+    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
+    const match = jsonStr.match(fenceRegex);
+    if (match && match[2]) {
+      jsonStr = match[2].trim();
+    }
+
+    const replies = JSON.parse(jsonStr);
+    if (Array.isArray(replies) && replies.length > 0) {
+      return replies.slice(0, 3);
+    }
+    
+    throw new Error("فشل الذكاء الاصطناعي في إنشاء ردود بالتنسيق المطلوب.");
+
+  } catch (error) {
+    console.error("Error generating smart replies:", error);
+    throw new Error("حدث خطأ أثناء اقتراح الردود الذكية.");
+  }
 };

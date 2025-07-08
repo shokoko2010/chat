@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem } from '../types';
+import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import PostPreview from './PostPreview';
@@ -9,8 +9,9 @@ import ContentCalendar from './ContentCalendar';
 import BulkSchedulerPage from './BulkSchedulerPage';
 import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
+import InboxPage from './InboxPage'; // Import new component
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData, generateSmartReplies } from '../services/geminiService';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
@@ -19,6 +20,7 @@ import ArchiveBoxIcon from './icons/ArchiveBoxIcon';
 import ChartBarIcon from './icons/ChartBarIcon';
 import QueueListIcon from './icons/QueueListIcon';
 import BrainCircuitIcon from './icons/BrainCircuitIcon';
+import InboxArrowDownIcon from './icons/InboxArrowDownIcon'; // Import new icon
 
 
 interface DashboardPageProps {
@@ -32,7 +34,7 @@ interface DashboardPageProps {
 }
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick }) => {
-  const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner'>('composer');
+  const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'inbox'>('composer');
   
   // Composer state
   const [postText, setPostText] = useState('');
@@ -77,6 +79,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [analyticsPeriod, setAnalyticsPeriod] = useState<'7d' | '30d'>('30d');
   const [performanceSummaryText, setPerformanceSummaryText] = useState('');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  
+  // Inbox State
+  const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
+  const [isInboxLoading, setIsInboxLoading] = useState(true);
+  const [autoResponderSettings, setAutoResponderSettings] = useState<AutoResponderSettings>({ enabled: false, message: '' });
 
 
   const linkedInstagramTarget = useMemo(() => {
@@ -285,6 +292,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setScheduledPosts(savedData.scheduledPosts || []);
     setContentPlan(savedData.contentPlan || null);
     setStrategyHistory(savedData.strategyHistory || []);
+    setAutoResponderSettings(savedData.autoResponderSettings || { enabled: false, message: '' });
     
     // We clear bulk posts on page change to avoid complexity with non-serializable File objects.
     setBulkPosts([]);
@@ -342,12 +350,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             scheduledPosts: scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imageUrl: imageFile ? rest.imageUrl : null })),
             contentPlan,
             strategyHistory,
+            autoResponderSettings
         };
         localStorage.setItem(dataKey, JSON.stringify(dataToStore));
     } catch(e) {
         console.error("Could not save data to localStorage:", e);
     }
-  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, managedTarget.id]);
+  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, autoResponderSettings, managedTarget.id]);
 
   const filteredPosts = useMemo(() => {
     const now = new Date();
@@ -398,6 +407,88 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         generateSummary();
     }
   }, [summaryData, aiClient, pageProfile, analyticsPeriod]);
+
+  // --- Start Inbox Logic ---
+  useEffect(() => {
+    if (view === 'inbox') {
+      setIsInboxLoading(true);
+      const targetIds = [managedTarget.id, linkedInstagramTarget?.id].filter(Boolean);
+      const batchRequest = targetIds.map(id => ({
+        method: 'GET',
+        relative_url: `${id}/posts?fields=comments.limit(10).order(reverse_chronological){id,from{id,name,picture},message,created_time,post},message,full_picture&limit=10`
+      }));
+
+      window.FB.api('/', 'POST', { batch: batchRequest, access_token: managedTarget.access_token }, (response: any) => {
+        const allComments: InboxItem[] = [];
+        if (response && !response.error) {
+          response.forEach((res: any) => {
+            if(res.code === 200) {
+              const body = JSON.parse(res.body);
+              body.data?.forEach((post: any) => {
+                post.comments?.data?.forEach((comment: any) => {
+                  allComments.push({
+                    id: comment.id,
+                    text: comment.message,
+                    authorName: comment.from.name,
+                    authorId: comment.from.id,
+                    authorPictureUrl: comment.from.picture.data.url,
+                    timestamp: comment.created_time,
+                    post: {
+                      id: post.id,
+                      message: post.message,
+                      picture: post.full_picture
+                    },
+                    isReply: false, // Top-level comment
+                  });
+                });
+              });
+            }
+          });
+        } else {
+          console.error("Error fetching inbox:", response?.error);
+          showNotification('error', 'فشل في جلب تعليقات البريد الوارد.');
+        }
+        allComments.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setInboxItems(allComments);
+        setIsInboxLoading(false);
+      });
+    }
+  }, [view, managedTarget.id, linkedInstagramTarget?.id, managedTarget.access_token, showNotification]);
+
+  const handleReplyToComment = async (commentId: string, message: string): Promise<boolean> => {
+    return new Promise(resolve => {
+        if(isSimulationMode) {
+            console.log(`SIMULATING REPLY to ${commentId}: ${message}`);
+            resolve(true);
+            return;
+        }
+        window.FB.api(`/${commentId}/comments`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
+            if(response && !response.error) {
+                resolve(true);
+            } else {
+                console.error("Error replying to comment:", response.error);
+                resolve(false);
+            }
+        });
+    });
+  };
+
+  const handleGenerateSmartReplies = async (commentText: string): Promise<string[]> => {
+    if (!aiClient) {
+        showNotification('error', 'يجب تفعيل الذكاء الاصطناعي لاستخدام هذه الميزة.');
+        return [];
+    }
+    try {
+        const replies = await generateSmartReplies(aiClient, commentText, pageProfile);
+        return replies;
+    } catch(e:any) {
+        showNotification('error', e.message);
+        return [];
+    }
+  };
+
+  // --- End Inbox Logic ---
+
 
   // --- Start Drafts Logic ---
   const handleSaveDraft = () => {
@@ -735,7 +826,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
 
     setIsSchedulingAll(true);
-    let successCount = 0;
     const promises = bulkPosts.map(async post => {
         try {
             const scheduleAt = new Date(post.scheduleDate);
@@ -745,18 +835,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 const isIgReminder = target.type === 'instagram';
                 await publishToTarget(target, post.text, post.imageFile || null, scheduleAt, isIgReminder);
             }
-            successCount++;
-            return { ...post, error: undefined }; // Mark as successful
+            return { ...post, success: true };
         } catch (e: any) {
             const errorMessage = e?.error?.message || e.message || "فشل في الجدولة، سبب غير معروف.";
-            return { ...post, error: `فشل في "${e?.targetName || 'وجهة غير محددة'}": ${errorMessage}` };
+            const targetName = e?.targetName || post.targetIds.map(id => allTargets.find(t=>t.id===id)?.name).join(', ') || 'وجهة غير محددة';
+            return { ...post, success: false, error: `فشل في "${targetName}": ${errorMessage}` };
         }
     });
 
     const results = await Promise.all(promises);
+    const successCount = results.filter(r => r.success).length;
+    const failedPosts = results.filter(r => !r.success);
+
     setIsSchedulingAll(false);
-    showNotification('partial', `اكتملت الجدولة المجمعة. نجح: ${successCount}، فشل: ${bulkPosts.length - successCount}.`);
-    setBulkPosts(results.filter(p => p.error)); // Only keep failed posts
+    showNotification('partial', `اكتملت الجدولة المجمعة. نجح: ${successCount}، فشل: ${failedPosts.length}.`);
+    setBulkPosts(failedPosts);
   };
   // --- End Bulk Logic ---
 
@@ -916,6 +1009,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 onFetchAnalytics={handleFetchPostAnalytics}
                 onGenerateInsights={handleGeneratePostInsights}
               />;
+        case 'inbox':
+            return <InboxPage 
+                items={inboxItems}
+                isLoading={isInboxLoading}
+                onReply={handleReplyToComment}
+                onGenerateSmartReplies={handleGenerateSmartReplies}
+                autoResponderSettings={autoResponderSettings}
+                onAutoResponderSettingsChange={setAutoResponderSettings}
+                isSimMode={isSimulationMode}
+            />
         default: return null;
     }
   }
@@ -945,6 +1048,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 </button>
                 <button onClick={() => setView('planner')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'planner' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <BrainCircuitIcon className="w-5 h-5" /> استراتيجيات المحتوى
+                </button>
+                 <button onClick={() => setView('inbox')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'inbox' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                    <InboxArrowDownIcon className="w-5 h-5" /> البريد الوارد ({inboxItems.length})
                 </button>
                 <button onClick={() => setView('drafts')} className={`inline-flex items-center gap-2 px-3 sm:px-4 py-3 border-b-2 font-semibold text-sm transition-colors shrink-0 ${view === 'drafts' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                     <ArchiveBoxIcon className="w-5 h-5" /> المسودات ({drafts.length})
