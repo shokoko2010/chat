@@ -171,27 +171,43 @@ export interface StrategyHistoryItem {
 }
 
 // --- Types for Inbox ---
+export interface InboxMessage {
+  id: string;
+  from: { name: string; id: string };
+  message: string;
+  created_time: string;
+}
 export interface InboxItem {
-  id: string; // comment_id
-  text: string;
+  id: string; // comment_id or conversation_id
+  type: 'comment' | 'message';
+  text: string; // last message snippet
   authorName: string;
   authorId: string;
   authorPictureUrl: string;
   timestamp: string; // ISO string
-  post: { // a small summary of the post the comment is on
+  post?: { // a small summary of the post the comment is on
     id: string; // post_id
     message?: string;
     picture?: string;
   };
   isReply?: boolean; // To indent replies in the UI
+  conversationId?: string; // For messages
+  messages?: InboxMessage[]; // For message history
 }
 
 export interface AutoResponderSettings {
-  enabled: boolean;
-  keywords: string; // Comma-separated
-  replyOncePerUser: boolean;
-  publicReplyEnabled: boolean;
-  publicReplyMessage: string;
-  privateReplyEnabled: boolean;
-  privateReplyMessage: string;
+  comments: {
+    enabled: boolean;
+    keywords: string; // Comma-separated
+    replyOncePerUser: boolean;
+    publicReplyEnabled: boolean;
+    publicReplyMessage: string;
+    privateReplyEnabled: boolean;
+    privateReplyMessage: string;
+  };
+  messages: {
+    enabled: boolean;
+    keywords: string;
+    replyMessage: string;
+  };
 }

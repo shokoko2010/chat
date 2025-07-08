@@ -1,13 +1,13 @@
 
 
 import React, { useState, useCallback, useEffect } from 'react';
-import PageSelectorPage from './components/PageSelectorPage';
-import DashboardPage from './components/DashboardPage';
-import HomePage from './components/HomePage';
+import PageSelectorPage from './src/components/PageSelectorPage';
+import DashboardPage from './src/components/DashboardPage';
+import HomePage from './src/components/HomePage';
 import { GoogleGenAI } from '@google/genai';
-import { initializeGoogleGenAI } from './services/geminiService';
-import { Target, Business } from './types';
-import SettingsModal from './components/SettingsModal';
+import { initializeGoogleGenAI } from './src/services/geminiService';
+import { Target, Business } from './src/types';
+import SettingsModal from './src/components/SettingsModal';
 
 const isSimulation = window.location.protocol === 'http:';
 
@@ -256,7 +256,7 @@ const App: React.FC = () => {
         if (response.authResponse) setAuthStatus('connected');
         else setAuthStatus('not_authorized');
       }, { 
-        scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,groups_show_list,pages_messaging',
+        scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,business_management,pages_read_user_content,read_insights,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,groups_show_list,pages_messaging,read_page_mailboxes',
         auth_type: 'rerequest'
       });
   }, [isSimulationMode]);

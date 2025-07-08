@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings } from '../types';
+import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, InboxMessage } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import PostPreview from './PostPreview';
@@ -83,8 +83,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   // Inbox State
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [isInboxLoading, setIsInboxLoading] = useState(true);
-  const [autoResponderSettings, setAutoResponderSettings] = useState<AutoResponderSettings>({ enabled: false, keywords: '', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: false, privateReplyMessage: '' });
-  const [autoRepliedUsers, setAutoRepliedUsers] = useState<Set<string>>(new Set());
+  const [autoResponderSettings, setAutoResponderSettings] = useState<AutoResponderSettings>({
+    comments: { enabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
+    messages: { enabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
+  });
+  const [autoRepliedItems, setAutoRepliedItems] = useState<Set<string>>(new Set());
 
 
   const linkedInstagramTarget = useMemo(() => {
@@ -278,7 +281,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
               ...parsedData,
               drafts: parsedData.drafts?.map((d: any) => ({...d, imageFile: null})) || [],
               scheduledPosts: parsedData.scheduledPosts?.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt), imageFile: null })) || [],
-              autoRepliedUsers: Array.from(parsedData.autoRepliedUsers || [])
+              autoRepliedItems: Array.from(parsedData.autoRepliedItems || [])
             }
         } else {
             savedData = {};
@@ -294,8 +297,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setScheduledPosts(savedData.scheduledPosts || []);
     setContentPlan(savedData.contentPlan || null);
     setStrategyHistory(savedData.strategyHistory || []);
-    setAutoResponderSettings(savedData.autoResponderSettings || { enabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' });
-    setAutoRepliedUsers(new Set(savedData.autoRepliedUsers || []));
+    setAutoResponderSettings(savedData.autoResponderSettings || { 
+        comments: { enabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
+        messages: { enabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
+    });
+    setAutoRepliedItems(new Set(savedData.autoRepliedItems || []));
     
     // We clear bulk posts on page change to avoid complexity with non-serializable File objects.
     setBulkPosts([]);
@@ -354,13 +360,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             contentPlan,
             strategyHistory,
             autoResponderSettings,
-            autoRepliedUsers: Array.from(autoRepliedUsers)
+            autoRepliedItems: Array.from(autoRepliedItems)
         };
         localStorage.setItem(dataKey, JSON.stringify(dataToStore));
     } catch(e) {
         console.error("Could not save data to localStorage:", e);
     }
-  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, autoResponderSettings, autoRepliedUsers, managedTarget.id]);
+  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, autoResponderSettings, autoRepliedItems, managedTarget.id]);
 
   const filteredPosts = useMemo(() => {
     const now = new Date();
@@ -413,100 +419,180 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }, [summaryData, aiClient, pageProfile, analyticsPeriod]);
 
   // --- Start Inbox Logic ---
-  const processAutoReplies = useCallback(async (comments: InboxItem[]) => {
-      if (!autoResponderSettings.enabled || isSimulationMode) return;
-      const keywords = autoResponderSettings.keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
-      if (keywords.length === 0) return;
-
-      const commentsToReplyTo = comments.filter(comment => {
-          const userPostKey = `${comment.post.id}_${comment.authorId}`;
-          if (autoRepliedUsers.has(userPostKey) && autoResponderSettings.replyOncePerUser) {
-              return false;
+    const fetchMessageHistory = async (conversationId: string) => {
+      const response: any = await new Promise(resolve => window.FB.api(`/${conversationId}/messages`, { fields: 'id,message,from,created_time', access_token: managedTarget.access_token }, (res: any) => resolve(res)));
+      if (response && response.data) {
+        setInboxItems(prevItems => {
+          const itemIndex = prevItems.findIndex(item => item.id === conversationId);
+          if (itemIndex > -1) {
+            const newItems = [...prevItems];
+            newItems[itemIndex] = { ...newItems[itemIndex], messages: response.data.reverse() };
+            return newItems;
           }
-          const commentText = comment.text.toLowerCase();
-          return keywords.some(keyword => commentText.includes(keyword));
-      });
-      
-      if (commentsToReplyTo.length === 0) return;
+          return prevItems;
+        });
+      }
+    };
 
+
+    const processAutoReplies = useCallback(async (items: InboxItem[]) => {
+      if (isSimulationMode) return;
+      const newAutoRepliedItems = new Set(autoRepliedItems);
       let repliedCount = 0;
-      const newRepliedIds = new Set(autoRepliedUsers);
 
-      for (const comment of commentsToReplyTo) {
-          const userPostKey = `${comment.post.id}_${comment.authorId}`;
-          if (newRepliedIds.has(userPostKey) && autoResponderSettings.replyOncePerUser) continue;
+      for (const item of items) {
+        if (autoRepliedItems.has(item.id)) continue;
+
+        let settings;
+        if (item.type === 'comment' && autoResponderSettings.comments.enabled) {
+          settings = autoResponderSettings.comments;
+        } else if (item.type === 'message' && autoResponderSettings.messages.enabled) {
+          settings = autoResponderSettings.messages;
+        } else {
+          continue;
+        }
+        
+        const keywords = settings.keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+        if (keywords.length === 0 || !keywords.some(keyword => item.text.toLowerCase().includes(keyword))) {
+          continue;
+        }
+
+        let success = false;
+        if (item.type === 'comment') {
+          const commentSettings = autoResponderSettings.comments;
+          const userPostKey = `${item.post!.id}_${item.authorId}`;
+          if (autoRepliedItems.has(userPostKey) && commentSettings.replyOncePerUser) continue;
           
-          let success = false;
-          if (autoResponderSettings.publicReplyEnabled && autoResponderSettings.publicReplyMessage) {
-              const message = autoResponderSettings.publicReplyMessage.replace('{user_name}', comment.authorName);
-              await handleReplyToComment(comment.id, message);
-              success = true;
+          if (commentSettings.publicReplyEnabled && commentSettings.publicReplyMessage) {
+            const message = commentSettings.publicReplyMessage.replace('{user_name}', item.authorName);
+            await handleReplyToComment(item.id, message);
+            success = true;
           }
-          if (autoResponderSettings.privateReplyEnabled && autoResponderSettings.privateReplyMessage) {
-              const message = autoResponderSettings.privateReplyMessage.replace('{user_name}', comment.authorName);
-              await new Promise(resolve => window.FB.api(`/${comment.id}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (res: any) => resolve(res)));
-              success = true;
+          if (commentSettings.privateReplyEnabled && commentSettings.privateReplyMessage) {
+            const message = commentSettings.privateReplyMessage.replace('{user_name}', item.authorName);
+            await new Promise(resolve => window.FB.api(`/${item.id}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (res: any) => resolve(res)));
+            success = true;
           }
+          if (success) newAutoRepliedItems.add(userPostKey);
 
-          if (success) {
-            newRepliedIds.add(userPostKey);
-            repliedCount++;
-          }
+        } else if (item.type === 'message') {
+          const messageSettings = autoResponderSettings.messages;
+          const message = messageSettings.replyMessage.replace('{user_name}', item.authorName);
+          await handleSendMessage(item.id, message);
+          success = true;
+        }
+
+        if (success) {
+          newAutoRepliedItems.add(item.id);
+          repliedCount++;
+        }
       }
 
-      setAutoRepliedUsers(newRepliedIds);
-      if(repliedCount > 0) {
-          showNotification('success', `تم إرسال ${repliedCount} من الردود التلقائية.`);
+      setAutoRepliedItems(newAutoRepliedItems);
+      if (repliedCount > 0) {
+        showNotification('success', `تم إرسال ${repliedCount} من الردود التلقائية.`);
       }
+  }, [autoResponderSettings, autoRepliedItems, managedTarget.access_token, showNotification, isSimulationMode]);
 
-  }, [autoResponderSettings, autoRepliedUsers, managedTarget.access_token, showNotification, isSimulationMode]);
-  
   useEffect(() => {
     if (view === 'inbox') {
       setIsInboxLoading(true);
-      const targetIds = [managedTarget.id, linkedInstagramTarget?.id].filter(Boolean);
-      const batchRequest = targetIds.map(id => ({
-        method: 'GET',
-        relative_url: `${id}/posts?fields=comments.limit(25).order(reverse_chronological){id,from{id,name,picture},message,created_time,post},message,full_picture&limit=25`
-      }));
 
-      window.FB.api('/', 'POST', { batch: batchRequest, access_token: managedTarget.access_token }, (response: any) => {
-        const allComments: InboxItem[] = [];
-        if (response && !response.error) {
-          response.forEach((res: any) => {
-            if(res.code === 200) {
-              const body = JSON.parse(res.body);
-              body.data?.forEach((post: any) => {
-                post.comments?.data?.forEach((comment: any) => {
-                  allComments.push({
-                    id: comment.id,
-                    text: comment.message,
-                    authorName: comment.from.name,
-                    authorId: comment.from.id,
-                    authorPictureUrl: comment.from.picture.data.url,
-                    timestamp: comment.created_time,
-                    post: {
-                      id: post.id,
-                      message: post.message,
-                      picture: post.full_picture
-                    },
-                    isReply: false, // Top-level comment
-                  });
+      const fetchComments = new Promise<InboxItem[]>(resolve => {
+        const targetIds = [managedTarget.id, linkedInstagramTarget?.id].filter(Boolean);
+        const batchRequest = targetIds.map(id => ({
+          method: 'GET',
+          relative_url: `${id}/posts?fields=comments.limit(25).order(reverse_chronological){id,from{id,name,picture},message,created_time,post},message,full_picture&limit=25`
+        }));
+        
+        if(batchRequest.length === 0) return resolve([]);
+        
+        window.FB.api('/', 'POST', { batch: batchRequest, access_token: managedTarget.access_token }, (response: any) => {
+            const allComments: InboxItem[] = [];
+            if (response && !response.error) {
+                response.forEach((res: any) => {
+                    if(res.code === 200) {
+                        const body = JSON.parse(res.body);
+                        body.data?.forEach((post: any) => {
+                            post.comments?.data?.forEach((comment: any) => {
+                                allComments.push({
+                                    id: comment.id, type: 'comment', text: comment.message,
+                                    authorName: comment.from.name, authorId: comment.from.id, authorPictureUrl: comment.from.picture.data.url,
+                                    timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }
+                                });
+                            });
+                        });
+                    }
                 });
-              });
+            } else {
+                console.error("Error fetching comments:", response?.error);
             }
-          });
-        } else {
-          console.error("Error fetching inbox:", response?.error);
-          showNotification('error', 'فشل في جلب تعليقات البريد الوارد.');
-        }
-        allComments.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        setInboxItems(allComments);
+            resolve(allComments);
+        });
+      });
+
+      const fetchMessages = new Promise<InboxItem[]>(resolve => {
+        window.FB.api(`/${managedTarget.id}/conversations`, { fields: 'id,snippet,updated_time,participants', access_token: managedTarget.access_token }, (response: any) => {
+            const allMessages: InboxItem[] = [];
+            if (response && response.data) {
+              response.data.forEach((convo: any) => {
+                const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
+                if(participant) {
+                    allMessages.push({
+                      id: convo.id, type: 'message', text: convo.snippet, authorName: participant.name,
+                      authorId: participant.id, authorPictureUrl: `https://graph.facebook.com/${participant.id}/picture`,
+                      timestamp: convo.updated_time, conversationId: convo.id
+                    });
+                }
+              });
+            } else {
+              console.error("Error fetching messages:", response?.error);
+            }
+            resolve(allMessages);
+        });
+      });
+
+      Promise.all([fetchComments, fetchMessages]).then(([comments, messages]) => {
+        const allItems = [...comments, ...messages];
+        allItems.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setInboxItems(allItems);
+        processAutoReplies(allItems.filter(item => !autoRepliedItems.has(item.id)));
+      }).catch(err => {
+        console.error("Error fetching inbox items:", err);
+        showNotification('error', 'فشل في جلب البريد الوارد.');
+      }).finally(() => {
         setIsInboxLoading(false);
-        processAutoReplies(allComments);
       });
     }
   }, [view, managedTarget.id, linkedInstagramTarget?.id, managedTarget.access_token, showNotification, processAutoReplies]);
+  
+  const handleSendMessage = async (conversationId: string, message: string): Promise<boolean> => {
+    return new Promise(resolve => {
+        if(isSimulationMode) {
+            console.log(`SIMULATING SEND MESSAGE to ${conversationId}: ${message}`);
+            resolve(true);
+            return;
+        }
+        window.FB.api(`/${conversationId}/messages`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
+            if(response && !response.error) {
+                fetchMessageHistory(conversationId); // Refresh conversation
+                resolve(true);
+            } else {
+                console.error("Error sending message:", response.error);
+                resolve(false);
+            }
+        });
+    });
+  };
+
+  const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
+      if (selectedItem.type === 'comment') {
+          return handleReplyToComment(selectedItem.id, message);
+      } else {
+          return handleSendMessage(selectedItem.id, message);
+      }
+  };
+
 
   const handleReplyToComment = async (commentId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {
@@ -1066,8 +1152,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             return <InboxPage 
                 items={inboxItems}
                 isLoading={isInboxLoading}
-                onReply={handleReplyToComment}
+                onReply={handleReplySubmit}
                 onGenerateSmartReplies={handleGenerateSmartReplies}
+                onFetchMessageHistory={fetchMessageHistory}
                 autoResponderSettings={autoResponderSettings}
                 onAutoResponderSettingsChange={setAutoResponderSettings}
             />
