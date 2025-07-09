@@ -8,7 +8,7 @@ interface BusinessPortfolioManagerProps {
   businesses: Business[];
   onLoadPages: (businessId: string) => void;
   loadingBusinessId: string | null;
-  loadedBusinessIds: Set<string>;
+  loadedBusinessIds: Record<string, boolean>;
 }
 
 const BusinessPortfolioManager: React.FC<BusinessPortfolioManagerProps> = ({ businesses, onLoadPages, loadingBusinessId, loadedBusinessIds }) => {
@@ -28,7 +28,7 @@ const BusinessPortfolioManager: React.FC<BusinessPortfolioManagerProps> = ({ bus
       <div className="space-y-3">
         {businesses.map(business => {
           const isLoading = loadingBusinessId === business.id;
-          const isLoaded = loadedBusinessIds.has(business.id);
+          const isLoaded = !!loadedBusinessIds[business.id];
           return (
             <div key={business.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md">
               <span className="font-semibold text-gray-900 dark:text-white">{business.name}</span>
