@@ -1,6 +1,5 @@
 
 
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule } from '../types';
 import Header from './Header';
@@ -16,6 +15,7 @@ import InboxPage from './InboxPage';
 import { GoogleGenAI } from '@google/genai';
 import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData, generateSmartReplies, generateAutoReply } from '../services/geminiService';
 import PageProfilePage from './PageProfilePage';
+import Button from './ui/Button';
 
 // Icons
 import PencilSquareIcon from './icons/PencilSquareIcon';
@@ -26,6 +26,7 @@ import QueueListIcon from './icons/QueueListIcon';
 import BrainCircuitIcon from './icons/BrainCircuitIcon';
 import InboxArrowDownIcon from './icons/InboxArrowDownIcon';
 import UserCircleIcon from './icons/UserCircleIcon';
+import TrashIcon from './icons/TrashIcon';
 
 
 interface DashboardPageProps {
@@ -548,6 +549,27 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setInboxItems(syncedItems);
     processAutoReplies(syncedItems);
   };
+  
+  const handleClearCache = () => {
+    if (window.confirm("هل أنت متأكد أنك تريد حذف جميع البيانات المخبأة لهذه الصفحة؟ هذا الإجراء لا يمكن التراجع عنه.")) {
+      const dataKey = `zex-pages-data-${managedTarget.id}`;
+      localStorage.removeItem(dataKey);
+
+      // Reset all state loaded from cache
+      setPageProfile({ description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
+      setScheduledPosts([]);
+      setDrafts([]);
+      setContentPlan(null);
+      setStrategyHistory([]);
+      setPublishedPosts([]);
+      setInboxItems([]);
+      setAutoResponderSettings(initialAutoResponderSettings);
+      setAutoRepliedItems(new Set());
+      setRepliedUsersPerPost({});
+      
+      showNotification('success', 'تم حذف ذاكرة التخزين المؤقت بنجاح. قم بالمزامنة الكاملة الآن.');
+    }
+  };
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -1059,17 +1081,30 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             onSettingsClick={onSettingsClick}
         />
         <div className="flex flex-1 overflow-hidden">
-            <aside className="w-60 bg-white dark:bg-gray-800 p-4 overflow-y-auto shadow-lg z-10 hidden md:block">
-                <nav className="space-y-2">
-                    <NavItem icon={<UserCircleIcon className="w-5 h-5" />} label="ملف الصفحة" active={view === 'profile'} onClick={() => setView('profile')} />
-                    <NavItem icon={<PencilSquareIcon className="w-5 h-5" />} label="إنشاء منشور" active={view === 'composer'} onClick={() => setView('composer')} />
-                    <NavItem icon={<InboxArrowDownIcon className="w-5 h-5" />} label="البريد الوارد" active={view === 'inbox'} onClick={() => setView('inbox')} />
-                    <NavItem icon={<CalendarIcon className="w-5 h-5" />} label="تقويم المحتوى" active={view === 'calendar'} onClick={() => setView('calendar')} notificationCount={pendingReminders.length} />
-                    <NavItem icon={<ArchiveBoxIcon className="w-5 h-5" />} label="المسودات" active={view === 'drafts'} onClick={() => setView('drafts')} notificationCount={drafts.length} />
-                    <NavItem icon={<ChartBarIcon className="w-5 h-5" />} label="التحليلات" active={view === 'analytics'} onClick={() => setView('analytics')} />
-                    <NavItem icon={<QueueListIcon className="w-5 h-5" />} label="الجدولة المجمعة" active={view === 'bulk'} onClick={() => setView('bulk')} notificationCount={bulkPosts.length} />
-                    <NavItem icon={<BrainCircuitIcon className="w-5 h-5" />} label="مخطط المحتوى" active={view === 'planner'} onClick={() => setView('planner')} />
-                </nav>
+            <aside className="w-60 bg-white dark:bg-gray-800 p-4 flex flex-col shadow-lg z-10 hidden md:block">
+                <div className="flex-grow overflow-y-auto -mr-2 pr-2">
+                    <nav className="space-y-2">
+                        <NavItem icon={<UserCircleIcon className="w-5 h-5" />} label="ملف الصفحة" active={view === 'profile'} onClick={() => setView('profile')} />
+                        <NavItem icon={<PencilSquareIcon className="w-5 h-5" />} label="إنشاء منشور" active={view === 'composer'} onClick={() => setView('composer')} />
+                        <NavItem icon={<InboxArrowDownIcon className="w-5 h-5" />} label="البريد الوارد" active={view === 'inbox'} onClick={() => setView('inbox')} />
+                        <NavItem icon={<CalendarIcon className="w-5 h-5" />} label="تقويم المحتوى" active={view === 'calendar'} onClick={() => setView('calendar')} notificationCount={pendingReminders.length} />
+                        <NavItem icon={<ArchiveBoxIcon className="w-5 h-5" />} label="المسودات" active={view === 'drafts'} onClick={() => setView('drafts')} notificationCount={drafts.length} />
+                        <NavItem icon={<ChartBarIcon className="w-5 h-5" />} label="التحليلات" active={view === 'analytics'} onClick={() => setView('analytics')} />
+                        <NavItem icon={<QueueListIcon className="w-5 h-5" />} label="الجدولة المجمعة" active={view === 'bulk'} onClick={() => setView('bulk')} notificationCount={bulkPosts.length} />
+                        <NavItem icon={<BrainCircuitIcon className="w-5 h-5" />} label="مخطط المحتوى" active={view === 'planner'} onClick={() => setView('planner')} />
+                    </nav>
+                </div>
+                <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <Button
+                        onClick={handleClearCache} 
+                        variant="danger" 
+                        className="w-full"
+                        title="حذف جميع البيانات المخبأة محليًا لهذه الصفحة والبدء من جديد."
+                    >
+                        <TrashIcon className="w-5 h-5 ml-2" />
+                        حذف الكاش
+                    </Button>
+                </div>
             </aside>
             <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
                 {notification && (

@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { InboxItem, AutoResponderSettings, InboxMessage, AutoResponderRule } from '../types';
 import Button from './ui/Button';
@@ -354,9 +355,11 @@ const InboxPage: React.FC<InboxPageProps> = ({
                     <FilterButton label="الرسائل" active={viewFilter === 'messages'} onClick={() => setViewFilter('messages')} />
                     <FilterButton label="التعليقات" active={viewFilter === 'comments'} onClick={() => setViewFilter('comments')} />
                 </div>
-                <Button onClick={onSync} isLoading={isSyncing} disabled={isSyncing} variant="secondary">
-                  🔄 {isSyncing ? 'جاري المزامنة...' : 'مزامنة السجل'}
-                </Button>
+                 <div className="flex items-center gap-2">
+                    <Button onClick={onSync} isLoading={isSyncing} disabled={isSyncing} variant="secondary">
+                      🔄 {isSyncing ? 'جاري المزامنة...' : 'مزامنة السجل الكامل'}
+                    </Button>
+                </div>
             </div>
           </div>
           <div className="overflow-y-auto">
