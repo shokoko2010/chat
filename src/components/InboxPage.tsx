@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { InboxItem, AutoResponderSettings, InboxMessage } from '../types';
 import Button from './ui/Button';
 import SparklesIcon from './icons/SparklesIcon';
@@ -59,6 +59,7 @@ const InboxPage: React.FC<InboxPageProps> = ({
   const [smartReplies, setSmartReplies] = useState<string[]>([]);
   const [isGeneratingReplies, setIsGeneratingReplies] = useState(false);
   const [viewFilter, setViewFilter] = useState<'all' | 'messages' | 'comments'>('all');
+  const [visibleCount, setVisibleCount] = useState(30);
 
   const filteredItems = React.useMemo(() => {
     if (viewFilter === 'all') return items;
@@ -67,17 +68,39 @@ const InboxPage: React.FC<InboxPageProps> = ({
     return [];
   }, [items, viewFilter]);
 
+  const visibleItems = useMemo(() => filteredItems.slice(0, visibleCount), [filteredItems, visibleCount]);
+  const hasMore = visibleCount < filteredItems.length;
+
   useEffect(() => {
-    if(!selectedItem && filteredItems.length > 0) {
-        const itemToSelect = filteredItems[0];
+    setVisibleCount(30);
+  }, [viewFilter]);
+
+  const observer = useRef<IntersectionObserver | null>(null);
+  const loadMoreRef = useCallback(node => {
+    if (isLoading) return;
+    if (observer.current) observer.current.disconnect();
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0] && entries[0].isIntersecting && hasMore) {
+        setVisibleCount(prev => prev + 20); // Load next 20 items
+      }
+    });
+    if (node) observer.current.observe(node);
+  }, [isLoading, hasMore]);
+
+
+  useEffect(() => {
+    if (!selectedItem || !filteredItems.find(i => i.id === selectedItem.id)) {
+      if (visibleItems.length > 0) {
+        const itemToSelect = visibleItems[0];
         setSelectedItem(itemToSelect);
         if (itemToSelect.type === 'message' && !itemToSelect.messages) {
             onFetchMessageHistory(itemToSelect.id);
         }
-    } else if (filteredItems.length === 0) {
+      } else {
         setSelectedItem(null);
+      }
     }
-  }, [filteredItems, selectedItem, onFetchMessageHistory]);
+  }, [visibleItems, selectedItem, filteredItems, onFetchMessageHistory]);
 
   const handleItemSelect = (item: InboxItem) => {
     setSelectedItem(item);
@@ -117,27 +140,42 @@ const InboxPage: React.FC<InboxPageProps> = ({
   };
   
   const renderList = () => {
-    if(isLoading) return <div className="p-4 text-center text-gray-500">جاري تحميل البريد الوارد...</div>;
-    if(filteredItems.length === 0) return <div className="p-4 text-center text-gray-500">لا يوجد شيء لعرضه.</div>;
+    if (isLoading && items.length === 0) return <div className="p-4 text-center text-gray-500">جاري تحميل البريد الوارد...</div>;
+    if (items.length === 0 && !isLoading) return <div className="p-4 text-center text-gray-500">لا يوجد شيء لعرضه.</div>;
 
-    return filteredItems.map(item => {
-        const Icon = item.type === 'message' ? ChatBubbleLeftEllipsisIcon : ChatBubbleOvalLeftEllipsisIcon;
-        return (
-            <button key={item.id} onClick={() => handleItemSelect(item)} className={`w-full text-right p-3 border-b dark:border-gray-700 flex items-center gap-3 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors ${selectedItem?.id === item.id ? 'bg-blue-50 dark:bg-gray-700' : ''}`}>
-                <div className="relative">
-                    <img src={item.authorPictureUrl} alt={item.authorName} className="w-10 h-10 rounded-full flex-shrink-0" />
-                    <Icon className={`absolute -bottom-1 -right-1 w-5 h-5 bg-white dark:bg-gray-700 rounded-full p-0.5 ${item.type === 'message' ? 'text-blue-500' : 'text-gray-500'}`} />
-                </div>
-                <div className="flex-grow overflow-hidden">
-                    <div className="flex justify-between items-baseline">
-                        <p className="font-bold text-gray-800 dark:text-white truncate">{item.authorName}</p>
-                        <p className="text-xs text-gray-400 flex-shrink-0">{timeSince(item.timestamp)}</p>
+    return (
+        <>
+            {visibleItems.map(item => {
+                const Icon = item.type === 'message' ? ChatBubbleLeftEllipsisIcon : ChatBubbleOvalLeftEllipsisIcon;
+                return (
+                    <button key={item.id} onClick={() => handleItemSelect(item)} className={`w-full text-right p-3 border-b dark:border-gray-700 flex items-center gap-3 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors ${selectedItem?.id === item.id ? 'bg-blue-50 dark:bg-gray-700' : ''}`}>
+                        <div className="relative">
+                            <img src={item.authorPictureUrl} alt={item.authorName} className="w-10 h-10 rounded-full flex-shrink-0" />
+                            <Icon className={`absolute -bottom-1 -right-1 w-5 h-5 bg-white dark:bg-gray-700 rounded-full p-0.5 ${item.type === 'message' ? 'text-blue-500' : 'text-gray-500'}`} />
+                        </div>
+                        <div className="flex-grow overflow-hidden">
+                            <div className="flex justify-between items-baseline">
+                                <p className="font-bold text-gray-800 dark:text-white truncate">{item.authorName}</p>
+                                <p className="text-xs text-gray-400 flex-shrink-0">{timeSince(item.timestamp)}</p>
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.text}</p>
+                        </div>
+                    </button>
+                )
+            })}
+            <div ref={loadMoreRef} className="h-10 flex items-center justify-center">
+                {hasMore && (
+                    <div className="flex items-center gap-2 text-gray-500">
+                         <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>جاري تحميل المزيد...</span>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.text}</p>
-                </div>
-            </button>
-        )
-    });
+                )}
+            </div>
+        </>
+    );
   }
   
   const renderDetail = () => {
