@@ -143,7 +143,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   
   const aiHelperText = !aiClient ? (
     <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">
-      ميزات الذكاء الاصطناعي معطلة. يجب تعريف متغير البيئة `API_KEY` لتفعيلها.
+      ميزات الذكاء الاصطناعي معطلة. يرجى إدخال مفتاح Gemini API في الإعدادات لتفعيلها.
     </p>
   ) : null;
   

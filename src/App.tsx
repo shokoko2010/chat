@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
 import HomePage from './components/HomePage';
+import SettingsModal from './components/SettingsModal';
 import { GoogleGenAI } from '@google/genai';
 import { initializeGoogleGenAI } from './services/geminiService';
 import { Target, Business, PublishedPost, InboxItem } from './types';
@@ -25,7 +26,9 @@ const App: React.FC = () => {
     isSimulation ? 'connected' : 'loading'
   );
   
+  const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('gemini-api-key'));
   const [aiClient, setAiClient] = useState<GoogleGenAI | null>(null);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   const [targets, setTargets] = useState<Target[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -39,9 +42,17 @@ const App: React.FC = () => {
 
 
   useEffect(() => {
-    // Initialize the AI client once on mount. It will use the environment variable.
-    setAiClient(initializeGoogleGenAI());
-  }, []);
+    if (apiKey) {
+      setAiClient(initializeGoogleGenAI(apiKey));
+    } else {
+      setAiClient(null);
+    }
+  }, [apiKey]);
+
+  const handleSaveApiKey = (newKey: string) => {
+    setApiKey(newKey);
+    localStorage.setItem('gemini-api-key', newKey);
+  };
 
   const isSimulationMode = isSimulation;
 
@@ -391,6 +402,7 @@ const App: React.FC = () => {
             onLogout={handleLogout}
             isSimulationMode={isSimulationMode}
             aiClient={aiClient}
+            onSettingsClick={() => setIsSettingsModalOpen(true)}
             fetchWithPagination={fetchWithPagination}
           />
         );
@@ -408,12 +420,19 @@ const App: React.FC = () => {
           error={targetsError}
           onSelectTarget={handleSelectTarget}
           onLogout={handleLogout}
+          onSettingsClick={() => setIsSettingsModalOpen(true)}
         />
       );
   };
   
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      <SettingsModal 
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        onSave={handleSaveApiKey}
+        currentApiKey={apiKey}
+      />
       {renderContent()}
     </div>
   );

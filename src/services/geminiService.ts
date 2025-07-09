@@ -107,10 +107,9 @@ export const enhanceProfileFromFacebookData = async (
   }
 };
 
-export const initializeGoogleGenAI = (): GoogleGenAI | null => {
-  const apiKey = process.env.API_KEY;
+export const initializeGoogleGenAI = (apiKey: string): GoogleGenAI | null => {
   if (!apiKey) {
-    console.warn("API_KEY environment variable not set. Gemini client not initialized.");
+    console.warn("Gemini API key is not provided. Client not initialized.");
     return null;
   }
   try {

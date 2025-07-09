@@ -34,6 +34,7 @@ interface DashboardPageProps {
   onLogout: () => void;
   isSimulationMode: boolean;
   aiClient: GoogleGenAI | null;
+  onSettingsClick: () => void;
   fetchWithPagination: (path: string) => Promise<any[]>;
 }
 
@@ -61,7 +62,7 @@ const NavItem: React.FC<{
 );
 
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, fetchWithPagination }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick, fetchWithPagination }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'inbox' | 'profile'>('composer');
   
   // Composer state
@@ -732,7 +733,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   };
 
   const handleGeneratePlan = useCallback(async (request: StrategyRequest, images?: File[]) => {
-      if (!aiClient) { setPlanError("مفتاح Gemini API غير مكوّن."); return; }
+      if (!aiClient) { setPlanError("مفتاح Gemini API غير مكوّن. يرجى إضافته في الإعدادات."); return; }
       setIsGeneratingPlan(true); setPlanError(null); setContentPlan(null);
       try {
           const plan = await generateContentPlan(aiClient, request, pageProfile, images);
@@ -939,6 +940,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             onChangePage={onChangePage}
             onLogout={onLogout}
             isSimulationMode={isSimulationMode}
+            onSettingsClick={onSettingsClick}
         />
         <div className="flex flex-1 overflow-hidden">
             <aside className="w-60 bg-white dark:bg-gray-800 p-4 overflow-y-auto shadow-lg z-10 hidden md:block">

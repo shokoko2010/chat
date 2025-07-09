@@ -78,6 +78,10 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
 
   const handleGeneratePlanSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!aiClient) {
+      setFormError("مفتاح Gemini API غير مكوّن. يرجى إضافته في الإعدادات لتفعيل هذه الميزة.");
+      return;
+    }
     if (!audience || !goals) {
       setFormError('يرجى ملء حقلي الجمهور المستهدف والأهداف.');
       return;
@@ -132,7 +136,7 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   
   const aiHelperText = !aiClient ? (
     <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-4 text-center">
-      ميزات الذكاء الاصطناعي معطلة. يجب تعريف متغير البيئة `API_KEY` لتفعيلها.
+      ميزات الذكاء الاصطناعي معطلة. يرجى إدخال مفتاح Gemini API في الإعدادات لتفعيلها.
     </p>
   ) : null;
 
