@@ -5,6 +5,8 @@ import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import PhotoIcon from './icons/PhotoIcon';
 import { GoogleGenAI } from '@google/genai';
+import FacebookIcon from './icons/FacebookIcon';
+import InstagramIcon from './icons/InstagramIcon';
 
 interface BulkPostItemCardProps {
   item: BulkPostItem;
@@ -24,9 +26,11 @@ const BulkPostItemCard: React.FC<BulkPostItemCardProps> = ({
   onGenerateDescription
 }) => {
 
-  const handleTargetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-    onUpdate(item.id, { targetIds: selectedOptions });
+  const handleTargetToggle = (toggledId: string) => {
+    const newTargetIds = item.targetIds.includes(toggledId)
+      ? item.targetIds.filter(id => id !== toggledId)
+      : [...item.targetIds, toggledId];
+    onUpdate(item.id, { targetIds: newTargetIds });
   };
 
   return (
@@ -83,22 +87,29 @@ const BulkPostItemCard: React.FC<BulkPostItemCardProps> = ({
               />
             </div>
             <div>
-              <label htmlFor={`targets-${item.id}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                الوجهات (يمكن اختيار أكثر من واحد)
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                الوجهات
               </label>
-              <select
-                id={`targets-${item.id}`}
-                multiple
-                value={item.targetIds}
-                onChange={handleTargetChange}
-                className="w-full h-24 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500"
-              >
+              <div className="space-y-3 mt-2">
                 {targets.map(target => (
-                  <option key={target.id} value={target.id}>
-                    {target.name} ({target.type === 'page' ? 'صفحة' : 'انستجرام'})
-                  </option>
+                    <div key={target.id} className="flex items-center">
+                        <input
+                            id={`target-${item.id}-${target.id}`}
+                            type="checkbox"
+                            checked={item.targetIds.includes(target.id)}
+                            onChange={() => handleTargetToggle(target.id)}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <label htmlFor={`target-${item.id}-${target.id}`} className="mr-2 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                            {target.type === 'page'
+                                ? <FacebookIcon className="w-5 h-5 text-blue-600" />
+                                : <InstagramIcon className="w-5 h-5" />
+                            }
+                            <span>{target.name}</span>
+                        </label>
+                    </div>
                 ))}
-              </select>
+              </div>
             </div>
           </div>
            {item.error && <p className="text-red-500 text-sm">{item.error}</p>}
