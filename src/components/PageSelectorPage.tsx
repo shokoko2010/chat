@@ -12,7 +12,7 @@ interface PageSelectorPageProps {
   businesses?: Business[];
   onLoadPagesFromBusiness?: (businessId: string) => void;
   loadingBusinessId?: string | null;
-  loadedBusinessIds?: Set<string>;
+  loadedBusinessIds?: Record<string, boolean>;
   onSyncHistory: (target: Target) => void;
   syncingTargetId: string | null;
   isLoading: boolean;
