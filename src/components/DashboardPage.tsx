@@ -545,39 +545,49 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     if (itemsToProcess.length === 0) return;
 
     const newRepliedItems = new Set(autoRepliedItems);
-    const newRepliedUsers = { ...repliedUsersPerPost };
+    const newRepliedUsers = JSON.parse(JSON.stringify(repliedUsersPerPost));
     let replyCount = 0;
+    
+    // Tracks users replied to in this specific run to prevent duplicates in a single batch.
+    const usersRepliedThisRun: Record<string, Set<string>> = {};
 
     for (const item of itemsToProcess) {
         let replied = false;
         const lowerCaseText = item.text.toLowerCase();
 
         for (const rule of rules) {
-            if (!rule.enabled || rule.trigger.source !== item.type) continue;
-            
+            if (!rule.enabled || rule.trigger.source !== item.type) {
+                continue;
+            }
+
+            const postId = item.post?.id || '';
+            if (item.type === 'comment' && rule.replyOncePerUser) {
+                const alreadyRepliedInStorage = (newRepliedUsers[postId] || []).includes(item.authorId);
+                const alreadyRepliedThisRun = usersRepliedThisRun[postId]?.has(item.authorId);
+                if (alreadyRepliedInStorage || alreadyRepliedThisRun) {
+                    continue;
+                }
+            }
+
             const hasNegative = rule.trigger.negativeKeywords.filter(Boolean).some(nk => lowerCaseText.includes(nk.toLowerCase()));
-            if (hasNegative) continue;
-            
+            if (hasNegative) {
+                continue;
+            }
+
             const keywords = rule.trigger.keywords.filter(Boolean).map(k => k.toLowerCase());
             let matched = false;
             if (keywords.length > 0) {
-                if (rule.trigger.matchType === 'any') {
-                    matched = keywords.some(k => lowerCaseText.includes(k));
-                } else if (rule.trigger.matchType === 'all') {
-                    matched = keywords.every(k => lowerCaseText.includes(k));
-                } else if (rule.trigger.matchType === 'exact') {
-                    matched = keywords.some(k => lowerCaseText === k);
-                }
+                if (rule.trigger.matchType === 'any') matched = keywords.some(k => lowerCaseText.includes(k));
+                else if (rule.trigger.matchType === 'all') matched = keywords.every(k => lowerCaseText.includes(k));
+                else if (rule.trigger.matchType === 'exact') matched = keywords.some(k => lowerCaseText === k);
             } else {
                 matched = true;
             }
 
             if (matched) {
-                if (item.type === 'comment' && rule.replyOncePerUser && (newRepliedUsers[item.post?.id || ''] || []).includes(item.authorId)) {
-                    continue;
-                }
+                let anyActionSucceeded = false;
                 
-                let actionTaken = false;
+                // Execute ALL enabled actions for this rule by using separate 'if' statements.
                 for (const action of rule.actions) {
                     if (!action.enabled || action.messageVariations.length === 0) continue;
                     
@@ -586,60 +596,76 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
                     const finalMessage = messageToSend.replace('{user_name}', item.authorName);
                     
-                    if (action.type === 'public_reply' && item.type === 'comment') {
-                        await handleReplyToComment(item.id, finalMessage);
-                        actionTaken = true;
-                    } else if (action.type === 'private_reply' && item.type === 'comment') {
-                        await handlePrivateReplyToComment(item.id, finalMessage);
-                        actionTaken = true;
-                    } else if (action.type === 'direct_message' && item.type === 'message') {
-                        await handleSendMessage(item.conversationId || item.id, finalMessage);
-                        actionTaken = true;
+                    let success = false;
+                    try {
+                        // Using separate IFs instead of ELSE IF to allow multiple actions.
+                        if (action.type === 'public_reply' && item.type === 'comment') {
+                            success = await handleReplyToComment(item.id, finalMessage);
+                        }
+                        if (action.type === 'private_reply' && item.type === 'comment') {
+                            success = await handlePrivateReplyToComment(item.id, finalMessage);
+                        }
+                        if (action.type === 'direct_message' && item.type === 'message') {
+                            success = await handleSendMessage(item.conversationId || item.id, finalMessage);
+                        }
+                    } catch (e) {
+                        console.error(`Action ${action.type} failed for item ${item.id}`, e);
+                        success = false;
+                    }
+
+                    if (success) {
+                        anyActionSucceeded = true;
                     }
                 }
 
-                if (actionTaken) {
+                if (anyActionSucceeded) {
                     replied = true;
-                    break;
+                    if (item.type === 'comment' && rule.replyOncePerUser) {
+                        if (!usersRepliedThisRun[postId]) usersRepliedThisRun[postId] = new Set();
+                        usersRepliedThisRun[postId].add(item.authorId);
+                    }
+                    break; 
                 }
             }
         }
 
-        if (!replied && fallback.mode !== 'off') {
-            if (item.type === 'comment') continue;
-
+        if (!replied && item.type === 'message' && fallback.mode !== 'off') {
             let fallbackMessage = '';
             if (fallback.mode === 'static') {
                 fallbackMessage = fallback.staticMessage;
             } else if (fallback.mode === 'ai' && aiClient) {
                 try {
                     fallbackMessage = await generateAutoReply(aiClient, item.text, pageProfile);
-                } catch (e) {
-                    console.error("AI fallback failed:", e);
-                    continue;
-                }
+                } catch (e) { console.error("AI fallback failed:", e); }
             }
-            
-            if (fallbackMessage && item.type === 'message') {
-                await handleSendMessage(item.conversationId || item.id, fallbackMessage.replace('{user_name}', item.authorName));
-                replied = true;
+            if (fallbackMessage) {
+                const success = await handleSendMessage(item.conversationId || item.id, fallbackMessage.replace('{user_name}', item.authorName));
+                if (success) replied = true;
             }
         }
 
         if (replied) {
             newRepliedItems.add(item.id);
             replyCount++;
-            if (item.type === 'comment' && item.post) { // This now respects per-rule setting in the check above
-                if (!newRepliedUsers[item.post.id]) newRepliedUsers[item.post.id] = [];
-                newRepliedUsers[item.post.id].push(item.authorId);
-            }
         }
+    }
+
+    // After processing all items, update the permanent storage of replied users.
+    for (const postId in usersRepliedThisRun) {
+        if (!newRepliedUsers[postId]) newRepliedUsers[postId] = [];
+        usersRepliedThisRun[postId].forEach(userId => {
+            if (!newRepliedUsers[postId].includes(userId)) {
+                newRepliedUsers[postId].push(userId);
+            }
+        });
     }
 
     setAutoRepliedItems(newRepliedItems);
     setRepliedUsersPerPost(newRepliedUsers);
-    if (replyCount > 0) showNotification('success', `تم إرسال ${replyCount} ردًا تلقائيًا.`);
-}, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handlePrivateReplyToComment, handleSendMessage]);
+    if (replyCount > 0) {
+        showNotification('success', `تم إرسال ${replyCount} ردًا تلقائيًا.`);
+    }
+  }, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handlePrivateReplyToComment, handleSendMessage]);
 
 
   const fetchMessageHistory = async (conversationId: string) => {
