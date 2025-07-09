@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { InboxItem, AutoResponderSettings, InboxMessage, AutoResponderRule } from '../types';
 import Button from './ui/Button';
@@ -98,8 +99,8 @@ const InboxPage: React.FC<InboxPageProps> = ({
       if (visibleItems.length > 0) {
         const itemToSelect = visibleItems[0];
         setSelectedItem(itemToSelect);
-        if (itemToSelect.type === 'message' && !itemToSelect.messages) {
-            onFetchMessageHistory(itemToSelect.id);
+        if (itemToSelect.type === 'message' && !itemToSelect.messages && itemToSelect.conversationId) {
+            onFetchMessageHistory(itemToSelect.conversationId);
         }
       } else {
         setSelectedItem(null);
@@ -111,8 +112,8 @@ const InboxPage: React.FC<InboxPageProps> = ({
     setSelectedItem(item);
     setReplyText('');
     setSmartReplies([]);
-    if (item.type === 'message' && !item.messages) {
-      onFetchMessageHistory(item.id);
+    if (item.type === 'message' && !item.messages && item.conversationId) {
+      onFetchMessageHistory(item.conversationId);
     }
   };
 
@@ -122,6 +123,9 @@ const InboxPage: React.FC<InboxPageProps> = ({
     const success = await onReply(selectedItem, replyText);
     if(success) {
         setReplyText('');
+        if (selectedItem.type === 'message' && selectedItem.conversationId) {
+          onFetchMessageHistory(selectedItem.conversationId);
+        }
     }
     setIsReplying(false);
   };

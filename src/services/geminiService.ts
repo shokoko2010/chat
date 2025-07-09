@@ -1,5 +1,6 @@
 
 
+
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { StrategyRequest, ContentPlanItem, PostAnalytics, PageProfile, PerformanceSummaryData } from "../types";
 
@@ -503,5 +504,33 @@ export const generateSmartReplies = async (ai: GoogleGenAI, commentText: string,
   } catch (error) {
     console.error("Error generating smart replies:", error);
     throw new Error("حدث خطأ أثناء اقتراح الردود الذكية.");
+  }
+};
+
+export const generateAutoReply = async (ai: GoogleGenAI, userMessage: string, pageProfile?: PageProfile): Promise<string> => {
+  const pageContext = createPageContext(pageProfile);
+  const prompt = `
+    ${pageContext}
+    أنت مساعد خدمة عملاء ذكي لصفحة أعمال على فيسبوك. مهمتك هي الرد على رسالة/تعليق العميل التالي بشكل احترافي ومساعد.
+    الرسالة/التعليق: "${userMessage}"
+    
+    التعليمات:
+    1. اقرأ الرسالة جيدًا.
+    2. استخدم "سياق الصفحة" المتاح أعلاه لصياغة رد دقيق.
+    3. إذا كان السؤال عن سعر أو تفاصيل خدمة/منتج، قدم إجابة مباشرة من "سياق الصفحة".
+    4. إذا كان السؤال عامًا، قدم إجابة ودودة ومساعدة.
+    5. حافظ على نبرة احترافية.
+    6. الرد يجب أن يكون باللغة العربية.
+    7. لا تضف أي مقدمات أو عناوين. ابدأ بالرد مباشرة.
+  `;
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    return response.text ?? 'شكرًا لتواصلك، سيتم الرد عليك في أقرب وقت.';
+  } catch (error) {
+    console.error("Error generating auto-reply:", error);
+    throw new Error("حدث خطأ أثناء إنشاء الرد التلقائي.");
   }
 };

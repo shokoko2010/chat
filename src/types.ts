@@ -195,19 +195,33 @@ export interface InboxItem {
   messages?: InboxMessage[]; // For message history
 }
 
+
+// --- Types for Auto-Responder ---
+// A rule for keyword matching
+export interface AutoResponderRule {
+  id: string;
+  keywords: string; // comma-separated
+  publicReplyMessage: string; // For comments
+  privateReplyMessage: string; // For comments
+  messageReply: string; // For messages
+}
+
+// Fallback configuration
+export interface AutoResponderFallback {
+  mode: 'ai' | 'static' | 'off';
+  staticMessage: string;
+}
+
+// Configuration for one channel (e.g. comments).
+export interface AutoResponderConfig {
+  enabled: boolean;
+  rules: AutoResponderRule[];
+}
+
+// Top-level settings, REPLACING the old one.
 export interface AutoResponderSettings {
-  comments: {
-    realtimeEnabled: boolean;
-    keywords: string; // Comma-separated
-    replyOncePerUser: boolean;
-    publicReplyEnabled: boolean;
-    publicReplyMessage: string;
-    privateReplyEnabled: boolean;
-    privateReplyMessage: string;
-  };
-  messages: {
-    realtimeEnabled: boolean;
-    keywords: string;
-    replyMessage: string;
-  };
+  comments: AutoResponderConfig;
+  messages: AutoResponderConfig;
+  fallback: AutoResponderFallback;
+  replyOncePerUser: boolean; // For comments
 }

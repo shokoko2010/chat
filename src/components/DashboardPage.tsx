@@ -1,6 +1,8 @@
 
+
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings } from '../types';
+import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import PostPreview from './PostPreview';
@@ -12,7 +14,7 @@ import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import InboxPage from './InboxPage';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData, generateSmartReplies } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData, generateSmartReplies, generateAutoReply } from '../services/geminiService';
 import PageProfilePage from './PageProfilePage';
 
 // Icons
@@ -61,6 +63,22 @@ const NavItem: React.FC<{
         ) : null}
     </button>
 );
+
+const initialAutoResponderSettings: AutoResponderSettings = {
+  comments: {
+    enabled: false,
+    rules: [],
+  },
+  messages: {
+    enabled: false,
+    rules: [],
+  },
+  fallback: {
+    mode: 'off',
+    staticMessage: 'شكرًا على رسالتك! سيقوم أحد ممثلينا بالرد عليك في أقرب وقت ممكن.',
+  },
+  replyOncePerUser: true,
+};
 
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId }) => {
@@ -113,10 +131,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   // Inbox State
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [isInboxLoading, setIsInboxLoading] = useState(true);
-  const [autoResponderSettings, setAutoResponderSettings] = useState<AutoResponderSettings>({
-    comments: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
-    messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
-  });
+  const [autoResponderSettings, setAutoResponderSettings] = useState<AutoResponderSettings>(initialAutoResponderSettings);
   const [autoRepliedItems, setAutoRepliedItems] = useState<Set<string>>(new Set());
   const [repliedUsersPerPost, setRepliedUsersPerPost] = useState<Record<string, string[]>>({});
 
@@ -299,10 +314,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setContentPlan(savedData.contentPlan || null);
     setStrategyHistory(savedData.strategyHistory || []);
     setPublishedPosts(savedData.publishedPosts?.map((p:any) => ({...p, publishedAt: new Date(p.publishedAt)})) || []);
-    setAutoResponderSettings(savedData.autoResponderSettings || { 
-        comments: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
-        messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
-    });
+    setAutoResponderSettings(savedData.autoResponderSettings || initialAutoResponderSettings);
     setAutoRepliedItems(new Set(savedData.autoRepliedItems || []));
     setRepliedUsersPerPost(savedData.repliedUsersPerPost || {});
     setInboxItems(savedData.inboxItems?.map((i:any) => ({...i, timestamp: new Date(i.timestamp).toISOString()})) || []);
@@ -439,40 +451,86 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   };
 
   const processAutoReplies = useCallback(async (currentInboxItems: InboxItem[]) => {
-      const { comments: commentSettings, messages: messageSettings } = autoResponderSettings;
-      if (!commentSettings.realtimeEnabled && !messageSettings.realtimeEnabled) return;
-      const itemsToProcess = currentInboxItems.filter(item => !autoRepliedItems.has(item.id));
-      if (itemsToProcess.length === 0) return;
-      const newRepliedItems = new Set(autoRepliedItems);
-      const newRepliedUsers = { ...repliedUsersPerPost };
-      let replyCount = 0;
-      for (const item of itemsToProcess) {
-          let replied = false;
-          if (item.type === 'message' && messageSettings.realtimeEnabled) {
-              const keywords = messageSettings.keywords.split(',').map(k => k.trim()).filter(Boolean);
-              if (keywords.length === 0 || keywords.some(k => item.text.toLowerCase().includes(k.toLowerCase()))) {
-                  await handleSendMessage(item.id, messageSettings.replyMessage.replace('{user_name}', item.authorName));
-                  replied = true;
-              }
-          } else if (item.type === 'comment' && commentSettings.realtimeEnabled && item.post) {
-              const postId = item.post.id;
-              const keywords = commentSettings.keywords.split(',').map(k => k.trim()).filter(Boolean);
-              if ((keywords.length === 0 || keywords.some(k => item.text.toLowerCase().includes(k.toLowerCase()))) && (!commentSettings.replyOncePerUser || !(newRepliedUsers[postId]?.includes(item.authorId)))) {
-                  if (commentSettings.publicReplyEnabled && commentSettings.publicReplyMessage) await handleReplyToComment(item.id, commentSettings.publicReplyMessage.replace('{user_name}', item.authorName));
-                  if (commentSettings.privateReplyEnabled && commentSettings.privateReplyMessage) await handlePrivateReplyToComment(item.id, commentSettings.privateReplyMessage.replace('{user_name}', item.authorName));
-                  if (commentSettings.replyOncePerUser) {
-                      if (!newRepliedUsers[postId]) newRepliedUsers[postId] = [];
-                      newRepliedUsers[postId].push(item.authorId);
-                  }
-                  replied = true;
-              }
-          }
-          if (replied) { newRepliedItems.add(item.id); replyCount++; }
-      }
-      setAutoRepliedItems(newRepliedItems);
-      setRepliedUsersPerPost(newRepliedUsers);
-      if (replyCount > 0) showNotification('success', `تم إرسال ${replyCount} ردًا تلقائيًا.`);
-  }, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, showNotification]);
+    const { comments, messages, fallback, replyOncePerUser } = autoResponderSettings;
+    if (!comments.enabled && !messages.enabled && fallback.mode === 'off') return;
+
+    const itemsToProcess = currentInboxItems.filter(item => !autoRepliedItems.has(item.id));
+    if (itemsToProcess.length === 0) return;
+
+    const newRepliedItems = new Set(autoRepliedItems);
+    const newRepliedUsers = { ...repliedUsersPerPost };
+    let replyCount = 0;
+
+    for (const item of itemsToProcess) {
+        let replied = false;
+        const lowerCaseText = item.text.toLowerCase();
+        
+        const config = item.type === 'comment' ? comments : messages;
+        let matchedRule = null;
+
+        if (config.enabled) {
+            matchedRule = config.rules.find(rule => 
+                rule.keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean).some(k => lowerCaseText.includes(k))
+            );
+        }
+
+        if (matchedRule) {
+            if (item.type === 'comment') {
+                if (replyOncePerUser && repliedUsersPerPost[item.post?.id || '']?.includes(item.authorId)) continue;
+                if (matchedRule.publicReplyMessage) {
+                    await handleReplyToComment(item.id, matchedRule.publicReplyMessage.replace('{user_name}', item.authorName));
+                }
+                if (matchedRule.privateReplyMessage) {
+                    await handlePrivateReplyToComment(item.id, matchedRule.privateReplyMessage.replace('{user_name}', item.authorName));
+                }
+            } else { // message
+                if (matchedRule.messageReply) {
+                    await handleSendMessage(item.conversationId || item.id, matchedRule.messageReply.replace('{user_name}', item.authorName));
+                }
+            }
+            replied = true;
+        } else {
+            if (fallback.mode === 'off') continue;
+            // For comments, fallback usually sends a private reply.
+            // Let's only do fallback for messages to avoid spamming comments.
+            if (item.type === 'comment') continue;
+            
+            let fallbackMessage = '';
+            if (fallback.mode === 'static') {
+                fallbackMessage = fallback.staticMessage;
+            } else if (fallback.mode === 'ai' && aiClient) {
+                try {
+                    fallbackMessage = await generateAutoReply(aiClient, item.text, pageProfile);
+                } catch (e) {
+                    console.error("AI fallback failed:", e);
+                    continue;
+                }
+            }
+            
+            if (fallbackMessage) {
+                if (item.type === 'message') {
+                    await handleSendMessage(item.conversationId || item.id, fallbackMessage.replace('{user_name}', item.authorName));
+                }
+                replied = true;
+            }
+        }
+
+        if (replied) {
+            newRepliedItems.add(item.id);
+            replyCount++;
+            if (item.type === 'comment' && replyOncePerUser && item.post) {
+                if (!newRepliedUsers[item.post.id]) newRepliedUsers[item.post.id] = [];
+                newRepliedUsers[item.post.id].push(item.authorId);
+            }
+        }
+    }
+
+    setAutoRepliedItems(newRepliedItems);
+    setRepliedUsersPerPost(newRepliedUsers);
+    if (replyCount > 0) showNotification('success', `تم إرسال ${replyCount} ردًا تلقائيًا.`);
+
+}, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handlePrivateReplyToComment, handleSendMessage]);
+
 
   const fetchMessageHistory = async (conversationId: string) => {
     const response: any = await new Promise(resolve => window.FB.api(`/${conversationId}/messages`, { fields: 'id,message,from,created_time', access_token: managedTarget.access_token }, (res: any) => resolve(res)));
@@ -593,7 +651,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }, [view, managedTarget.id, managedTarget.access_token, linkedInstagramTarget?.id, isSimulationMode, fetchWithPagination, showNotification, processAutoReplies]);
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
-      return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.id, message);
+      return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.conversationId || selectedItem.id, message);
   };
 
   const handleGenerateSmartReplies = async (commentText: string): Promise<string[]> => {
@@ -974,7 +1032,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 </div>
             );
         case 'inbox':
-            return <InboxPage items={inboxItems} isLoading={isInboxLoading} onReply={handleReplySubmit} onGenerateSmartReplies={handleGenerateSmartReplies} onFetchMessageHistory={fetchMessageHistory} autoResponderSettings={autoResponderSettings} onAutoResponderSettingsChange={setAutoResponderSettings} onSync={handleInboxSync} isSyncing={isSyncing} />;
+            return <InboxPage items={inboxItems} isLoading={isInboxLoading} onReply={handleReplySubmit} onGenerateSmartReplies={handleGenerateSmartReplies} onFetchMessageHistory={fetchMessageHistory} autoResponderSettings={autoResponderSettings} onAutoResponderSettingsChange={setAutoResponderSettings} onSync={handleInboxSync} isSyncing={isSyncing} aiClient={aiClient} />;
         case 'calendar':
             return <ContentCalendar posts={scheduledPosts} onDelete={handleDeleteScheduledPost} />;
         case 'drafts':
