@@ -112,7 +112,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     comments: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
     messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
   });
-  const [autoRepliedItems, setAutoRepliedItems] = useState<Set<string>>(() => new Set([]));
+  const [autoRepliedItems, setAutoRepliedItems] = useState<Record<string, boolean>>({});
   const [repliedUsersPerPost, setRepliedUsersPerPost] = useState<Record<string, string[]>>({});
 
 
@@ -955,12 +955,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         }
 
         const process = async () => {
-            const itemsToProcess = inboxItems.filter(item => !autoRepliedItems.has(item.id));
+            const itemsToProcess = inboxItems.filter(item => !autoRepliedItems[item.id]);
             if (itemsToProcess.length === 0) return;
 
             const { comments: commentSettings, messages: messageSettings } = autoResponderSettings;
 
-            let repliedItemsThisRun = new Set<string>([]);
+            let repliedItemsThisRun: Record<string, boolean> = {};
             let repliedUsersThisRun: Record<string, string[]> = {};
 
             const keywordsMatch = (text: string, keywordsStr: string) => {
@@ -985,19 +985,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         await new Promise(resolve => window.FB.api(`/${item.id}/private_replies`, 'POST', { message: replaceUsername(commentSettings.privateReplyMessage, item.authorName), access_token: managedTarget.access_token }, (res: any) => resolve(res)));
                     }
                     
-                    repliedItemsThisRun.add(item.id);
+                    repliedItemsThisRun[item.id] = true;
                     if (postKey) {
                         repliedUsersThisRun[postKey] = [...(repliedUsersThisRun[postKey] || []), item.authorId];
                     }
 
                 } else if (item.type === 'message' && messageSettings.realtimeEnabled && keywordsMatch(item.text, messageSettings.keywords)) {
                     await handleInboxReply(item, replaceUsername(messageSettings.replyMessage, item.authorName));
-                    repliedItemsThisRun.add(item.id);
+                    repliedItemsThisRun[item.id] = true;
                 }
             }
             
-            if (repliedItemsThisRun.size > 0) {
-                setAutoRepliedItems(prev => new Set([...prev, ...repliedItemsThisRun]));
+            if (Object.keys(repliedItemsThisRun).length > 0) {
+                setAutoRepliedItems(prev => ({ ...prev, ...repliedItemsThisRun }));
             }
             if(Object.keys(repliedUsersThisRun).length > 0) {
                 setRepliedUsersPerPost(prev => {
