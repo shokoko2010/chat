@@ -90,7 +90,7 @@ const TagInput: React.FC<{
 };
 
 
-const AutoResponderRuleEditor: React.FC<{
+const AutoResponderRuleEditorCard: React.FC<{
   rule: AutoResponderRule;
   onUpdate: (updatedRule: AutoResponderRule) => void;
   onDelete: () => void;
@@ -193,6 +193,128 @@ const AutoResponderRuleEditor: React.FC<{
   );
 };
 
+const AutoResponderEditor: React.FC<{
+  initialSettings: AutoResponderSettings;
+  onSave: (settings: AutoResponderSettings) => void;
+  onCancel: () => void;
+  aiClient: GoogleGenAI | null;
+}> = ({ initialSettings, onSave, onCancel, aiClient }) => {
+    const [draftSettings, setDraftSettings] = useState(() => JSON.parse(JSON.stringify(initialSettings)));
+    const [draggedRuleId, setDraggedRuleId] = useState<string | null>(null);
+    const { rules, fallback } = draftSettings;
+    
+    const handleUpdateRule = (updatedRule: AutoResponderRule) => {
+        setDraftSettings({ ...draftSettings, rules: rules.map((r:AutoResponderRule) => r.id === updatedRule.id ? updatedRule : r)});
+    };
+    
+    const handleAddRule = () => {
+        const newRule: AutoResponderRule = {
+            id: `rule_${Date.now()}`,
+            name: 'قاعدة جديدة',
+            enabled: true,
+            replyOncePerUser: true,
+            trigger: { source: 'comment', matchType: 'any', keywords: [], negativeKeywords: [] },
+            actions: [
+              { type: 'public_reply', enabled: false, messageVariations: [] },
+              { type: 'private_reply', enabled: false, messageVariations: [] },
+              { type: 'direct_message', enabled: false, messageVariations: [] },
+            ],
+        };
+        setDraftSettings({ ...draftSettings, rules: [newRule, ...rules]});
+    };
+    
+    const handleDeleteRule = (ruleId: string) => {
+      if (window.confirm("هل أنت متأكد من حذف هذه القاعدة؟")) {
+        setDraftSettings({ ...draftSettings, rules: rules.filter((r:AutoResponderRule) => r.id !== ruleId)});
+      }
+    };
+    
+    const handleDragStart = (e: React.DragEvent<HTMLDivElement>, ruleId: string) => {
+        e.dataTransfer.setData('ruleId', ruleId);
+        setDraggedRuleId(ruleId);
+    };
+
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetRuleId: string) => {
+        e.preventDefault();
+        const sourceRuleId = e.dataTransfer.getData('ruleId');
+        if (sourceRuleId === targetRuleId) return;
+
+        const sourceIndex = rules.findIndex((r:AutoResponderRule) => r.id === sourceRuleId);
+        const targetIndex = rules.findIndex((r:AutoResponderRule) => r.id === targetRuleId);
+        
+        const reorderedRules = Array.from(rules);
+        const [removed] = reorderedRules.splice(sourceIndex, 1);
+        reorderedRules.splice(targetIndex, 0, removed);
+
+        setDraftSettings({ ...draftSettings, rules: reorderedRules });
+        setDraggedRuleId(null);
+    };
+
+    return (
+        <div className="p-4 pt-0 fade-in">
+            <div className="space-y-6">
+                <div>
+                     <div className="flex justify-between items-center mb-4">
+                       <h3 className="text-lg font-bold text-gray-800 dark:text-white">قواعد الرد التلقائي (الأولوية من الأعلى للأسفل)</h3>
+                       <Button variant="secondary" size="sm" onClick={handleAddRule}>+ إضافة قاعدة جديدة</Button>
+                     </div>
+                     <div className="space-y-4 max-h-[28rem] overflow-y-auto -mr-2 pr-2">
+                        {rules.length > 0 ? (
+                          rules.map((rule: AutoResponderRule) => (
+                              <div
+                                key={rule.id}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, rule.id)}
+                                onDragOver={handleDragOver}
+                                onDrop={(e) => handleDrop(e, rule.id)}
+                                onDragEnd={() => setDraggedRuleId(null)}
+                                className={`transition-all duration-300 ${draggedRuleId === rule.id ? 'opacity-50 scale-105' : ''}`}
+                              >
+                                <AutoResponderRuleEditorCard rule={rule} onUpdate={handleUpdateRule} onDelete={() => handleDeleteRule(rule.id)} aiClient={aiClient} />
+                              </div>
+                          ))
+                        ) : (
+                          <p className="text-center text-gray-500 dark:text-gray-400 py-4">لا توجد قواعد مخصصة. انقر على "إضافة قاعدة" للبدء.</p>
+                        )}
+                     </div>
+                </div>
+                
+                <div className="border-t dark:border-gray-700 pt-4">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2">🧠 الرد الاحتياطي (Fallback)</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">يعمل هذا الرد على الرسائل الخاصة فقط عندما لا تتطابق الرسالة مع أي من القواعد المخصصة أعلاه.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                        <div>
+                            <label htmlFor="fallback-mode" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الوضع:</label>
+                            <select id="fallback-mode" value={fallback.mode} onChange={e => setDraftSettings({ ...draftSettings, fallback: {...fallback, mode: e.target.value as any}})} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="off">إيقاف</option>
+                                <option value="static">رسالة ثابتة</option>
+                                <option value="ai" disabled={!aiClient}>رد بالذكاء الاصطناعي</option>
+                            </select>
+                             {!aiClient && <p className="text-xs text-yellow-500 mt-1">ميزة الرد بالذكاء الاصطناعي تتطلب مفتاح API.</p>}
+                        </div>
+                        {fallback.mode === 'static' &&
+                            <div className="transition-opacity duration-300 opacity-100">
+                                <label htmlFor="fallback-message" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">نص الرسالة الثابتة:</label>
+                                <input id="fallback-message" type="text" value={fallback.staticMessage} onChange={e => setDraftSettings({ ...draftSettings, fallback: {...fallback, staticMessage: e.target.value}})} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"/>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center">استخدم {'{user_name}'} ليتم استبداله باسم المستخدم في رسائل الرد.</p>
+            </div>
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t dark:border-gray-700">
+                <Button variant="secondary" onClick={onCancel}>إلغاء</Button>
+                <Button onClick={() => onSave(draftSettings)}>حفظ الإعدادات</Button>
+            </div>
+        </div>
+    );
+};
+
 
 const InboxPage: React.FC<InboxPageProps> = ({
   items,
@@ -213,7 +335,7 @@ const InboxPage: React.FC<InboxPageProps> = ({
   const [isGeneratingReplies, setIsGeneratingReplies] = useState(false);
   const [viewFilter, setViewFilter] = useState<'all' | 'messages' | 'comments'>('all');
   const [visibleCount, setVisibleCount] = useState(30);
-  const [draggedRuleId, setDraggedRuleId] = useState<string | null>(null);
+  const [isEditingSettings, setIsEditingSettings] = useState(false);
 
 
   const filteredItems = React.useMemo(() => {
@@ -287,6 +409,11 @@ const InboxPage: React.FC<InboxPageProps> = ({
     const replies = await onGenerateSmartReplies(selectedItem.text);
     setSmartReplies(replies);
     setIsGeneratingReplies(false);
+  };
+
+  const handleSaveSettings = (newSettings: AutoResponderSettings) => {
+    onAutoResponderSettingsChange(newSettings);
+    setIsEditingSettings(false);
   };
   
   const renderList = () => {
@@ -393,115 +520,6 @@ const InboxPage: React.FC<InboxPageProps> = ({
     )
   }
   
-  const AutoResponderSettingsSection = () => {
-    const { rules, fallback } = autoResponderSettings;
-    
-    const handleUpdateRule = (updatedRule: AutoResponderRule) => {
-        onAutoResponderSettingsChange({ ...autoResponderSettings, rules: rules.map(r => r.id === updatedRule.id ? updatedRule : r)});
-    };
-    
-    const handleAddRule = () => {
-        const newRule: AutoResponderRule = {
-            id: `rule_${Date.now()}`,
-            name: 'قاعدة جديدة',
-            enabled: true,
-            replyOncePerUser: true,
-            trigger: { source: 'comment', matchType: 'any', keywords: [], negativeKeywords: [] },
-            actions: [
-              { type: 'public_reply', enabled: false, messageVariations: [] },
-              { type: 'private_reply', enabled: false, messageVariations: [] },
-              { type: 'direct_message', enabled: false, messageVariations: [] },
-            ],
-        };
-        onAutoResponderSettingsChange({ ...autoResponderSettings, rules: [newRule, ...rules]});
-    };
-    
-    const handleDeleteRule = (ruleId: string) => {
-      if (window.confirm("هل أنت متأكد من حذف هذه القاعدة؟")) {
-        onAutoResponderSettingsChange({ ...autoResponderSettings, rules: rules.filter(r => r.id !== ruleId)});
-      }
-    };
-    
-    const handleDragStart = (e: React.DragEvent<HTMLDivElement>, ruleId: string) => {
-        e.dataTransfer.setData('ruleId', ruleId);
-        setDraggedRuleId(ruleId);
-    };
-
-    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-    };
-
-    const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetRuleId: string) => {
-        e.preventDefault();
-        const sourceRuleId = e.dataTransfer.getData('ruleId');
-        if (sourceRuleId === targetRuleId) return;
-
-        const sourceIndex = rules.findIndex(r => r.id === sourceRuleId);
-        const targetIndex = rules.findIndex(r => r.id === targetRuleId);
-        
-        const reorderedRules = Array.from(rules);
-        const [removed] = reorderedRules.splice(sourceIndex, 1);
-        reorderedRules.splice(targetIndex, 0, removed);
-
-        onAutoResponderSettingsChange({ ...autoResponderSettings, rules: reorderedRules });
-        setDraggedRuleId(null);
-    };
-
-    return (
-        <div className="space-y-6">
-            <div>
-                 <div className="flex justify-between items-center mb-4">
-                   <h3 className="text-lg font-bold text-gray-800 dark:text-white">قواعد الرد التلقائي (الأولوية من الأعلى للأسفل)</h3>
-                   <Button variant="secondary" size="sm" onClick={handleAddRule}>+ إضافة قاعدة جديدة</Button>
-                 </div>
-                 <div className="space-y-4 max-h-96 overflow-y-auto -mr-2 pr-2">
-                    {rules.length > 0 ? (
-                      rules.map(rule => (
-                          <div
-                            key={rule.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, rule.id)}
-                            onDragOver={handleDragOver}
-                            onDrop={(e) => handleDrop(e, rule.id)}
-                            onDragEnd={() => setDraggedRuleId(null)}
-                            className={`transition-all duration-300 ${draggedRuleId === rule.id ? 'opacity-50 scale-105' : ''}`}
-                          >
-                            <AutoResponderRuleEditor rule={rule} onUpdate={handleUpdateRule} onDelete={() => handleDeleteRule(rule.id)} aiClient={aiClient} />
-                          </div>
-                      ))
-                    ) : (
-                      <p className="text-center text-gray-500 dark:text-gray-400 py-4">لا توجد قواعد مخصصة. انقر على "إضافة قاعدة" للبدء.</p>
-                    )}
-                 </div>
-            </div>
-            
-            <div className="border-t dark:border-gray-700 pt-4">
-                <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2">🧠 الرد الاحتياطي (Fallback)</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">يعمل هذا الرد على الرسائل الخاصة فقط عندما لا تتطابق الرسالة مع أي من القواعد المخصصة أدناه.</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                    <div>
-                        <label htmlFor="fallback-mode" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الوضع:</label>
-                        <select id="fallback-mode" value={fallback.mode} onChange={e => onAutoResponderSettingsChange({ ...autoResponderSettings, fallback: {...fallback, mode: e.target.value as any}})} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500">
-                            <option value="off">إيقاف</option>
-                            <option value="static">رسالة ثابتة</option>
-                            <option value="ai" disabled={!aiClient}>رد بالذكاء الاصطناعي</option>
-                        </select>
-                         {!aiClient && <p className="text-xs text-yellow-500 mt-1">ميزة الرد بالذكاء الاصطناعي تتطلب مفتاح API.</p>}
-                    </div>
-                    {fallback.mode === 'static' &&
-                        <div className="transition-opacity duration-300 opacity-100">
-                            <label htmlFor="fallback-message" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">نص الرسالة الثابتة:</label>
-                            <input id="fallback-message" type="text" value={fallback.staticMessage} onChange={e => onAutoResponderSettingsChange({ ...autoResponderSettings, fallback: {...fallback, staticMessage: e.target.value}})} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"/>
-                        </div>
-                    }
-                </div>
-            </div>
-
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center">استخدم {'{user_name}'} ليتم استبداله باسم المستخدم في رسائل الرد.</p>
-        </div>
-    );
-  };
-
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-250px)] bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden fade-in">
         <div className="w-full lg:w-1/3 border-r dark:border-gray-700 flex flex-col">
@@ -527,12 +545,23 @@ const InboxPage: React.FC<InboxPageProps> = ({
             <div className="flex-grow overflow-y-auto">
               {renderDetail()}
             </div>
-            <details className="flex-shrink-0 bg-gray-50 dark:bg-gray-900/50 border-t dark:border-gray-700">
-                <summary className="p-4 font-bold text-lg cursor-pointer text-gray-800 dark:text-white">إعدادات الرد التلقائي</summary>
-                <div className="p-4 pt-0">
-                    <AutoResponderSettingsSection />
+            <div className="flex-shrink-0 bg-gray-50 dark:bg-gray-900/50 border-t dark:border-gray-700">
+              {isEditingSettings ? (
+                <AutoResponderEditor
+                  initialSettings={autoResponderSettings}
+                  onSave={handleSaveSettings}
+                  onCancel={() => setIsEditingSettings(false)}
+                  aiClient={aiClient}
+                />
+              ) : (
+                <div className="p-4 flex justify-between items-center">
+                  <p className="font-bold text-lg text-gray-800 dark:text-white">إعدادات الرد التلقائي</p>
+                  <Button variant="secondary" onClick={() => setIsEditingSettings(true)}>
+                    تعديل الإعدادات
+                  </Button>
                 </div>
-            </details>
+              )}
+            </div>
         </div>
     </div>
   );
