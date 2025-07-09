@@ -1,12 +1,12 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Target, Business } from '../types';
 import Button from './ui/Button';
 import FacebookIcon from './icons/FacebookIcon';
 import InstagramIcon from './icons/InstagramIcon';
-import BusinessPortfolioManager from './BusinessPortfolioManager';
 import SettingsIcon from './icons/SettingsIcon';
 import SearchIcon from './icons/SearchIcon';
+import ChevronDownIcon from './icons/ChevronDownIcon';
 
 interface PageSelectorPageProps {
   targets: Target[];
@@ -63,6 +63,18 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
   onSettingsClick
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [isPortfolioDropdownOpen, setIsPortfolioDropdownOpen] = useState(false);
+  const portfolioRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (portfolioRef.current && !portfolioRef.current.contains(event.target as Node)) {
+        setIsPortfolioDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const renderContent = () => {
     if (isLoading && targets.length === 0) {
@@ -154,16 +166,49 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
                 </div>
               </div>
               
-              {businesses && businesses.length > 0 && onLoadPagesFromBusiness && loadingBusinessId !== undefined && loadedBusinessIds && (
-                <div className="mb-8">
-                    <BusinessPortfolioManager 
-                        businesses={businesses}
-                        onLoadPages={onLoadPagesFromBusiness}
-                        loadingBusinessId={loadingBusinessId}
-                        loadedBusinessIds={loadedBusinessIds}
-                    />
-                </div>
-              )}
+                {businesses && businesses.length > 0 && onLoadPagesFromBusiness && loadingBusinessId !== undefined && loadedBusinessIds && (
+                    <div className="mb-8">
+                        <div className="relative inline-block text-left" ref={portfolioRef}>
+                            <div>
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => setIsPortfolioDropdownOpen(prev => !prev)}
+                                >
+                                    تحميل من حافظة أعمال
+                                    <ChevronDownIcon className={`w-5 h-5 mr-2 -ml-1 transition-transform ${isPortfolioDropdownOpen ? 'rotate-180' : ''}`} />
+                                </Button>
+                            </div>
+                            {isPortfolioDropdownOpen && (
+                                <div className="origin-top-right absolute right-0 mt-2 w-72 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black dark:ring-gray-600 ring-opacity-5 focus:outline-none z-10">
+                                    <div className="py-1">
+                                        {businesses.map(business => {
+                                            const isLoading = loadingBusinessId === business.id;
+                                            const isLoaded = loadedBusinessIds.has(business.id);
+                                            return (
+                                                <button
+                                                    key={business.id}
+                                                    onClick={() => {
+                                                        onLoadPagesFromBusiness(business.id);
+                                                        setIsPortfolioDropdownOpen(false);
+                                                    }}
+                                                    disabled={isLoaded || isLoading}
+                                                    className="w-full text-right flex justify-between items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                                                >
+                                                    <span>{business.name}</span>
+                                                    {isLoading ? (
+                                                        <span className="text-xs">جاري التحميل...</span>
+                                                    ) : isLoaded ? (
+                                                        <span className="text-xs text-green-500">تم التحميل</span>
+                                                    ) : null}
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
               {renderContent()}
             </div>
         </main>

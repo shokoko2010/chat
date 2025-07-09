@@ -476,7 +476,7 @@ const InboxPage: React.FC<InboxPageProps> = ({
                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">قواعد الرد التلقائي (الأولوية من الأعلى للأسفل)</h3>
                    <Button variant="secondary" size="sm" onClick={handleAddRule}>+ إضافة قاعدة جديدة</Button>
                  </div>
-                 <div className="space-y-4">
+                 <div className="space-y-4 max-h-[60vh] overflow-y-auto -mr-2 pr-2">
                     {rules.length > 0 ? (
                       rules.map(rule => (
                           <div
