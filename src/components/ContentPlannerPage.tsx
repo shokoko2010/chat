@@ -153,7 +153,7 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   
   const aiHelperText = !aiClient ? (
     <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-4 text-center">
-      ميزة الذكاء الاصطناعي معطلة. افتح الإعدادات ⚙️ لإضافة مفتاح API الخاص بك.
+      ميزات الذكاء الاصطناعي معطلة. يجب تعريف متغير البيئة `API_KEY` لتفعيلها.
     </p>
   ) : null;
 
