@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { InboxItem, AutoResponderSettings, InboxMessage, AutoResponderRule } from '../types';
 import Button from './ui/Button';
@@ -96,18 +93,25 @@ const InboxPage: React.FC<InboxPageProps> = ({
 
 
   useEffect(() => {
-    if (!selectedItem || !filteredItems.find(i => i.id === selectedItem.id)) {
-      if (visibleItems.length > 0) {
-        const itemToSelect = visibleItems[0];
-        setSelectedItem(itemToSelect);
-        if (itemToSelect.type === 'message' && !itemToSelect.messages && itemToSelect.conversationId) {
-            onFetchMessageHistory(itemToSelect.conversationId);
+    // This effect runs ONLY when the filtered items change (i.e., when the source `items` or `viewFilter` changes).
+    // It prevents performance issues by not running on every scroll.
+    const currentSelectionIsValid = selectedItem && filteredItems.some(item => item.id === selectedItem.id);
+
+    // If the selection is not valid (e.g., filter changed and item disappeared)
+    // or if no item is selected at all, then pick a new one.
+    if (!currentSelectionIsValid) {
+      if (filteredItems.length > 0) {
+        const newSelectedItem = filteredItems[0];
+        setSelectedItem(newSelectedItem);
+        if (newSelectedItem.type === 'message' && !newSelectedItem.messages && newSelectedItem.conversationId) {
+          onFetchMessageHistory(newSelectedItem.conversationId);
         }
       } else {
+        // If there are no items in the filtered list, clear the selection.
         setSelectedItem(null);
       }
     }
-  }, [visibleItems, selectedItem, filteredItems, onFetchMessageHistory]);
+  }, [filteredItems, onFetchMessageHistory, selectedItem]);
 
   const handleItemSelect = (item: InboxItem) => {
     setSelectedItem(item);
