@@ -450,6 +450,32 @@ const InboxPage: React.FC<InboxPageProps> = ({
     return (
         <div className="space-y-6">
             <div>
+                 <div className="flex justify-between items-center mb-4">
+                   <h3 className="text-lg font-bold text-gray-800 dark:text-white">قواعد الرد التلقائي (الأولوية من الأعلى للأسفل)</h3>
+                   <Button variant="secondary" size="sm" onClick={handleAddRule}>+ إضافة قاعدة جديدة</Button>
+                 </div>
+                 <div className="space-y-4 max-h-96 overflow-y-auto -mr-2 pr-2">
+                    {rules.length > 0 ? (
+                      rules.map(rule => (
+                          <div
+                            key={rule.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, rule.id)}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, rule.id)}
+                            onDragEnd={() => setDraggedRuleId(null)}
+                            className={`transition-all duration-300 ${draggedRuleId === rule.id ? 'opacity-50 scale-105' : ''}`}
+                          >
+                            <AutoResponderRuleEditor rule={rule} onUpdate={handleUpdateRule} onDelete={() => handleDeleteRule(rule.id)} aiClient={aiClient} />
+                          </div>
+                      ))
+                    ) : (
+                      <p className="text-center text-gray-500 dark:text-gray-400 py-4">لا توجد قواعد مخصصة. انقر على "إضافة قاعدة" للبدء.</p>
+                    )}
+                 </div>
+            </div>
+            
+            <div className="border-t dark:border-gray-700 pt-4">
                 <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2">🧠 الرد الاحتياطي (Fallback)</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">يعمل هذا الرد على الرسائل الخاصة فقط عندما لا تتطابق الرسالة مع أي من القواعد المخصصة أدناه.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
@@ -469,32 +495,6 @@ const InboxPage: React.FC<InboxPageProps> = ({
                         </div>
                     }
                 </div>
-            </div>
-            
-            <div className="border-t dark:border-gray-700 pt-4">
-                 <div className="flex justify-between items-center mb-4">
-                   <h3 className="text-lg font-bold text-gray-800 dark:text-white">قواعد الرد التلقائي (الأولوية من الأعلى للأسفل)</h3>
-                   <Button variant="secondary" size="sm" onClick={handleAddRule}>+ إضافة قاعدة جديدة</Button>
-                 </div>
-                 <div className="space-y-4 max-h-[60vh] overflow-y-auto -mr-2 pr-2">
-                    {rules.length > 0 ? (
-                      rules.map(rule => (
-                          <div
-                            key={rule.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, rule.id)}
-                            onDragOver={handleDragOver}
-                            onDrop={(e) => handleDrop(e, rule.id)}
-                            onDragEnd={() => setDraggedRuleId(null)}
-                            className={`transition-all duration-300 ${draggedRuleId === rule.id ? 'opacity-50 scale-105' : ''}`}
-                          >
-                            <AutoResponderRuleEditor rule={rule} onUpdate={handleUpdateRule} onDelete={() => handleDeleteRule(rule.id)} aiClient={aiClient} />
-                          </div>
-                      ))
-                    ) : (
-                      <p className="text-center text-gray-500 dark:text-gray-400 py-4">لا توجد قواعد مخصصة. انقر على "إضافة قاعدة" للبدء.</p>
-                    )}
-                 </div>
             </div>
 
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center">استخدم {'{user_name}'} ليتم استبداله باسم المستخدم في رسائل الرد.</p>
