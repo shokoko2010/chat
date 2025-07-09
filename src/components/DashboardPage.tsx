@@ -70,7 +70,6 @@ const initialAutoResponderSettings: AutoResponderSettings = {
     mode: 'off',
     staticMessage: 'شكرًا على رسالتك! سيقوم أحد ممثلينا بالرد عليك في أقرب وقت ممكن.',
   },
-  replyOncePerUser: true,
 };
 
 
@@ -304,26 +303,44 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
     const loadedSettings = savedData.autoResponderSettings;
 
-    // Data Migration Logic for AutoResponder
-    const migrateSettings = (oldSettings: any): AutoResponderSettings => {
+    // --- Data Migration Logic for AutoResponder ---
+    const migrateSettings = (settings: any): AutoResponderSettings => {
+        // If settings have `rules`, they are likely new or already migrated.
+        // We just need to ensure new fields are present.
+        if (settings && Array.isArray(settings.rules)) {
+            const migratedRules = settings.rules.map((rule: any) => ({
+                ...rule,
+                enabled: typeof rule.enabled === 'boolean' ? rule.enabled : true,
+                replyOncePerUser: typeof rule.replyOncePerUser === 'boolean'
+                    ? rule.replyOncePerUser
+                    : (rule.trigger.source === 'comment' ? settings.replyOncePerUser ?? true : undefined),
+            }));
+            return {
+                rules: migratedRules,
+                fallback: settings.fallback || initialAutoResponderSettings.fallback,
+            };
+        }
+        
+        // Handle very old structure (pre-IFTTT)
         const newRules: AutoResponderRule[] = [];
-        if (oldSettings.comments?.enabled && oldSettings.comments?.rules) {
-            oldSettings.comments.rules.forEach((oldRule: any) => {
+        const globalReplyOnce = settings?.replyOncePerUser ?? true;
+
+        if (settings?.comments?.rules) {
+             settings.comments.rules.forEach((oldRule: any) => {
                 const actions: AutoResponderAction[] = [];
-                if (oldRule.publicReplyMessage) {
-                    actions.push({ type: 'public_reply', enabled: true, messageVariations: [oldRule.publicReplyMessage] });
-                }
-                if (oldRule.privateReplyMessage) {
-                    actions.push({ type: 'private_reply', enabled: true, messageVariations: [oldRule.privateReplyMessage] });
-                }
+                if (oldRule.publicReplyMessage) actions.push({ type: 'public_reply', enabled: true, messageVariations: [oldRule.publicReplyMessage] });
+                if (oldRule.privateReplyMessage) actions.push({ type: 'private_reply', enabled: true, messageVariations: [oldRule.privateReplyMessage] });
+                
                 if (actions.length > 0) {
                     newRules.push({
                         id: oldRule.id || `migrated_c_${Date.now()}_${Math.random()}`,
                         name: `قاعدة تعليقات لـ "${oldRule.keywords}"`,
+                        enabled: settings.comments.enabled ?? true,
+                        replyOncePerUser: globalReplyOnce,
                         trigger: {
                             source: 'comment',
                             matchType: 'any',
-                            keywords: oldRule.keywords.split(',').map((k:string) => k.trim()).filter(Boolean),
+                            keywords: (oldRule.keywords || '').split(',').map((k:string) => k.trim()).filter(Boolean),
                             negativeKeywords: [],
                         },
                         actions,
@@ -331,16 +348,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
             });
         }
-        if (oldSettings.messages?.enabled && oldSettings.messages?.rules) {
-            oldSettings.messages.rules.forEach((oldRule: any) => {
+         if (settings?.messages?.rules) {
+            settings.messages.rules.forEach((oldRule: any) => {
                  if (oldRule.messageReply) {
                      newRules.push({
                         id: oldRule.id || `migrated_m_${Date.now()}_${Math.random()}`,
                         name: `قاعدة رسائل لـ "${oldRule.keywords}"`,
+                        enabled: settings.messages.enabled ?? true,
                         trigger: {
                             source: 'message',
                             matchType: 'any',
-                            keywords: oldRule.keywords.split(',').map((k:string) => k.trim()).filter(Boolean),
+                            keywords: (oldRule.keywords || '').split(',').map((k:string) => k.trim()).filter(Boolean),
                             negativeKeywords: [],
                         },
                         actions: [{ type: 'direct_message', enabled: true, messageVariations: [oldRule.messageReply] }],
@@ -348,30 +366,34 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                  }
             });
         }
+
         return {
             rules: newRules,
-            fallback: oldSettings.fallback || initialAutoResponderSettings.fallback,
-            replyOncePerUser: typeof oldSettings.replyOncePerUser === 'boolean' ? oldSettings.replyOncePerUser : true,
+            fallback: settings?.fallback || initialAutoResponderSettings.fallback,
         };
     };
 
     let finalSettings: AutoResponderSettings;
-    if (loadedSettings && (loadedSettings.comments || loadedSettings.messages)) {
-        finalSettings = migrateSettings(loadedSettings);
-        showNotification('success', 'تم تحديث نظام الرد التلقائي! يرجى مراجعة إعداداتك الجديدة.');
-    } else if (loadedSettings) {
-        finalSettings = {
-            ...initialAutoResponderSettings,
-            ...loadedSettings,
-            rules: loadedSettings.rules || [],
-            fallback: { ...initialAutoResponderSettings.fallback, ...(loadedSettings.fallback || {}) }
-        };
+    if (loadedSettings) {
+        const isOldStructure = loadedSettings.comments || loadedSettings.messages || typeof loadedSettings.replyOncePerUser === 'boolean';
+        const needsMigration = loadedSettings.rules && loadedSettings.rules.some((r:any) => typeof r.enabled !== 'boolean');
+
+        if (isOldStructure || needsMigration) {
+            finalSettings = migrateSettings(loadedSettings);
+            if (isOldStructure) { // Only show notification for major migrations
+                 showNotification('success', 'تم تحديث نظام الرد التلقائي! يرجى مراجعة إعداداتك الجديدة.');
+            }
+        } else {
+             finalSettings = {
+                ...initialAutoResponderSettings,
+                ...loadedSettings,
+            };
+        }
     } else {
         finalSettings = initialAutoResponderSettings;
     }
     setAutoResponderSettings(finalSettings);
     // --- End of Data Migration ---
-
 
     setPageProfile(savedData.pageProfile || { description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
     setDrafts(savedData.drafts?.map((d: any) => ({...d, imageFile: null})) || []);
@@ -516,7 +538,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   };
 
   const processAutoReplies = useCallback(async (currentInboxItems: InboxItem[]) => {
-    const { rules, fallback, replyOncePerUser } = autoResponderSettings;
+    const { rules, fallback } = autoResponderSettings;
     if (rules.length === 0 && fallback.mode === 'off') return;
 
     const itemsToProcess = currentInboxItems.filter(item => !autoRepliedItems.has(item.id));
@@ -531,7 +553,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         const lowerCaseText = item.text.toLowerCase();
 
         for (const rule of rules) {
-            if (rule.trigger.source !== item.type) continue;
+            if (!rule.enabled || rule.trigger.source !== item.type) continue;
             
             const hasNegative = rule.trigger.negativeKeywords.filter(Boolean).some(nk => lowerCaseText.includes(nk.toLowerCase()));
             if (hasNegative) continue;
@@ -551,7 +573,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             }
 
             if (matched) {
-                if (item.type === 'comment' && replyOncePerUser && (newRepliedUsers[item.post?.id || ''] || []).includes(item.authorId)) {
+                if (item.type === 'comment' && rule.replyOncePerUser && (newRepliedUsers[item.post?.id || ''] || []).includes(item.authorId)) {
                     continue;
                 }
                 
@@ -607,7 +629,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         if (replied) {
             newRepliedItems.add(item.id);
             replyCount++;
-            if (item.type === 'comment' && replyOncePerUser && item.post) {
+            if (item.type === 'comment' && item.post) { // This now respects per-rule setting in the check above
                 if (!newRepliedUsers[item.post.id]) newRepliedUsers[item.post.id] = [];
                 newRepliedUsers[item.post.id].push(item.authorId);
             }

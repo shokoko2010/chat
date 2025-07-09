@@ -216,8 +216,10 @@ export interface AutoResponderAction {
 export interface AutoResponderRule {
   id: string;
   name: string;
+  enabled: boolean;
   trigger: AutoResponderTrigger;
   actions: AutoResponderAction[];
+  replyOncePerUser?: boolean; // Now per-rule for comments
 }
 
 export interface AutoResponderFallback {
@@ -229,5 +231,4 @@ export interface AutoResponderFallback {
 export interface AutoResponderSettings {
   rules: AutoResponderRule[];
   fallback: AutoResponderFallback;
-  replyOncePerUser: boolean; // Global setting for comments
 }
