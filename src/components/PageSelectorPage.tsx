@@ -1,5 +1,6 @@
 
 
+
 import React from 'react';
 import { Target, Business } from '../types';
 import Button from './ui/Button';
@@ -119,6 +120,7 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {primaryTargets.map(target => {
                     const linkedInstagram = target.type === 'page' ? instagramAccountsByParentId.get(target.id) : null;
+                    const isSyncing = syncingTargetId === target.id || (linkedInstagram && syncingTargetId === linkedInstagram.id);
                     return (
                         <TargetCard
                             key={target.id}
@@ -126,7 +128,7 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
                             linkedInstagram={linkedInstagram || null}
                             onSelect={() => onSelectTarget(target)}
                             onSync={() => onSyncHistory(target)}
-                            isSyncing={syncingTargetId === target.id}
+                            isSyncing={isSyncing}
                         />
                     );
                 })}

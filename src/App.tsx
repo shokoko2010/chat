@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -245,106 +246,121 @@ const App: React.FC = () => {
   }, [fetchWithPagination, fetchInstagramAccounts]);
 
 
-  const handleFullHistorySync = useCallback(async (target: Target) => {
+  const handleFullHistorySync = useCallback(async (pageTarget: Target) => {
     if (isSimulationMode) {
-      alert("لا يمكن مزامنة السجل في وضع المحاكاة.");
-      return;
+        alert("لا يمكن مزامنة السجل في وضع المحاكاة.");
+        return;
     }
-    setSyncingTargetId(target.id);
+    if (pageTarget.type !== 'page') {
+        alert("المزامنة الكاملة متاحة فقط لصفحات فيسبوك.");
+        return;
+    }
+    
+    setSyncingTargetId(pageTarget.id);
     try {
-        const isInstagram = target.type === 'instagram';
+        const linkedIgTarget = targets.find(t => t.type === 'instagram' && t.parentPageId === pageTarget.id);
+
+        let fetchedPosts: PublishedPost[] = [];
+        let combinedInboxItems: InboxItem[] = [];
+        const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
+
+        // --- 1. Fetch Facebook Page Data ---
+        const fbPostFields = 'id,message,full_picture,created_time,from,likes.summary(true),shares,comments.summary(true),insights.metric(post_impressions_unique){values}';
+        const fbPostsPath = `/${pageTarget.id}/published_posts?fields=${fbPostFields}&limit=25`;
+        const fbAllPostsData = await fetchWithPagination(fbPostsPath);
         
-        const commentFields = isInstagram
-            ? 'id,from{id,username},text,timestamp'
-            : 'id,from{id,name,picture{url}},message,created_time,parent';
-
-        const postBaseFields = 'id,message,full_picture,created_time,from';
-        let postsPath: string;
-        let apiParams: any = { limit: 25 };
-
-        if (isInstagram) {
-            const igSpecificPostFields = 'caption,media_url,timestamp,like_count,comments_count,username';
-            apiParams.fields = `id,${igSpecificPostFields}`;
-            postsPath = `/${target.id}/media`;
-        } else { // It's a page
-            const pageSpecificPostFields = 'likes.summary(true),shares,comments.summary(true),insights.metric(post_impressions_unique){values}';
-            apiParams.fields = `${postBaseFields},${pageSpecificPostFields}`;
-            postsPath = `/${target.id}/published_posts`;
-        }
-
-        const fullPath = `${postsPath}?${new URLSearchParams(apiParams).toString()}`;
-        const allPostsData = await fetchWithPagination(fullPath);
-
-        const fetchedPosts: PublishedPost[] = allPostsData.map((post: any) => ({
-            id: post.id, pageId: target.id, pageName: target.name, pageAvatarUrl: target.picture.data.url,
-            text: post.message || post.caption || '',
-            imagePreview: post.full_picture || post.media_url || null,
-            publishedAt: new Date(post.created_time || post.timestamp),
+        const fbFetchedPosts: PublishedPost[] = fbAllPostsData.map((post: any) => ({
+            id: post.id, pageId: pageTarget.id, pageName: pageTarget.name, pageAvatarUrl: pageTarget.picture.data.url,
+            text: post.message || '',
+            imagePreview: post.full_picture || null,
+            publishedAt: new Date(post.created_time),
             analytics: {
-                likes: post.likes?.summary?.total_count ?? post.like_count ?? 0,
-                comments: post.comments?.summary?.total_count ?? post.comments_count ?? 0,
+                likes: post.likes?.summary?.total_count ?? 0,
+                comments: post.comments?.summary?.total_count ?? 0,
                 shares: post.shares?.count ?? 0,
                 reach: post.insights?.data?.[0]?.values?.[0]?.value ?? 0,
                 loading: false, lastUpdated: new Date(), isGeneratingInsights: false
             }
         }));
-        
-        const allComments: InboxItem[] = [];
-        const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
+        fetchedPosts.push(...fbFetchedPosts);
 
-        const commentPromises = allPostsData.map(async (post) => {
-            const hasComments = isInstagram ? post.comments_count > 0 : post.comments?.summary?.total_count > 0;
-            if (hasComments) {
-                const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${commentFields}&limit=100`);
+        const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
+        const fbCommentPromises = fbAllPostsData.map(async (post) => {
+            if (post.comments?.summary?.total_count > 0) {
+                const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=100`);
                 return postComments.map((comment: any): InboxItem => {
-                    const authorId = comment.from?.id;
-                    const commentText = isInstagram ? comment.text : comment.message;
-                    const authorName = isInstagram ? (comment.from?.username || 'مستخدم انستجرام') : (comment.from?.name || 'مستخدم فيسبوك');
-                    const commentTimestamp = isInstagram ? comment.timestamp : comment.created_time;
-                    const authorPicture = !isInstagram ? comment.from?.picture?.data?.url : null;
-                    const authorPictureUrl = authorPicture || (authorId && !isInstagram ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
-
-                    return {
-                        id: comment.id,
-                        type: 'comment',
-                        text: commentText || '',
-                        authorName: authorName,
-                        authorId: authorId || 'Unknown',
-                        authorPictureUrl: authorPictureUrl,
-                        timestamp: commentTimestamp,
-                        post: {
-                            id: post.id,
-                            message: post.message || post.caption,
-                            picture: post.full_picture || post.media_url,
-                        },
-                        isReply: !!comment.parent,
-                    };
+                      const authorId = comment.from?.id;
+                      const authorPictureUrl = comment.from?.picture?.data?.url || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
+                      return {
+                        id: comment.id, type: 'comment', text: comment.message || '',
+                        authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: authorId || 'Unknown',
+                        authorPictureUrl: authorPictureUrl, timestamp: comment.created_time,
+                        post: { id: post.id, message: post.message, picture: post.full_picture },
+                        isReply: !!comment.parent
+                      };
                 });
             }
             return [];
         });
-        const commentBatches = await Promise.all(commentPromises);
-        commentBatches.forEach(batch => allComments.push(...batch));
+        const fbCommentBatches = await Promise.all(fbCommentPromises);
+        fbCommentBatches.forEach(batch => combinedInboxItems.push(...batch));
 
-        let allMessages: InboxItem[] = [];
-        if (!isInstagram) { // Messages are only for Facebook Pages
-            const convosPath = `/${target.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`;
-            const allConvosData = await fetchWithPagination(convosPath);
-            allMessages = allConvosData.map((convo: any) => {
-                const participant = convo.participants.data.find((p: any) => p.id !== target.id);
-                const participantId = participant?.id;
-                return {
-                    id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف',
-                    authorId: participantId || 'Unknown',
-                    authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture,
-                    timestamp: convo.updated_time, conversationId: convo.id
-                };
+        const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`;
+        const allConvosData = await fetchWithPagination(convosPath);
+        const allMessages: InboxItem[] = allConvosData.map((convo: any) => {
+            const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
+            const participantId = participant?.id;
+            return {
+                id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف',
+                authorId: participantId || 'Unknown',
+                authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture,
+                timestamp: convo.updated_time, conversationId: convo.id
+            };
+        });
+        combinedInboxItems.push(...allMessages);
+
+        // --- 2. Fetch Instagram Data (if it exists) ---
+        if (linkedIgTarget) {
+            setSyncingTargetId(linkedIgTarget.id); // Update UI feedback
+            const igPostFields = 'id,caption,media_url,timestamp,like_count,comments_count,username';
+            const igPostsPath = `/${linkedIgTarget.id}/media?fields=${igPostFields}&limit=25`;
+            const igAllPostsData = await fetchWithPagination(igPostsPath);
+
+            const igFetchedPosts: PublishedPost[] = igAllPostsData.map((post: any) => ({
+                id: post.id, pageId: linkedIgTarget.id, pageName: linkedIgTarget.name, pageAvatarUrl: linkedIgTarget.picture.data.url,
+                text: post.caption || '',
+                imagePreview: post.media_url || null,
+                publishedAt: new Date(post.timestamp),
+                analytics: {
+                    likes: post.like_count ?? 0,
+                    comments: post.comments_count ?? 0,
+                    shares: 0,
+                    reach: 0, // Reach is not directly available for IG media this way
+                    loading: false, lastUpdated: new Date(), isGeneratingInsights: false
+                }
+            }));
+            fetchedPosts.push(...igFetchedPosts);
+
+            const igCommentFields = 'id,from{id,username},text,timestamp';
+            const igCommentPromises = igAllPostsData.map(async (post) => {
+                if (post.comments_count > 0) {
+                    const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100`);
+                    return postComments.map((comment: any): InboxItem => ({
+                        id: comment.id, type: 'comment', text: comment.text || '',
+                        authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
+                        authorPictureUrl: defaultPicture, timestamp: comment.timestamp,
+                        post: { id: post.id, message: post.caption, picture: post.media_url },
+                        isReply: false
+                    }));
+                }
+                return [];
             });
+            const igCommentBatches = await Promise.all(igCommentPromises);
+            igCommentBatches.forEach(batch => combinedInboxItems.push(...batch));
         }
-        
-        const combinedInboxItems = [...allMessages, ...allComments];
 
-        const dataKey = `zex-pages-data-${target.id}`;
+        // --- 3. Save Data ---
+        const dataKey = `zex-pages-data-${pageTarget.id}`;
         const rawData = localStorage.getItem(dataKey);
         const data = rawData ? JSON.parse(rawData) : {};
         
@@ -355,23 +371,30 @@ const App: React.FC = () => {
         
         const sortedInboxItems = Array.from(combinedInboxMap.values()).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         
+        const existingPosts = data.publishedPosts || [];
+        const combinedPostsMap = new Map<string, PublishedPost>();
+        existingPosts.forEach((post: PublishedPost) => combinedPostsMap.set(post.id, post));
+        fetchedPosts.forEach((post: PublishedPost) => combinedPostsMap.set(post.id, post));
+        
+        const sortedPosts = Array.from(combinedPostsMap.values()).sort((a,b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
         const updatedData = {
           ...data,
-          publishedPosts: fetchedPosts,
+          publishedPosts: sortedPosts,
           inboxItems: sortedInboxItems,
           syncedAt: new Date().toISOString()
         };
         localStorage.setItem(dataKey, JSON.stringify(updatedData));
 
-        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${combinedInboxItems.length} عنصرًا في البريد الوارد بنجاح للهدف ${target.name}.`);
+        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${combinedInboxItems.length} عنصرًا في البريد الوارد بنجاح للهدف ${pageTarget.name}${linkedIgTarget ? ` و ${linkedIgTarget.name}`: ''}.`);
 
     } catch(error) {
       console.error("Error during full history sync:", error);
-      alert(`فشلت مزامنة السجل للهدف ${target.name}.`);
+      alert(`فشلت مزامنة السجل للهدف ${pageTarget.name}.`);
     } finally {
       setSyncingTargetId(null);
     }
-  }, [fetchWithPagination, isSimulationMode]);
+  }, [fetchWithPagination, isSimulationMode, targets]);
 
 
   const handleLogin = useCallback(() => {
