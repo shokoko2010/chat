@@ -348,7 +348,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             apiParams = formData;
 
         } else { // Text-only post
-            if (target.type !== 'group') { // Groups don't support `message` on `/feed` with text only easily, use photos endpoint if needed
+            if (target.type !== 'group') { 
                apiParams.message = text;
             } else {
                  return { success: false, message: `النشر النصي فقط غير مدعوم حاليًا للمجموعات.`};
@@ -487,7 +487,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 setSelectedImage(draft.imageFile);
                 setImagePreview(URL.createObjectURL(draft.imageFile));
             } else if (draft.imagePreview) {
-                // If the file object is lost, keep the preview URL
                 setSelectedImage(null);
                 setImagePreview(draft.imagePreview);
             }
@@ -806,7 +805,124 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }, [analyticsPeriod]);
     // --- End Analytics ---
     
-    // --- INBOX ---
+    //--- INBOX LOGIC (REFACTORED) ---
+
+    // Effect to load all data from storage, and fetch live data for the current view
+    useEffect(() => {
+        // 1. Load all state from local storage on target change
+        const dataKey = `zex-pages-data-${managedTarget.id}`;
+        let savedData: any = {};
+        try {
+            const rawData = localStorage.getItem(dataKey);
+            savedData = rawData ? JSON.parse(rawData) : {};
+        } catch (e) { console.error("Failed to parse data from localStorage", e); }
+    
+        setPageProfile(savedData.pageProfile || { description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
+        setDrafts(savedData.drafts?.map((d: any) => ({...d, imageFile: null})) || []);
+        setScheduledPosts(savedData.scheduledPosts?.map((p: any) => ({ ...p, scheduledAt: new Date(p.scheduledAt) })) || []);
+        setBulkPosts(savedData.bulkPosts || []);
+        setStrategyHistory(savedData.strategyHistory || []);
+        setAutoResponderSettings(savedData.autoResponderSettings || {
+            comments: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
+            messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
+        });
+        setRepliedUsersPerPost(savedData.repliedUsersPerPost || {});
+        setIncludeInstagram(!!linkedInstagramTarget);
+        
+        // Load stored inbox items
+        const storedInbox = savedData.inboxItems || [];
+        const validInboxItems = storedInbox.filter((item: InboxItem) => item && item.timestamp && !isNaN(new Date(item.timestamp).getTime()));
+        setInboxItems(validInboxItems);
+        
+        // 2. Fetch live data based on the current view
+        const fetchLiveInboxData = async () => {
+            if (isSimulationMode || !window.FB) {
+                setIsInboxLoading(false);
+                return;
+            };
+            setIsInboxLoading(true);
+            try {
+                const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
+                let fetchedItems: InboxItem[] = [];
+
+                // Fetch FB Messages
+                if (managedTarget.type === 'page' && managedTarget.access_token) {
+                    const convosPath = `/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants,unread_count&limit=25&access_token=${managedTarget.access_token}`;
+                    const allConvosData = await fetchWithPagination(convosPath);
+                    fetchedItems.push(...allConvosData.map((convo: any): InboxItem => {
+                        const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
+                        const participantId = participant?.id;
+                        return { id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف', authorId: participantId || 'Unknown', authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture, timestamp: convo.updated_time, conversationId: convo.id };
+                    }));
+                }
+
+                // Fetch FB Post Comments
+                const postEdge = managedTarget.type === 'page' ? 'published_posts' : (managedTarget.type === 'group' ? 'feed' : '');
+                if (postEdge) {
+                    const commentFields = 'comments.limit(25){id,from{id,name,picture{url}},message,created_time,parent}';
+                    const postBaseFields = `id,message,full_picture,created_time,from,${commentFields}`;
+                    const postsPath = `/${managedTarget.id}/${postEdge}?fields=${postBaseFields}&limit=25${managedTarget.access_token ? `&access_token=${managedTarget.access_token}` : ''}`;
+                    const allPostsData = await fetchWithPagination(postsPath);
+                    allPostsData.forEach((post: any) => {
+                        if (post.comments?.data) {
+                            fetchedItems.push(...post.comments.data.map((comment: any): InboxItem => {
+                                const authorId = comment.from?.id;
+                                const authorPicture = comment.from?.picture?.data?.url;
+                                return { id: comment.id, type: 'comment', text: comment.message, authorName: comment.from?.name || 'مستخدم غير معروف', authorId: authorId || 'Unknown', authorPictureUrl: authorPicture || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture), timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }, isReply: !!comment.parent };
+                            }));
+                        }
+                    });
+                }
+                
+                // Fetch IG Comments
+                if (linkedInstagramTarget?.access_token) {
+                    const mediaPath = `/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp,comments.limit(25){id,from{id,username},text,timestamp,user{id,username,profile_picture_url}}&limit=25&access_token=${linkedInstagramTarget.access_token}`;
+                    const allMediaData = await fetchWithPagination(mediaPath);
+                    allMediaData.forEach((media: any) => {
+                        if (media.comments?.data) {
+                            fetchedItems.push(...media.comments.data.map((comment: any): InboxItem => {
+                                const author = comment.user || comment.from;
+                                return { id: comment.id, type: 'comment', text: comment.text, authorName: author?.username || 'مستخدم انستجرام', authorId: author?.id || 'Unknown', authorPictureUrl: author?.profile_picture_url || defaultPicture, timestamp: comment.timestamp, post: { id: media.id, message: media.caption, picture: media.media_url } };
+                            }));
+                        }
+                    });
+                }
+                
+                setInboxItems(prevItems => {
+                    const itemsMap = new Map<string, InboxItem>();
+                    [...prevItems, ...fetchedItems].forEach(item => { if(item?.id) itemsMap.set(item.id, item) });
+                    const validatedItems = Array.from(itemsMap.values()).filter(item => item?.timestamp && !isNaN(new Date(item.timestamp).getTime()));
+                    return validatedItems.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                });
+            } catch (err: any) {
+                showNotification('error', `فشل تحديث البريد الوارد: ${err.message}`);
+            } finally { setIsInboxLoading(false); }
+        };
+
+        const fetchInitialPosts = async () => {
+            if (isSimulationMode || publishedPosts.length > 0) {
+                 setPublishedPostsLoading(false);
+                 return;
+            };
+            setPublishedPostsLoading(true);
+            try {
+                const path = `/${managedTarget.id}/published_posts?fields=id,message,full_picture,created_time,from,likes.summary(true),shares,comments.summary(true)&limit=25&access_token=${managedTarget.access_token}`;
+                const posts = await fetchWithPagination(path);
+                setPublishedPosts(posts.map((p: any): PublishedPost => ({ id: p.id, pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url, text: p.message || '', imagePreview: p.full_picture, publishedAt: new Date(p.created_time), analytics: { likes: p.likes?.summary?.total_count ?? 0, comments: p.comments?.summary?.total_count ?? 0, shares: p.shares?.count ?? 0, reach: 0, loading: false, lastUpdated: null } })));
+            } catch (e: any) {
+                showNotification('error', `فشل جلب المنشورات: ${e.message}`);
+            } finally {
+                setPublishedPostsLoading(false);
+            }
+        };
+
+        if (view === 'inbox') { fetchLiveInboxData(); } 
+        else if (view === 'analytics') { fetchInitialPosts(); }
+        else { setIsInboxLoading(false); setPublishedPostsLoading(false); }
+
+    }, [managedTarget.id, view, isSimulationMode, fetchWithPagination, showNotification, linkedInstagramTarget]);
+
+
     const handleInboxReply = useCallback(async (item: InboxItem, message: string): Promise<boolean> => {
         if(isSimulationMode) {
             showNotification('success', 'تم إرسال الرد (محاكاة).');
@@ -820,7 +936,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             if (response && response.id) {
                 showNotification('success', 'تم إرسال الرد بنجاح.');
                 if (item.type === 'message') {
-                   // Optimistically update the conversation
                    const newMessage: InboxMessage = { id: response.id, from: { id: managedTarget.id, name: managedTarget.name }, message, created_time: new Date().toISOString() };
                    setInboxItems(prev => prev.map(i => i.id === item.id ? { ...i, messages: [...(i.messages || []), newMessage] } : i));
                 }
@@ -832,6 +947,74 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             return false;
         }
     }, [managedTarget.access_token, showNotification, isSimulationMode, managedTarget.id, managedTarget.name]);
+    
+    // Effect for processing auto-replies. Runs ONLY when items or settings change.
+    useEffect(() => {
+        if (isSimulationMode || (!autoResponderSettings.comments.realtimeEnabled && !autoResponderSettings.messages.realtimeEnabled)) {
+            return;
+        }
+
+        const process = async () => {
+            const itemsToProcess = inboxItems.filter(item => !autoRepliedItems.has(item.id));
+            if (itemsToProcess.length === 0) return;
+
+            const { comments: commentSettings, messages: messageSettings } = autoResponderSettings;
+
+            let repliedItemsThisRun = new Set<string>();
+            let repliedUsersThisRun: Record<string, string[]> = {};
+
+            const keywordsMatch = (text: string, keywordsStr: string) => {
+                const keywords = keywordsStr.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+                if (keywords.length === 0) return true;
+                return keywords.some(k => text.toLowerCase().includes(k));
+            };
+            const replaceUsername = (msg: string, name: string) => msg.replace(/\{user_name\}/g, name);
+
+            for (const item of itemsToProcess) {
+                 const postKey = item.post?.id || 'unknown_post';
+
+                 if (item.type === 'comment' && commentSettings.realtimeEnabled && keywordsMatch(item.text, commentSettings.keywords)) {
+                    if (commentSettings.replyOncePerUser && (repliedUsersPerPost[postKey]?.includes(item.authorId) || repliedUsersThisRun[postKey]?.includes(item.authorId))) {
+                        continue;
+                    }
+
+                    if (commentSettings.publicReplyEnabled && commentSettings.publicReplyMessage) {
+                        await handleInboxReply(item, replaceUsername(commentSettings.publicReplyMessage, item.authorName));
+                    }
+                    if (commentSettings.privateReplyEnabled && commentSettings.privateReplyMessage && managedTarget.type === 'page') {
+                        await new Promise(resolve => window.FB.api(`/${item.id}/private_replies`, 'POST', { message: replaceUsername(commentSettings.privateReplyMessage, item.authorName), access_token: managedTarget.access_token }, (res: any) => resolve(res)));
+                    }
+                    
+                    repliedItemsThisRun.add(item.id);
+                    if (postKey) {
+                        repliedUsersThisRun[postKey] = [...(repliedUsersThisRun[postKey] || []), item.authorId];
+                    }
+
+                } else if (item.type === 'message' && messageSettings.realtimeEnabled && keywordsMatch(item.text, messageSettings.keywords)) {
+                    await handleInboxReply(item, replaceUsername(messageSettings.replyMessage, item.authorName));
+                    repliedItemsThisRun.add(item.id);
+                }
+            }
+            
+            if (repliedItemsThisRun.size > 0) {
+                setAutoRepliedItems(prev => new Set([...prev, ...repliedItemsThisRun]));
+            }
+            if(Object.keys(repliedUsersThisRun).length > 0) {
+                setRepliedUsersPerPost(prev => {
+                    const newRecord = {...prev};
+                    for (const key in repliedUsersThisRun) {
+                        newRecord[key] = [...(newRecord[key] || []), ...repliedUsersThisRun[key]];
+                    }
+                    return newRecord;
+                });
+            }
+        };
+
+        process();
+    // Intentionally excluding autoRepliedItems and repliedUsersPerPost to prevent loops.
+    // The logic inside correctly uses the latest values and filters processed items.
+    }, [inboxItems, autoResponderSettings, handleInboxReply, managedTarget.type, managedTarget.access_token, isSimulationMode]);
+
 
     const handleGenerateSmartReplies = useCallback(async (commentText: string): Promise<string[]> => {
         if (!aiClient) {
@@ -857,208 +1040,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         }
     }, [isSimulationMode, managedTarget.access_token, fetchWithPagination]);
 
-    const processAutoReplies = useCallback(async () => {
-        // This function is now just for processing, not fetching.
-        const itemsToProcess = inboxItems.filter(item => !autoRepliedItems.has(item.id));
-        if (itemsToProcess.length === 0) return;
-
-        let newAutoRepliedItems = new Set(autoRepliedItems);
-        let newRepliedUsersPerPost = { ...repliedUsersPerPost };
-
-        const { comments: commentSettings, messages: messageSettings } = autoResponderSettings;
-
-        for (const item of itemsToProcess) {
-            const keywordsMatch = (text: string, keywordsStr: string) => {
-                const keywords = keywordsStr.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
-                if (keywords.length === 0) return true; // No keywords means match all
-                return keywords.some(k => text.toLowerCase().includes(k));
-            };
-
-            const replaceUsername = (msg: string, name: string) => msg.replace(/\{user_name\}/g, name);
-
-            if (item.type === 'comment' && commentSettings.realtimeEnabled && keywordsMatch(item.text, commentSettings.keywords)) {
-                if(commentSettings.replyOncePerUser && item.post?.id && newRepliedUsersPerPost[item.post.id]?.includes(item.authorId)) {
-                    continue; // Already replied to this user on this post
-                }
-
-                if (commentSettings.publicReplyEnabled && commentSettings.publicReplyMessage) {
-                    await handleInboxReply(item, replaceUsername(commentSettings.publicReplyMessage, item.authorName));
-                }
-                if (commentSettings.privateReplyEnabled && commentSettings.privateReplyMessage && managedTarget.type === 'page') {
-                    const privateReplyEndpoint = `/${item.id}/private_replies`;
-                    await new Promise(resolve => window.FB.api(privateReplyEndpoint, 'POST', {
-                        message: replaceUsername(commentSettings.privateReplyMessage, item.authorName),
-                        access_token: managedTarget.access_token,
-                    }, (res: any) => resolve(res)));
-                }
-                newAutoRepliedItems.add(item.id);
-                if (item.post?.id) {
-                    newRepliedUsersPerPost[item.post.id] = [...(newRepliedUsersPerPost[item.post.id] || []), item.authorId];
-                }
-
-            } else if (item.type === 'message' && messageSettings.realtimeEnabled && keywordsMatch(item.text, messageSettings.keywords)) {
-                await handleInboxReply(item, replaceUsername(messageSettings.replyMessage, item.authorName));
-                newAutoRepliedItems.add(item.id);
-            }
-        }
-        
-        setAutoRepliedItems(newAutoRepliedItems);
-        setRepliedUsersPerPost(newRepliedUsersPerPost);
-    }, [inboxItems, autoResponderSettings, autoRepliedItems, repliedUsersPerPost, handleInboxReply, managedTarget.type, managedTarget.access_token]);
-    
-    const fetchInboxData = useCallback(async () => {
-        if (isSimulationMode || view !== 'inbox' || !window.FB) return;
-        setIsInboxLoading(true);
-        try {
-            const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
-            const fetchedItems: InboxItem[] = [];
-
-            // 1. Fetch FB Messages (Conversations)
-            if (managedTarget.type === 'page' && managedTarget.access_token) {
-                const convosPath = `/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants,unread_count&limit=25&access_token=${managedTarget.access_token}`;
-                const allConvosData = await fetchWithPagination(convosPath);
-                const messages: InboxItem[] = allConvosData.map((convo: any) => {
-                    const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
-                    const participantId = participant?.id;
-                    return {
-                        id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف',
-                        authorId: participantId || 'Unknown',
-                        authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture,
-                        timestamp: convo.updated_time, conversationId: convo.id
-                    };
-                });
-                fetchedItems.push(...messages);
-            }
-
-            // 2. Fetch FB Post Comments
-            let postEdge = '';
-            if (managedTarget.type === 'page') postEdge = 'published_posts';
-            else if (managedTarget.type === 'group') postEdge = 'feed';
-
-            if (postEdge) {
-                const commentFields = 'comments.limit(25){id,from{id,name,picture{url}},message,created_time,parent}';
-                const postBaseFields = `id,message,full_picture,created_time,from,${commentFields}`;
-                const postsPath = `/${managedTarget.id}/${postEdge}?fields=${postBaseFields}&limit=25${managedTarget.access_token ? `&access_token=${managedTarget.access_token}` : ''}`;
-                const allPostsData = await fetchWithPagination(postsPath);
-
-                allPostsData.forEach((post: any) => {
-                    if (post.comments && post.comments.data) {
-                        post.comments.data.forEach((comment: any) => {
-                            const authorId = comment.from?.id;
-                            const authorPicture = comment.from?.picture?.data?.url;
-                            fetchedItems.push({
-                                id: comment.id, type: 'comment', text: comment.message, authorName: comment.from?.name || 'مستخدم غير معروف',
-                                authorId: authorId || 'Unknown',
-                                authorPictureUrl: authorPicture || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture),
-                                timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }, isReply: !!comment.parent,
-                            });
-                        });
-                    }
-                });
-            }
-            
-            // 3. Fetch IG Comments
-            if (linkedInstagramTarget && linkedInstagramTarget.access_token) {
-                const mediaPath = `/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp,comments.limit(25){id,from{id,username},text,timestamp,user{id,username,profile_picture_url}}&limit=25&access_token=${linkedInstagramTarget.access_token}`;
-                const allMediaData = await fetchWithPagination(mediaPath);
-    
-                allMediaData.forEach((media: any) => {
-                    if (media.comments && media.comments.data) {
-                        media.comments.data.forEach((comment: any) => {
-                            const author = comment.user || comment.from;
-                            fetchedItems.push({
-                                id: comment.id, type: 'comment', text: comment.text, authorName: author?.username || 'مستخدم انستجرام',
-                                authorId: author?.id || 'Unknown',
-                                authorPictureUrl: author?.profile_picture_url || defaultPicture,
-                                timestamp: comment.timestamp, post: { id: media.id, message: media.caption, picture: media.media_url }
-                            });
-                        });
-                    }
-                });
-            }
-
-            setInboxItems(prevItems => {
-                const itemsMap = new Map<string, InboxItem>();
-                [...prevItems, ...fetchedItems].forEach(item => {
-                    if(item && item.id) itemsMap.set(item.id, item);
-                });
-                const validatedItems = Array.from(itemsMap.values())
-                    .filter(item => item && item.timestamp && !isNaN(new Date(item.timestamp).getTime()));
-                return validatedItems.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-            });
-            
-        } catch (err: any) {
-            console.error("Error fetching live inbox data:", err);
-            showNotification('error', `فشل تحديث البريد الوارد: ${err.message}`);
-        } finally {
-            setIsInboxLoading(false);
-        }
-    }, [ managedTarget, linkedInstagramTarget, isSimulationMode, view, fetchWithPagination, showNotification ]);
-
-
-    useEffect(() => {
-        // Load from storage on target change
-        const dataKey = `zex-pages-data-${managedTarget.id}`;
-        let savedData: any = {};
-        try {
-            const rawData = localStorage.getItem(dataKey);
-            savedData = rawData ? JSON.parse(rawData) : {};
-        } catch (e) { console.error("Failed to parse data from localStorage", e); }
-    
-        setPageProfile(savedData.pageProfile || { description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
-        setDrafts(savedData.drafts?.map((d: any) => ({...d, imageFile: null})) || []);
-        setScheduledPosts(savedData.scheduledPosts?.map((p: any) => ({ ...p, scheduledAt: new Date(p.scheduledAt) })) || []);
-        setBulkPosts(savedData.bulkPosts || []);
-        setStrategyHistory(savedData.strategyHistory || []);
-        setAutoResponderSettings(savedData.autoResponderSettings || autoResponderSettings);
-        setRepliedUsersPerPost(savedData.repliedUsersPerPost || {});
-        setIncludeInstagram(!!linkedInstagramTarget);
-        
-        const storedInbox = savedData.inboxItems || [];
-        const validInboxItems = storedInbox.filter((item: InboxItem) => item && item.timestamp && !isNaN(new Date(item.timestamp).getTime()));
-        setInboxItems(validInboxItems);
-        setIsInboxLoading(false); // Assume loaded from storage, fetch will update this
-    
-        // Fetch live data if we are navigating to the inbox view
-        if (view === 'inbox') {
-            fetchInboxData();
-        }
-    
-        // Fetch published posts for analytics if navigating there
-        const fetchInitialPosts = async () => {
-            if (view !== 'analytics' || isSimulationMode || publishedPosts.length > 0) return;
-            setPublishedPostsLoading(true);
-            try {
-                const path = `/${managedTarget.id}/published_posts?fields=id,message,full_picture,created_time,from,likes.summary(true),shares,comments.summary(true)&limit=25&access_token=${managedTarget.access_token}`;
-                const posts = await fetchWithPagination(path);
-                const formattedPosts: PublishedPost[] = posts.map((p: any) => ({
-                    id: p.id, pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url,
-                    text: p.message || '', imagePreview: p.full_picture, publishedAt: new Date(p.created_time),
-                    analytics: { likes: p.likes?.summary?.total_count ?? 0, comments: p.comments?.summary?.total_count ?? 0, shares: p.shares?.count ?? 0, reach: 0, loading: false, lastUpdated: null }
-                }));
-                setPublishedPosts(formattedPosts);
-            } catch (e: any) {
-                showNotification('error', `فشل جلب المنشورات: ${e.message}`);
-            } finally {
-                setPublishedPostsLoading(false);
-            }
-        };
-        fetchInitialPosts();
-    
-    }, [managedTarget.id, view]);
-    
-    useEffect(() => {
-        // This effect is dedicated to processing auto-replies whenever the list of items changes.
-        if (autoResponderSettings.comments.realtimeEnabled || autoResponderSettings.messages.realtimeEnabled) {
-          processAutoReplies();
-        }
-    }, [inboxItems, autoResponderSettings, processAutoReplies]);
-    
-
     const unreadCount = useMemo(() => {
         return inboxItems.filter(item => {
-            // This is a placeholder logic. Real unread status should come from API.
-            // For now, let's consider anything from the last 24 hours as potentially "new".
             const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
             return new Date(item.timestamp) > twentyFourHoursAgo;
         }).length;
