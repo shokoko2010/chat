@@ -306,10 +306,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
     
     if (!savedData.publishedPosts || savedData.publishedPosts.length === 0) {
-        const endpoint = managedTarget.type === 'group' ? 'feed' : 'published_posts';
-        const fields = managedTarget.type === 'group' 
-            ? 'id,message,full_picture,created_time,likes.summary(true),comments.summary(true)'
-            : 'id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}';
+        const endpoint = 'published_posts';
+        const fields = 'id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}';
 
         fetchWithPagination(`/${managedTarget.id}/${endpoint}?fields=${fields}&limit=100`)
         .then((response: any) => {
@@ -329,7 +327,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     } else {
         setPublishedPostsLoading(false);
     }
-  }, [managedTarget.id, isSimulationMode, clearComposer, fetchWithPagination, managedTarget.name, managedTarget.picture.data.url, managedTarget.type]);
+  }, [managedTarget.id, isSimulationMode, clearComposer, fetchWithPagination, managedTarget.name, managedTarget.picture.data.url]);
   
   useEffect(() => {
     try {
@@ -478,15 +476,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             const fetchAllComments = async (): Promise<InboxItem[]> => {
                 let allPosts: {id: string, message?: string, full_picture?: string}[] = [];
                 const postFields = "id,message,full_picture";
-                if (managedTarget.type === 'page') {
-                    allPosts.push(...await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=50`));
-                    if (linkedInstagramTarget) {
-                        const igPosts = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp&limit=50`);
-                        allPosts.push(...igPosts.map(p => ({ id: p.id, message: p.caption, full_picture: p.media_url })));
-                    }
-                } else if (managedTarget.type === 'group') {
-                    allPosts.push(...await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=50`));
+                
+                // Unwrapped from if(managedTarget.type === 'page') as it's the only possibility now
+                allPosts.push(...await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=50`));
+                if (linkedInstagramTarget) {
+                    const igPosts = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp&limit=50`);
+                    allPosts.push(...igPosts.map(p => ({ id: p.id, message: p.caption, full_picture: p.media_url })));
                 }
+
                 if (allPosts.length === 0) return [];
                 const commentsBatchRequest = allPosts.map(post => ({ method: 'GET', relative_url: `${post.id}/comments?fields=id,from{id,name,picture{url}},message,created_time&limit=25&order=reverse_chronological` }));
                 const commentsResponse: any = await new Promise(resolve => window.FB.api('/', 'POST', { batch: commentsBatchRequest, access_token: managedTarget.access_token }, (res: any) => resolve(res)));
@@ -538,7 +535,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         };
         fetchAllData();
     }
-  }, [view, managedTarget.id, linkedInstagramTarget?.id, isSimulationMode]);
+  }, [view, managedTarget.id, linkedInstagramTarget?.id, isSimulationMode, fetchWithPagination, inboxItems, processAutoReplies, showNotification]);
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.id, message);
@@ -622,8 +619,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             } else {
                 const errorMsg = response?.error?.message || 'Unknown error';
                 let readableError = errorMsg;
-                if (target.type === 'group' && errorMsg.includes('(#200) Requires installed app')) readableError = `فشل النشر: يجب تثبيت التطبيق في إعدادات مجموعة "${target.name}".`;
-                else if (errorMsg.includes('OAuthException')) readableError = `فشلت المصادقة للهدف "${target.name}".`;
+                if (errorMsg.includes('OAuthException')) readableError = `فشلت المصادقة للهدف "${target.name}".`;
                 else if (target.type === 'instagram' && errorMsg.includes('does not support')) readableError = `انستجرام لا يدعم هذا النوع من المنشورات عبر الـ API.`;
                 reject({ targetName: target.name, success: false, error: { ...response.error, message: readableError } });
             }
