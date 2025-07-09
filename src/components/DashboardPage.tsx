@@ -112,8 +112,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     comments: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
     messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
   });
-  const [autoRepliedItems, setAutoRepliedItems] = useState<Record<string, boolean>>({});
-  const [repliedUsersPerPost, setRepliedUsersPerPost] = useState<Record<string, Record<string, boolean>>>({});
+  const [autoRepliedItems, setAutoRepliedItems] = useState<Record<string, boolean>>(() => ({}));
+  const [repliedUsersPerPost, setRepliedUsersPerPost] = useState<Record<string, Record<string, boolean>>>(() => ({}));
 
 
   const linkedInstagramTarget = useMemo(() => {
