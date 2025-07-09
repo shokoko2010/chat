@@ -34,7 +34,7 @@ const App: React.FC = () => {
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
   
   const [loadingBusinessId, setLoadingBusinessId] = useState<string | null>(null);
-  const [loadedBusinessIds, setLoadedBusinessIds] = useState<Record<string, boolean>>({});
+  const [loadedBusinessIds, setLoadedBusinessIds] = useState<Record<string, boolean>>(() => ({}));
   const [syncingTargetId, setSyncingTargetId] = useState<string | null>(null);
 
 
