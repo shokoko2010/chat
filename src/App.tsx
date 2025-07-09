@@ -252,18 +252,20 @@ const App: React.FC = () => {
     }
     setSyncingTargetId(target.id);
     try {
-        const commentFields = 'comments.limit(50){id,from{id,name,picture{url}},message,created_time,parent}';
-        const postBaseFields = `id,message,full_picture,created_time,from,likes.summary(true),shares,comments.summary(true),${commentFields}`;
-        const pageSpecificPostFields = ',insights.metric(post_impressions_unique){values}';
-
+        const commentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
+        const postBaseFields = `id,message,full_picture,created_time,from`;
+        
         let postsPath: string;
-        let postEdge: 'published_posts' | 'feed';
-        let apiParams: any = { limit: 100 };
+        let apiParams: any = { limit: 50 };
 
         if (target.type === 'page') {
-            postEdge = 'published_posts';
-            apiParams.fields = `${postBaseFields}${pageSpecificPostFields}`;
-            postsPath = `/${target.id}/${postEdge}`;
+            const pageSpecificPostFields = 'likes.summary(true),shares,comments.summary(true),insights.metric(post_impressions_unique){values}';
+            apiParams.fields = `${postBaseFields},${pageSpecificPostFields}`;
+            postsPath = `/${target.id}/feed`;
+        } else if (target.type === 'instagram') {
+            const igSpecificPostFields = 'caption,media_url,timestamp,like_count,comments_count,username';
+            apiParams.fields = `id,${igSpecificPostFields}`;
+            postsPath = `/${target.id}/media`;
         } else {
              alert(`مزامنة السجل غير مدعومة حاليًا للنوع '${target.type}'.`);
              setSyncingTargetId(null);
@@ -274,39 +276,43 @@ const App: React.FC = () => {
         const allPostsData = await fetchWithPagination(fullPath);
 
         const fetchedPosts: PublishedPost[] = allPostsData.map((post: any) => ({
-            id: post.id, pageId: target.id, pageName: target.name, pageAvatarUrl: target.picture.data.url, text: post.message || '',
-            imagePreview: post.full_picture || null, publishedAt: new Date(post.created_time),
+            id: post.id, pageId: target.id, pageName: target.name, pageAvatarUrl: target.picture.data.url,
+            text: post.message || post.caption || '',
+            imagePreview: post.full_picture || post.media_url || null,
+            publishedAt: new Date(post.created_time || post.timestamp),
             analytics: {
-                likes: post.likes?.summary?.total_count ?? 0,
-                comments: post.comments?.summary?.total_count ?? 0,
+                likes: post.likes?.summary?.total_count ?? post.like_count ?? 0,
+                comments: post.comments?.summary?.total_count ?? post.comments_count ?? 0,
                 shares: post.shares?.count ?? 0,
                 reach: post.insights?.data?.[0]?.values?.[0]?.value ?? 0,
                 loading: false, lastUpdated: new Date(), isGeneratingInsights: false
             }
         }));
-
+        
         const allComments: InboxItem[] = [];
         const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
 
-        allPostsData.forEach((post: any) => {
-            if (post.comments && post.comments.data) {
-                post.comments.data.forEach((comment: any) => {
+        const commentPromises = allPostsData.map(async (post) => {
+            const hasComments = target.type === 'page' ? post.comments?.summary?.total_count > 0 : post.comments_count > 0;
+            if (hasComments) {
+                const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${commentFields}&limit=100`);
+                return postComments.map((comment: any): InboxItem => {
                     const authorId = comment.from?.id;
                     const authorPicture = comment.from?.picture?.data?.url;
-                    allComments.push({
-                        id: comment.id,
-                        type: 'comment',
-                        text: comment.message,
-                        authorName: comment.from?.name || 'مستخدم غير معروف',
-                        authorId: authorId || 'Unknown',
+                    return {
+                        id: comment.id, type: 'comment', text: comment.message,
+                        authorName: comment.from?.name || 'مستخدم غير معروف', authorId: authorId || 'Unknown',
                         authorPictureUrl: authorPicture || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture),
                         timestamp: comment.created_time,
-                        post: { id: post.id, message: post.message, picture: post.full_picture },
+                        post: { id: post.id, message: post.message || post.caption, picture: post.full_picture || post.media_url },
                         isReply: !!comment.parent,
-                    });
+                    };
                 });
             }
+            return [];
         });
+        const commentBatches = await Promise.all(commentPromises);
+        commentBatches.forEach(batch => allComments.push(...batch));
 
         let allMessages: InboxItem[] = [];
         if (target.type === 'page') {
@@ -345,7 +351,7 @@ const App: React.FC = () => {
         };
         localStorage.setItem(dataKey, JSON.stringify(updatedData));
 
-        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${combinedInboxItems.length} عنصرًا في البريد الوارد (رسائل وتعليقات) بنجاح للهدف ${target.name}.`);
+        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${combinedInboxItems.length} عنصرًا في البريد الوارد بنجاح للهدف ${target.name}.`);
 
     } catch(error) {
       console.error("Error during full history sync:", error);

@@ -481,72 +481,78 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   };
 
   useEffect(() => {
+    const fetchAllData = async () => {
+        // 1. Fetch recent posts/media
+        let allPosts: {id: string; message?: string; full_picture?: string; caption?: string; media_url?: string}[] = [];
+        const postFields = "id,message,full_picture";
+        const igMediaFields = "id,caption,media_url,timestamp";
+
+        const pagePosts = managedTarget.type === 'page' ? await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=25`) : [];
+        const igPosts = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=${igMediaFields}&limit=25`) : [];
+
+        allPosts = [
+            ...pagePosts,
+            ...igPosts.map(p => ({ id: p.id, message: p.caption, full_picture: p.media_url }))
+        ];
+        
+        // 2. Fetch all comments for these posts with pagination
+        const commentFields = 'id,from{id,name,picture{url}},message,created_time';
+        const allCommentsPromises = allPosts.map(async post => {
+            const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${commentFields}&limit=50&order=reverse_chronological`);
+            return commentsData.map((comment: any): InboxItem => ({
+                id: comment.id, type: 'comment', text: comment.message,
+                authorName: comment.from?.name || 'مستخدم غير معروف',
+                authorId: comment.from?.id || 'Unknown',
+                authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
+                timestamp: comment.created_time,
+                post: { id: post.id, message: post.message, picture: post.full_picture }
+            }));
+        });
+        const commentArrays = await Promise.all(allCommentsPromises);
+        const allComments = commentArrays.flat();
+
+        // 3. Fetch all messages (for pages only)
+        let allMessages: InboxItem[] = [];
+        if (managedTarget.type === 'page') {
+            const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=50`);
+            allMessages = convosData.map((convo: any) => {
+                const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
+                return {
+                    id: convo.id, type: 'message', text: convo.snippet,
+                    authorName: participant?.name || 'مستخدم غير معروف',
+                    authorId: participant?.id || 'Unknown',
+                    authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture?type=normal`,
+                    timestamp: convo.updated_time,
+                    conversationId: convo.id
+                };
+            });
+        }
+        
+        // 4. Combine and update state
+        const combinedItems = new Map<string, InboxItem>(inboxItems.map(item => [item.id, item]));
+        [...allComments, ...allMessages].forEach(item => {
+            if (item.type === 'message' && combinedItems.has(item.id)) {
+                const existingItem = combinedItems.get(item.id);
+                if (existingItem?.messages) item.messages = existingItem.messages;
+            }
+            combinedItems.set(item.id, item);
+        });
+
+        const allItems = Array.from(combinedItems.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setInboxItems(allItems);
+        processAutoReplies(allItems);
+        setIsInboxLoading(false);
+    };
+
     if (view === 'inbox' && !isSimulationMode) {
         setIsInboxLoading(true);
-        const fetchAllData = async () => {
-            const fetchAllComments = async (): Promise<InboxItem[]> => {
-                let allPosts: {id: string, message?: string, full_picture?: string}[] = [];
-                const postFields = "id,message,full_picture";
-                
-                // Unwrapped from if(managedTarget.type === 'page') as it's the only possibility now
-                allPosts.push(...await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=50`));
-                if (linkedInstagramTarget) {
-                    const igPosts = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url,timestamp&limit=50`);
-                    allPosts.push(...igPosts.map(p => ({ id: p.id, message: p.caption, full_picture: p.media_url })));
-                }
-
-                if (allPosts.length === 0) return [];
-                const commentsBatchRequest = allPosts.map(post => ({ method: 'GET', relative_url: `${post.id}/comments?fields=id,from{id,name,picture{url}},message,created_time&limit=25&order=reverse_chronological` }));
-                const commentsResponse: any = await new Promise(resolve => window.FB.api('/', 'POST', { batch: commentsBatchRequest, access_token: managedTarget.access_token }, (res: any) => resolve(res)));
-                const allComments: InboxItem[] = [];
-                if (commentsResponse && !commentsResponse.error) {
-                    commentsResponse.forEach((res: any, index: number) => {
-                        if (res.code === 200) {
-                            try {
-                                const body = JSON.parse(res.body);
-                                const originalPost = allPosts[index];
-                                if (body.data) {
-                                    body.data.forEach((comment: any) => allComments.push({
-                                        id: comment.id, type: 'comment', text: comment.message,
-                                        authorName: comment.from?.name || 'مستخدم غير معروف', authorId: comment.from?.id || 'Unknown',
-                                        authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
-                                        timestamp: comment.created_time, post: { id: originalPost.id, message: originalPost.message, picture: originalPost.full_picture }
-                                    }));
-                                }
-                            } catch (e) { /* ignore parse error */ }
-                        }
-                    });
-                }
-                return allComments;
-            };
-            const fetchAllMessages = async (): Promise<InboxItem[]> => {
-                if (managedTarget.type !== 'page') return [];
-                const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`);
-                return convosData.map((convo: any) => {
-                    const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
-                    return { id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف', authorId: participant?.id || 'Unknown',
-                        authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture`,
-                        timestamp: convo.updated_time, conversationId: convo.id
-                    };
-                });
-            };
-            Promise.all([fetchAllComments(), fetchAllMessages()]).then(([comments, messages]) => {
-                const combinedItems = new Map<string, InboxItem>(inboxItems.map(item => [item.id, item]));
-                [...comments, ...messages].forEach(item => {
-                    if (item.type === 'message' && combinedItems.has(item.id)) {
-                        const existingItem = combinedItems.get(item.id);
-                        if (existingItem?.messages) item.messages = existingItem.messages;
-                    }
-                    combinedItems.set(item.id, item);
-                });
-                const allItems = Array.from(combinedItems.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                setInboxItems(allItems);
-                processAutoReplies(allItems);
-            }).catch(() => showNotification('error', 'فشل في جلب البريد الوارد.')).finally(() => setIsInboxLoading(false));
-        };
-        fetchAllData();
+        fetchAllData().catch((error) => {
+            console.error("Error fetching inbox data:", error);
+            showNotification('error', 'فشل في جلب البريد الوارد.');
+            setIsInboxLoading(false);
+        });
     }
-  }, [view, managedTarget.id, linkedInstagramTarget?.id, isSimulationMode, fetchWithPagination, inboxItems, processAutoReplies, showNotification]);
+  }, [view, managedTarget.id, linkedInstagramTarget?.id, isSimulationMode, fetchWithPagination, showNotification, processAutoReplies]);
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.id, message);
