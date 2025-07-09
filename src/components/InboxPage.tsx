@@ -76,7 +76,7 @@ const InboxPage: React.FC<InboxPageProps> = ({
   }, [viewFilter]);
 
   const observer = useRef<IntersectionObserver | null>(null);
-  const loadMoreRef = useCallback((node: HTMLElement | null) => {
+  const loadMoreRef = useCallback(node => {
     if (isLoading) return;
     if (observer.current) observer.current.disconnect();
     observer.current = new IntersectionObserver(entries => {
