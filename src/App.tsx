@@ -252,24 +252,24 @@ const App: React.FC = () => {
     }
     setSyncingTargetId(target.id);
     try {
-        const commentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
-        const postBaseFields = `id,message,full_picture,created_time,from`;
+        const isInstagram = target.type === 'instagram';
         
-        let postsPath: string;
-        let apiParams: any = { limit: 50 };
+        const commentFields = isInstagram
+            ? 'id,from{id,username},text,timestamp'
+            : 'id,from{id,name,picture{url}},message,created_time,parent';
 
-        if (target.type === 'page') {
-            const pageSpecificPostFields = 'likes.summary(true),shares,comments.summary(true),insights.metric(post_impressions_unique){values}';
-            apiParams.fields = `${postBaseFields},${pageSpecificPostFields}`;
-            postsPath = `/${target.id}/feed`;
-        } else if (target.type === 'instagram') {
+        const postBaseFields = 'id,message,full_picture,created_time,from';
+        let postsPath: string;
+        let apiParams: any = { limit: 25 };
+
+        if (isInstagram) {
             const igSpecificPostFields = 'caption,media_url,timestamp,like_count,comments_count,username';
             apiParams.fields = `id,${igSpecificPostFields}`;
             postsPath = `/${target.id}/media`;
-        } else {
-             alert(`مزامنة السجل غير مدعومة حاليًا للنوع '${target.type}'.`);
-             setSyncingTargetId(null);
-             return;
+        } else { // It's a page
+            const pageSpecificPostFields = 'likes.summary(true),shares,comments.summary(true),insights.metric(post_impressions_unique){values}';
+            apiParams.fields = `${postBaseFields},${pageSpecificPostFields}`;
+            postsPath = `/${target.id}/published_posts`;
         }
 
         const fullPath = `${postsPath}?${new URLSearchParams(apiParams).toString()}`;
@@ -293,18 +293,30 @@ const App: React.FC = () => {
         const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
 
         const commentPromises = allPostsData.map(async (post) => {
-            const hasComments = target.type === 'page' ? post.comments?.summary?.total_count > 0 : post.comments_count > 0;
+            const hasComments = isInstagram ? post.comments_count > 0 : post.comments?.summary?.total_count > 0;
             if (hasComments) {
                 const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${commentFields}&limit=100`);
                 return postComments.map((comment: any): InboxItem => {
                     const authorId = comment.from?.id;
-                    const authorPicture = comment.from?.picture?.data?.url;
+                    const commentText = isInstagram ? comment.text : comment.message;
+                    const authorName = isInstagram ? (comment.from?.username || 'مستخدم انستجرام') : (comment.from?.name || 'مستخدم فيسبوك');
+                    const commentTimestamp = isInstagram ? comment.timestamp : comment.created_time;
+                    const authorPicture = !isInstagram ? comment.from?.picture?.data?.url : null;
+                    const authorPictureUrl = authorPicture || (authorId && !isInstagram ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
+
                     return {
-                        id: comment.id, type: 'comment', text: comment.message,
-                        authorName: comment.from?.name || 'مستخدم غير معروف', authorId: authorId || 'Unknown',
-                        authorPictureUrl: authorPicture || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture),
-                        timestamp: comment.created_time,
-                        post: { id: post.id, message: post.message || post.caption, picture: post.full_picture || post.media_url },
+                        id: comment.id,
+                        type: 'comment',
+                        text: commentText || '',
+                        authorName: authorName,
+                        authorId: authorId || 'Unknown',
+                        authorPictureUrl: authorPictureUrl,
+                        timestamp: commentTimestamp,
+                        post: {
+                            id: post.id,
+                            message: post.message || post.caption,
+                            picture: post.full_picture || post.media_url,
+                        },
                         isReply: !!comment.parent,
                     };
                 });
@@ -315,7 +327,7 @@ const App: React.FC = () => {
         commentBatches.forEach(batch => allComments.push(...batch));
 
         let allMessages: InboxItem[] = [];
-        if (target.type === 'page') {
+        if (!isInstagram) { // Messages are only for Facebook Pages
             const convosPath = `/${target.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`;
             const allConvosData = await fetchWithPagination(convosPath);
             allMessages = allConvosData.map((convo: any) => {

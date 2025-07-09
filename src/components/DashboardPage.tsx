@@ -482,39 +482,59 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
   useEffect(() => {
     const fetchAllData = async () => {
-        // 1. Fetch recent posts/media
-        let allPosts: {id: string; message?: string; full_picture?: string; caption?: string; media_url?: string}[] = [];
-        const postFields = "id,message,full_picture";
-        const igMediaFields = "id,caption,media_url,timestamp";
+        const isPage = managedTarget.type === 'page';
+        const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
 
-        const pagePosts = managedTarget.type === 'page' ? await fetchWithPagination(`/${managedTarget.id}/feed?fields=${postFields}&limit=25`) : [];
-        const igPosts = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=${igMediaFields}&limit=25`) : [];
-
-        allPosts = [
-            ...pagePosts,
-            ...igPosts.map(p => ({ id: p.id, message: p.caption, full_picture: p.media_url }))
-        ];
+        // 1. Fetch recent posts/media for page and linked IG account
+        const postFields = "id,message,full_picture,comments.summary(true)";
+        const igMediaFields = "id,caption,media_url,timestamp,comments_count,username";
         
-        // 2. Fetch all comments for these posts with pagination
-        const commentFields = 'id,from{id,name,picture{url}},message,created_time';
-        const allCommentsPromises = allPosts.map(async post => {
-            const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${commentFields}&limit=50&order=reverse_chronological`);
-            return commentsData.map((comment: any): InboxItem => ({
-                id: comment.id, type: 'comment', text: comment.message,
-                authorName: comment.from?.name || 'مستخدم غير معروف',
-                authorId: comment.from?.id || 'Unknown',
-                authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
-                timestamp: comment.created_time,
-                post: { id: post.id, message: post.message, picture: post.full_picture }
-            }));
-        });
-        const commentArrays = await Promise.all(allCommentsPromises);
-        const allComments = commentArrays.flat();
+        const pagePostsData = isPage ? await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${postFields}&limit=10`) : [];
+        const igPostsData = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=${igMediaFields}&limit=10`) : [];
+
+        // 2. Fetch comments for these posts, with platform-specific logic
+        const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
+        const igCommentFields = 'id,from{id,username},text,timestamp';
+
+        const fbCommentsPromise = Promise.all(
+            pagePostsData.map(async (post) => {
+                if (post.comments?.summary?.total_count > 0) {
+                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=50&order=reverse_chronological`);
+                    return commentsData.map((comment: any): InboxItem => ({
+                        id: comment.id, type: 'comment', text: comment.message || '',
+                        authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: comment.from?.id || 'Unknown',
+                        authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
+                        timestamp: comment.created_time,
+                        post: { id: post.id, message: post.message, picture: post.full_picture }
+                    }));
+                }
+                return [];
+            })
+        );
+        
+        const igCommentsPromise = Promise.all(
+            igPostsData.map(async (post) => {
+                if (post.comments_count > 0) {
+                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological`);
+                    return commentsData.map((comment: any): InboxItem => ({
+                        id: comment.id, type: 'comment', text: comment.text || '',
+                        authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
+                        authorPictureUrl: defaultPicture,
+                        timestamp: comment.timestamp,
+                        post: { id: post.id, message: post.caption, picture: post.media_url }
+                    }));
+                }
+                return [];
+            })
+        );
+
+        const [fbCommentArrays, igCommentArrays] = await Promise.all([fbCommentsPromise, igCommentsPromise]);
+        const allComments = [...fbCommentArrays.flat(), ...igCommentArrays.flat()];
 
         // 3. Fetch all messages (for pages only)
         let allMessages: InboxItem[] = [];
-        if (managedTarget.type === 'page') {
-            const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=50`);
+        if (isPage) {
+            const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=25`);
             allMessages = convosData.map((convo: any) => {
                 const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
                 return {
