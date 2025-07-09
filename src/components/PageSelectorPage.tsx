@@ -5,7 +5,6 @@ import { Target, Business } from '../types';
 import Button from './ui/Button';
 import FacebookIcon from './icons/FacebookIcon';
 import InstagramIcon from './icons/InstagramIcon';
-import SettingsIcon from './icons/SettingsIcon';
 import BusinessPortfolioManager from './BusinessPortfolioManager';
 
 
@@ -21,7 +20,6 @@ interface PageSelectorPageProps {
   error: string | null;
   onSelectTarget: (target: Target) => void;
   onLogout: () => void;
-  onSettingsClick: () => void;
 }
 
 const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void; onSync: () => void; isSyncing: boolean }> = ({ target, linkedInstagram, onSelect, onSync, isSyncing }) => {
@@ -79,7 +77,6 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
   error,
   onSelectTarget,
   onLogout,
-  onSettingsClick,
 }) => {
 
   const renderContent = () => {
@@ -140,13 +137,6 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
         <header className="bg-white dark:bg-gray-800 shadow-md p-4 flex justify-between items-center">
             <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">zex-pages</h1>
             <div className="flex items-center gap-2">
-                <button 
-                  onClick={onSettingsClick} 
-                  className="p-2 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                  aria-label="الإعدادات"
-                >
-                  <SettingsIcon className="w-6 h-6" />
-                </button>
                 <Button onClick={onLogout} variant="secondary">تسجيل الخروج</Button>
             </div>
         </header>
