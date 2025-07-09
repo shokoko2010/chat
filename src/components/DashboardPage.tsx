@@ -306,8 +306,37 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         const rawData = localStorage.getItem(dataKey);
         savedData = rawData ? JSON.parse(rawData) : {};
     } catch(e) {
+        console.error("Failed to parse localStorage data, starting fresh.", e);
         savedData = {};
     }
+
+    // --- Data Migration for AutoResponderSettings ---
+    const loadedSettings = savedData.autoResponderSettings;
+    // Perform a safe merge to ensure the settings object matches the current structure.
+    // This prevents crashes if data in localStorage is from an older version of the app.
+    const safeSettings: AutoResponderSettings = {
+        ...initialAutoResponderSettings,
+        ...(loadedSettings || {}),
+        comments: {
+            ...initialAutoResponderSettings.comments,
+            ...(loadedSettings?.comments || {}),
+            rules: loadedSettings?.comments?.rules || [],
+        },
+        messages: {
+            ...initialAutoResponderSettings.messages,
+            ...(loadedSettings?.messages || {}),
+            rules: loadedSettings?.messages?.rules || [],
+        },
+        fallback: {
+            ...initialAutoResponderSettings.fallback,
+            ...(loadedSettings?.fallback || {}),
+        },
+        replyOncePerUser: typeof loadedSettings?.replyOncePerUser === 'boolean' 
+            ? loadedSettings.replyOncePerUser 
+            : initialAutoResponderSettings.replyOncePerUser,
+    };
+    setAutoResponderSettings(safeSettings);
+    // --- End of Data Migration ---
 
     setPageProfile(savedData.pageProfile || { description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
     setDrafts(savedData.drafts?.map((d: any) => ({...d, imageFile: null})) || []);
@@ -315,7 +344,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setContentPlan(savedData.contentPlan || null);
     setStrategyHistory(savedData.strategyHistory || []);
     setPublishedPosts(savedData.publishedPosts?.map((p:any) => ({...p, publishedAt: new Date(p.publishedAt)})) || []);
-    setAutoResponderSettings(savedData.autoResponderSettings || initialAutoResponderSettings);
+    
     setAutoRepliedItems(new Set(savedData.autoRepliedItems || []));
     setRepliedUsersPerPost(savedData.repliedUsersPerPost || {});
     setInboxItems(savedData.inboxItems?.map((i:any) => ({...i, timestamp: new Date(i.timestamp).toISOString()})) || []);
