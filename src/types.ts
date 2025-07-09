@@ -9,7 +9,7 @@ declare global {
 export interface Target {
   id: string;
   name:string;
-  type: 'page' | 'group' | 'instagram';
+  type: 'page' | 'instagram';
   access_token?: string;
   picture: {
     data: {
@@ -31,7 +31,7 @@ export interface ScheduledPost {
   targetInfo: {
       name: string;
       avatarUrl: string;
-      type: 'page' | 'group' | 'instagram';
+      type: 'page' | 'instagram';
   }
 }
 
