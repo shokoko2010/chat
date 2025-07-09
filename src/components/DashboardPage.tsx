@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, InboxMessage } from '../types';
 import Header from './Header';
@@ -112,7 +113,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     comments: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل,خاص', replyOncePerUser: true, publicReplyEnabled: false, publicReplyMessage: '', privateReplyEnabled: true, privateReplyMessage: 'أهلاً بك {user_name}، تم إرسال التفاصيل على الخاص 📩' },
     messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
   });
-  const [autoRepliedItems, setAutoRepliedItems] = useState<Set<string>>(new Set());
+  const [autoRepliedItems, setAutoRepliedItems] = useState<Set<string>>(new Set([]));
   const [repliedUsersPerPost, setRepliedUsersPerPost] = useState<Record<string, string[]>>({});
 
 
