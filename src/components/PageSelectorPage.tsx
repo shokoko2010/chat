@@ -1,6 +1,5 @@
 
 
-
 import React from 'react';
 import { Target, Business } from '../types';
 import Button from './ui/Button';
@@ -24,7 +23,7 @@ interface PageSelectorPageProps {
 }
 
 const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void; onSync: () => void; isSyncing: boolean }> = ({ target, linkedInstagram, onSelect, onSync, isSyncing }) => {
-    const typeText = target.type === 'page' ? 'صفحة فيسبوك' : 'مجموعة فيسبوك';
+    const typeText = 'صفحة فيسبوك';
 
     return (
         <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col h-full">
@@ -110,7 +109,7 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
       instagramAccountsByParentId.set(ig.parentPageId!, ig);
     });
 
-    const primaryTargets = targets.filter(t => t.type === 'page' || t.type === 'group');
+    const primaryTargets = targets.filter(t => t.type === 'page');
 
     return (
         <div className="space-y-8">
