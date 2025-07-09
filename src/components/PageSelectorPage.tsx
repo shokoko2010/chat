@@ -103,10 +103,11 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
       );
     }
     
-    const instagramAccountsByParentId = new Map<string, Target>();
-    targets.filter(t => t.type === 'instagram' && t.parentPageId).forEach(ig => {
-      instagramAccountsByParentId.set(ig.parentPageId!, ig);
-    });
+    const instagramAccountsByParentId = new Map<string, Target>(
+      targets
+        .filter(t => t.type === 'instagram' && t.parentPageId)
+        .map(ig => [ig.parentPageId!, ig])
+    );
 
     const primaryTargets = targets.filter(t => t.type === 'page' || t.type === 'group');
 
