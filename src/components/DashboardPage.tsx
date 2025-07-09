@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, InboxMessage } from '../types';
 import Header from './Header';
@@ -416,7 +417,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         
         for (const target of targetsToPublishTo) {
             const isReminder = target.type === 'instagram' && !!finalScheduleDate;
-            const result = await publishToTarget(target, textToPublish, imageToPublish, finalScheduleDate, isReminder);
+            const result = await publishToTarget(target, textToPublish, imageToPublish || null, finalScheduleDate, isReminder);
             results.push(result);
 
             if (result.success && finalScheduleDate) {
@@ -594,7 +595,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         id: `post_${targetId}_${Date.now()}_${Math.random()}`,
                         text: post.text,
                         imageUrl: post.imagePreview,
-                        imageFile: post.imageFile,
+                        imageFile: post.imageFile || undefined,
                         scheduledAt: scheduleDate,
                         isReminder: isReminder,
                         targetId: target.id,
