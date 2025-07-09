@@ -1,6 +1,4 @@
 
-
-
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { StrategyRequest, ContentPlanItem, PostAnalytics, PageProfile, PerformanceSummaryData } from "../types";
 
@@ -532,5 +530,43 @@ export const generateAutoReply = async (ai: GoogleGenAI, userMessage: string, pa
   } catch (error) {
     console.error("Error generating auto-reply:", error);
     throw new Error("حدث خطأ أثناء إنشاء الرد التلقائي.");
+  }
+};
+
+export const generateReplyVariations = async (ai: GoogleGenAI, baseReply: string): Promise<string[]> => {
+  if (!baseReply.trim()) {
+    throw new Error("لا يمكن إنشاء تنويعات من نص فارغ.");
+  }
+  const prompt = `
+    أنت خبير في كتابة الإعلانات. مهمتك هي أخذ رسالة رد أساسية وإنشاء 3 تنويعات إبداعية لها.
+    يجب أن تحافظ التنويعات على نفس المعنى ولكن بأساليب مختلفة (واحدة أكثر رسمية، واحدة أكثر وداً، وواحدة مختصرة).
+
+    الرسالة الأساسية:
+    "${baseReply}"
+
+    أرجع الرد بتنسيق JSON فقط، على شكل مصفوفة من السلاسل النصية.
+    مثال: ["الرد الأول", "الرد الثاني", "الرد الثالث"]
+  `;
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING }
+        }
+      },
+    });
+    
+    const text = response.text;
+    if (!text) throw new Error("لم يتمكن الذكاء الاصطناعي من اقتراح تنويعات (استجابة فارغة).");
+    const variations = JSON.parse(text.trim());
+    if (Array.isArray(variations) && variations.length > 0) return variations;
+    throw new Error("فشل الذكاء الاصطناعي في إنشاء تنويعات بالتنسيق المطلوب.");
+  } catch (error) {
+    console.error("Error generating reply variations:", error);
+    throw new Error("حدث خطأ أثناء إنشاء تنويعات الرد.");
   }
 };

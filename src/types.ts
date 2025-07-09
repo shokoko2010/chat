@@ -1,5 +1,4 @@
 
-
 declare global {
   interface Window {
     FB: any;
@@ -195,33 +194,40 @@ export interface InboxItem {
   messages?: InboxMessage[]; // For message history
 }
 
+// --- Types for Auto-Responder (New IFTTT-style) ---
 
-// --- Types for Auto-Responder ---
-// A rule for keyword matching
-export interface AutoResponderRule {
-  id: string;
-  keywords: string; // comma-separated
-  publicReplyMessage: string; // For comments
-  privateReplyMessage: string; // For comments
-  messageReply: string; // For messages
+export type AutoResponderTriggerSource = 'comment' | 'message';
+export type AutoResponderMatchType = 'any' | 'all' | 'exact';
+export type AutoResponderActionType = 'public_reply' | 'private_reply' | 'direct_message';
+
+export interface AutoResponderTrigger {
+  source: AutoResponderTriggerSource;
+  matchType: AutoResponderMatchType;
+  keywords: string[];
+  negativeKeywords: string[];
 }
 
-// Fallback configuration
+export interface AutoResponderAction {
+  type: AutoResponderActionType;
+  enabled: boolean;
+  messageVariations: string[];
+}
+
+export interface AutoResponderRule {
+  id: string;
+  name: string;
+  trigger: AutoResponderTrigger;
+  actions: AutoResponderAction[];
+}
+
 export interface AutoResponderFallback {
   mode: 'ai' | 'static' | 'off';
   staticMessage: string;
 }
 
-// Configuration for one channel (e.g. comments).
-export interface AutoResponderConfig {
-  enabled: boolean;
-  rules: AutoResponderRule[];
-}
-
-// Top-level settings, REPLACING the old one.
+// Top-level settings, REPLACING the old structure.
 export interface AutoResponderSettings {
-  comments: AutoResponderConfig;
-  messages: AutoResponderConfig;
+  rules: AutoResponderRule[];
   fallback: AutoResponderFallback;
-  replyOncePerUser: boolean; // For comments
+  replyOncePerUser: boolean; // Global setting for comments
 }

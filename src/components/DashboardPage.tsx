@@ -1,7 +1,6 @@
 
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule } from '../types';
+import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule, AutoResponderAction } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
 import PostPreview from './PostPreview';
@@ -66,14 +65,7 @@ const NavItem: React.FC<{
 );
 
 const initialAutoResponderSettings: AutoResponderSettings = {
-  comments: {
-    enabled: false,
-    rules: [],
-  },
-  messages: {
-    enabled: false,
-    rules: [],
-  },
+  rules: [],
   fallback: {
     mode: 'off',
     staticMessage: 'شكرًا على رسالتك! سيقوم أحد ممثلينا بالرد عليك في أقرب وقت ممكن.',
@@ -310,33 +302,76 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         savedData = {};
     }
 
-    // --- Data Migration for AutoResponderSettings ---
     const loadedSettings = savedData.autoResponderSettings;
-    // Perform a safe merge to ensure the settings object matches the current structure.
-    // This prevents crashes if data in localStorage is from an older version of the app.
-    const safeSettings: AutoResponderSettings = {
-        ...initialAutoResponderSettings,
-        ...(loadedSettings || {}),
-        comments: {
-            ...initialAutoResponderSettings.comments,
-            ...(loadedSettings?.comments || {}),
-            rules: loadedSettings?.comments?.rules || [],
-        },
-        messages: {
-            ...initialAutoResponderSettings.messages,
-            ...(loadedSettings?.messages || {}),
-            rules: loadedSettings?.messages?.rules || [],
-        },
-        fallback: {
-            ...initialAutoResponderSettings.fallback,
-            ...(loadedSettings?.fallback || {}),
-        },
-        replyOncePerUser: typeof loadedSettings?.replyOncePerUser === 'boolean' 
-            ? loadedSettings.replyOncePerUser 
-            : initialAutoResponderSettings.replyOncePerUser,
+
+    // Data Migration Logic for AutoResponder
+    const migrateSettings = (oldSettings: any): AutoResponderSettings => {
+        const newRules: AutoResponderRule[] = [];
+        if (oldSettings.comments?.enabled && oldSettings.comments?.rules) {
+            oldSettings.comments.rules.forEach((oldRule: any) => {
+                const actions: AutoResponderAction[] = [];
+                if (oldRule.publicReplyMessage) {
+                    actions.push({ type: 'public_reply', enabled: true, messageVariations: [oldRule.publicReplyMessage] });
+                }
+                if (oldRule.privateReplyMessage) {
+                    actions.push({ type: 'private_reply', enabled: true, messageVariations: [oldRule.privateReplyMessage] });
+                }
+                if (actions.length > 0) {
+                    newRules.push({
+                        id: oldRule.id || `migrated_c_${Date.now()}_${Math.random()}`,
+                        name: `قاعدة تعليقات لـ "${oldRule.keywords}"`,
+                        trigger: {
+                            source: 'comment',
+                            matchType: 'any',
+                            keywords: oldRule.keywords.split(',').map((k:string) => k.trim()).filter(Boolean),
+                            negativeKeywords: [],
+                        },
+                        actions,
+                    });
+                }
+            });
+        }
+        if (oldSettings.messages?.enabled && oldSettings.messages?.rules) {
+            oldSettings.messages.rules.forEach((oldRule: any) => {
+                 if (oldRule.messageReply) {
+                     newRules.push({
+                        id: oldRule.id || `migrated_m_${Date.now()}_${Math.random()}`,
+                        name: `قاعدة رسائل لـ "${oldRule.keywords}"`,
+                        trigger: {
+                            source: 'message',
+                            matchType: 'any',
+                            keywords: oldRule.keywords.split(',').map((k:string) => k.trim()).filter(Boolean),
+                            negativeKeywords: [],
+                        },
+                        actions: [{ type: 'direct_message', enabled: true, messageVariations: [oldRule.messageReply] }],
+                    });
+                 }
+            });
+        }
+        return {
+            rules: newRules,
+            fallback: oldSettings.fallback || initialAutoResponderSettings.fallback,
+            replyOncePerUser: typeof oldSettings.replyOncePerUser === 'boolean' ? oldSettings.replyOncePerUser : true,
+        };
     };
-    setAutoResponderSettings(safeSettings);
+
+    let finalSettings: AutoResponderSettings;
+    if (loadedSettings && (loadedSettings.comments || loadedSettings.messages)) {
+        finalSettings = migrateSettings(loadedSettings);
+        showNotification('success', 'تم تحديث نظام الرد التلقائي! يرجى مراجعة إعداداتك الجديدة.');
+    } else if (loadedSettings) {
+        finalSettings = {
+            ...initialAutoResponderSettings,
+            ...loadedSettings,
+            rules: loadedSettings.rules || [],
+            fallback: { ...initialAutoResponderSettings.fallback, ...(loadedSettings.fallback || {}) }
+        };
+    } else {
+        finalSettings = initialAutoResponderSettings;
+    }
+    setAutoResponderSettings(finalSettings);
     // --- End of Data Migration ---
+
 
     setPageProfile(savedData.pageProfile || { description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
     setDrafts(savedData.drafts?.map((d: any) => ({...d, imageFile: null})) || []);
@@ -481,8 +516,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   };
 
   const processAutoReplies = useCallback(async (currentInboxItems: InboxItem[]) => {
-    const { comments, messages, fallback, replyOncePerUser } = autoResponderSettings;
-    if (!comments.enabled && !messages.enabled && fallback.mode === 'off') return;
+    const { rules, fallback, replyOncePerUser } = autoResponderSettings;
+    if (rules.length === 0 && fallback.mode === 'off') return;
 
     const itemsToProcess = currentInboxItems.filter(item => !autoRepliedItems.has(item.id));
     if (itemsToProcess.length === 0) return;
@@ -494,37 +529,63 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     for (const item of itemsToProcess) {
         let replied = false;
         const lowerCaseText = item.text.toLowerCase();
-        
-        const config = item.type === 'comment' ? comments : messages;
-        let matchedRule = null;
 
-        if (config.enabled) {
-            matchedRule = config.rules.find(rule => 
-                rule.keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean).some(k => lowerCaseText.includes(k))
-            );
-        }
+        for (const rule of rules) {
+            if (rule.trigger.source !== item.type) continue;
+            
+            const hasNegative = rule.trigger.negativeKeywords.filter(Boolean).some(nk => lowerCaseText.includes(nk.toLowerCase()));
+            if (hasNegative) continue;
+            
+            const keywords = rule.trigger.keywords.filter(Boolean).map(k => k.toLowerCase());
+            let matched = false;
+            if (keywords.length > 0) {
+                if (rule.trigger.matchType === 'any') {
+                    matched = keywords.some(k => lowerCaseText.includes(k));
+                } else if (rule.trigger.matchType === 'all') {
+                    matched = keywords.every(k => lowerCaseText.includes(k));
+                } else if (rule.trigger.matchType === 'exact') {
+                    matched = keywords.some(k => lowerCaseText === k);
+                }
+            } else {
+                matched = true;
+            }
 
-        if (matchedRule) {
-            if (item.type === 'comment') {
-                if (replyOncePerUser && repliedUsersPerPost[item.post?.id || '']?.includes(item.authorId)) continue;
-                if (matchedRule.publicReplyMessage) {
-                    await handleReplyToComment(item.id, matchedRule.publicReplyMessage.replace('{user_name}', item.authorName));
+            if (matched) {
+                if (item.type === 'comment' && replyOncePerUser && (newRepliedUsers[item.post?.id || ''] || []).includes(item.authorId)) {
+                    continue;
                 }
-                if (matchedRule.privateReplyMessage) {
-                    await handlePrivateReplyToComment(item.id, matchedRule.privateReplyMessage.replace('{user_name}', item.authorName));
+                
+                let actionTaken = false;
+                for (const action of rule.actions) {
+                    if (!action.enabled || action.messageVariations.length === 0) continue;
+                    
+                    const messageToSend = action.messageVariations[Math.floor(Math.random() * action.messageVariations.length)];
+                    if (!messageToSend) continue;
+
+                    const finalMessage = messageToSend.replace('{user_name}', item.authorName);
+                    
+                    if (action.type === 'public_reply' && item.type === 'comment') {
+                        await handleReplyToComment(item.id, finalMessage);
+                        actionTaken = true;
+                    } else if (action.type === 'private_reply' && item.type === 'comment') {
+                        await handlePrivateReplyToComment(item.id, finalMessage);
+                        actionTaken = true;
+                    } else if (action.type === 'direct_message' && item.type === 'message') {
+                        await handleSendMessage(item.conversationId || item.id, finalMessage);
+                        actionTaken = true;
+                    }
                 }
-            } else { // message
-                if (matchedRule.messageReply) {
-                    await handleSendMessage(item.conversationId || item.id, matchedRule.messageReply.replace('{user_name}', item.authorName));
+
+                if (actionTaken) {
+                    replied = true;
+                    break;
                 }
             }
-            replied = true;
-        } else {
-            if (fallback.mode === 'off') continue;
-            // For comments, fallback usually sends a private reply.
-            // Let's only do fallback for messages to avoid spamming comments.
+        }
+
+        if (!replied && fallback.mode !== 'off') {
             if (item.type === 'comment') continue;
-            
+
             let fallbackMessage = '';
             if (fallback.mode === 'static') {
                 fallbackMessage = fallback.staticMessage;
@@ -537,10 +598,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
             }
             
-            if (fallbackMessage) {
-                if (item.type === 'message') {
-                    await handleSendMessage(item.conversationId || item.id, fallbackMessage.replace('{user_name}', item.authorName));
-                }
+            if (fallbackMessage && item.type === 'message') {
+                await handleSendMessage(item.conversationId || item.id, fallbackMessage.replace('{user_name}', item.authorName));
                 replied = true;
             }
         }
@@ -558,7 +617,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setAutoRepliedItems(newRepliedItems);
     setRepliedUsersPerPost(newRepliedUsers);
     if (replyCount > 0) showNotification('success', `تم إرسال ${replyCount} ردًا تلقائيًا.`);
-
 }, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handlePrivateReplyToComment, handleSendMessage]);
 
 
