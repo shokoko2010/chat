@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -34,7 +35,7 @@ const App: React.FC = () => {
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
   
   const [loadingBusinessId, setLoadingBusinessId] = useState<string | null>(null);
-  const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set());
+  const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set([]));
   const [syncingTargetId, setSyncingTargetId] = useState<string | null>(null);
 
 
