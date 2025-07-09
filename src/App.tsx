@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -7,7 +6,6 @@ import HomePage from './components/HomePage';
 import { GoogleGenAI } from '@google/genai';
 import { initializeGoogleGenAI } from './services/geminiService';
 import { Target, Business, PublishedPost, InboxItem } from './types';
-import SettingsModal from './components/SettingsModal';
 
 const isSimulation = window.location.protocol === 'http:';
 
@@ -27,7 +25,6 @@ const App: React.FC = () => {
     isSimulation ? 'connected' : 'loading'
   );
   
-  const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('geminiApiKey'));
   const [aiClient, setAiClient] = useState<GoogleGenAI | null>(null);
 
   const [targets, setTargets] = useState<Target[]>([]);
@@ -35,7 +32,6 @@ const App: React.FC = () => {
   const [targetsLoading, setTargetsLoading] = useState(true);
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   const [loadingBusinessId, setLoadingBusinessId] = useState<string | null>(null);
   const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set());
@@ -43,14 +39,8 @@ const App: React.FC = () => {
 
 
   useEffect(() => {
-    setAiClient(initializeGoogleGenAI(apiKey ?? ''));
-  }, [apiKey]);
-
-  const handleSaveApiKey = (newKey: string) => {
-    localStorage.setItem('geminiApiKey', newKey);
-    setApiKey(newKey);
-    setIsSettingsOpen(false);
-  };
+    setAiClient(initializeGoogleGenAI());
+  }, []);
 
   const isSimulationMode = isSimulation;
 
@@ -418,7 +408,6 @@ const App: React.FC = () => {
             onLogout={handleLogout}
             isSimulationMode={isSimulationMode}
             aiClient={aiClient}
-            onSettingsClick={() => setIsSettingsOpen(true)}
             fetchWithPagination={fetchWithPagination}
           />
         );
@@ -436,7 +425,6 @@ const App: React.FC = () => {
           error={targetsError}
           onSelectTarget={handleSelectTarget}
           onLogout={handleLogout}
-          onSettingsClick={() => setIsSettingsOpen(true)}
         />
       );
   };
@@ -444,12 +432,6 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       {renderContent()}
-      <SettingsModal 
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        onSave={handleSaveApiKey}
-        currentApiKey={apiKey}
-      />
     </div>
   );
 };
