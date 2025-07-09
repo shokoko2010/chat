@@ -189,16 +189,16 @@ const App: React.FC = () => {
 
             const [allPagesData, allGroupsRaw, allBusinessesData] = await Promise.all([pagesPromise, groupsPromise, businessesPromise]);
 
-            const allTargetsMap = new Map<string, Target>();
-            if (allPagesData) allPagesData.forEach(p => allTargetsMap.set(p.id, { ...p, type: 'page' }));
+            const allTargetsMap: Record<string, Target> = {};
+            if (allPagesData) allPagesData.forEach(p => allTargetsMap[p.id] = { ...p, type: 'page' });
             if (allGroupsRaw) {
               const adminGroups = allGroupsRaw.filter(g => g.permissions?.data.some((p: any) => p.permission === 'admin'));
-              adminGroups.forEach(g => allTargetsMap.set(g.id, { ...g, type: 'group' }));
+              adminGroups.forEach(g => allTargetsMap[g.id] = { ...g, type: 'group' });
             }
             const igAccounts = await fetchInstagramAccounts(allPagesData);
-            igAccounts.forEach(ig => allTargetsMap.set(ig.id, ig));
+            igAccounts.forEach(ig => allTargetsMap[ig.id] = ig);
             
-            setTargets(Array.from(allTargetsMap.values()));
+            setTargets(Object.values(allTargetsMap));
             setBusinesses(allBusinessesData);
         } catch (error) {
             console.error("Error fetching data from Facebook:", error);
@@ -221,14 +221,19 @@ const App: React.FC = () => {
       
       const igAccounts = await fetchInstagramAccounts(allBusinessPages);
       
-      const newTargetsMap = new Map<string, Target>();
-      allBusinessPages.forEach(p => newTargetsMap.set(p.id, { ...p, type: 'page' }));
-      igAccounts.forEach(ig => newTargetsMap.set(ig.id, ig));
+      const newTargetsMap: Record<string, Target> = {};
+      allBusinessPages.forEach(p => newTargetsMap[p.id] = { ...p, type: 'page' });
+      igAccounts.forEach(ig => newTargetsMap[ig.id] = ig);
       
       setTargets(prevTargets => {
-        const existingTargetsMap = new Map(prevTargets.map(t => [t.id, t]));
-        newTargetsMap.forEach((value, key) => existingTargetsMap.set(key, value));
-        return Array.from(existingTargetsMap.values());
+        const existingTargetsMap = prevTargets.reduce((acc, t) => {
+            acc[t.id] = t;
+            return acc;
+        }, {} as Record<string, Target>);
+        
+        Object.assign(existingTargetsMap, newTargetsMap);
+        
+        return Object.values(existingTargetsMap);
       });
       
       setLoadedBusinessIds(prev => ({ ...prev, [businessId]: true }));
@@ -334,11 +339,11 @@ const App: React.FC = () => {
         const data = rawData ? JSON.parse(rawData) : {};
         
         const existingInbox = data.inboxItems || [];
-        const combinedInboxMap = new Map<string, InboxItem>();
-        existingInbox.forEach((item: InboxItem) => combinedInboxMap.set(item.id, item));
-        combinedInboxItems.forEach((item: InboxItem) => combinedInboxMap.set(item.id, item));
+        const combinedInboxMap: Record<string, InboxItem> = {};
+        existingInbox.forEach((item: InboxItem) => { if(item && item.id) combinedInboxMap[item.id] = item; });
+        combinedInboxItems.forEach((item: InboxItem) => { if(item && item.id) combinedInboxMap[item.id] = item; });
         
-        const validatedInboxItems = Array.from(combinedInboxMap.values())
+        const validatedInboxItems = Object.values(combinedInboxMap)
             .filter(item => item && item.timestamp && !isNaN(new Date(item.timestamp).getTime()));
 
         const sortedInboxItems = validatedInboxItems.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
