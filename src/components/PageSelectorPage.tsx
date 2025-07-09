@@ -1,5 +1,4 @@
 
-
 import React from 'react';
 import { Target, Business } from '../types';
 import Button from './ui/Button';
