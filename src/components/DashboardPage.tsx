@@ -806,7 +806,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     // --- End Analytics ---
     
     //--- INBOX LOGIC (REFACTORED) ---
+    const handleInboxReply = useCallback(async (item: InboxItem, message: string): Promise<boolean> => {
+        if(isSimulationMode) {
+            showNotification('success', 'تم إرسال الرد (محاكاة).');
+            return true;
+        }
 
+        const endpoint = item.type === 'comment' ? `/${item.id}/comments` : `/${item.conversationId}/messages`;
+        const params = { message, access_token: managedTarget.access_token };
+        try {
+            const response: any = await new Promise(resolve => window.FB.api(endpoint, 'POST', params, (res: any) => resolve(res)));
+            if (response && response.id) {
+                showNotification('success', 'تم إرسال الرد بنجاح.');
+                if (item.type === 'message') {
+                   const newMessage: InboxMessage = { id: response.id, from: { id: managedTarget.id, name: managedTarget.name }, message, created_time: new Date().toISOString() };
+                   setInboxItems(prev => prev.map(i => i.id === item.id ? { ...i, messages: [...(i.messages || []), newMessage] } : i));
+                }
+                return true;
+            }
+            throw new Error(response?.error?.message || 'خطأ غير معروف');
+        } catch(e: any) {
+            showNotification('error', `فشل إرسال الرد: ${e.message}`);
+            return false;
+        }
+    }, [managedTarget.access_token, showNotification, isSimulationMode, managedTarget.id, managedTarget.name]);
+    
     // Effect to load all data from storage, and fetch live data for the current view
     useEffect(() => {
         // 1. Load all state from local storage on target change
@@ -923,30 +947,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }, [managedTarget.id, view, isSimulationMode, fetchWithPagination, showNotification, linkedInstagramTarget]);
 
 
-    const handleInboxReply = useCallback(async (item: InboxItem, message: string): Promise<boolean> => {
-        if(isSimulationMode) {
-            showNotification('success', 'تم إرسال الرد (محاكاة).');
-            return true;
-        }
-
-        const endpoint = item.type === 'comment' ? `/${item.id}/comments` : `/${item.conversationId}/messages`;
-        const params = { message, access_token: managedTarget.access_token };
-        try {
-            const response: any = await new Promise(resolve => window.FB.api(endpoint, 'POST', params, (res: any) => resolve(res)));
-            if (response && response.id) {
-                showNotification('success', 'تم إرسال الرد بنجاح.');
-                if (item.type === 'message') {
-                   const newMessage: InboxMessage = { id: response.id, from: { id: managedTarget.id, name: managedTarget.name }, message, created_time: new Date().toISOString() };
-                   setInboxItems(prev => prev.map(i => i.id === item.id ? { ...i, messages: [...(i.messages || []), newMessage] } : i));
-                }
-                return true;
-            }
-            throw new Error(response?.error?.message || 'خطأ غير معروف');
-        } catch(e: any) {
-            showNotification('error', `فشل إرسال الرد: ${e.message}`);
-            return false;
-        }
-    }, [managedTarget.access_token, showNotification, isSimulationMode, managedTarget.id, managedTarget.name]);
     
     // Effect for processing auto-replies. Runs ONLY when items or settings change.
     useEffect(() => {
@@ -960,7 +960,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
             const { comments: commentSettings, messages: messageSettings } = autoResponderSettings;
 
-            let repliedItemsThisRun = new Set<string>();
+            let repliedItemsThisRun = new Set<string>([]);
             let repliedUsersThisRun: Record<string, string[]> = {};
 
             const keywordsMatch = (text: string, keywordsStr: string) => {
