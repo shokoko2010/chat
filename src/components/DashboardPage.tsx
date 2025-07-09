@@ -113,7 +113,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     messages: { realtimeEnabled: false, keywords: 'السعر,بكم,تفاصيل', replyMessage: 'أهلاً بك {user_name}، سأرسل لك كل التفاصيل حول استفسارك خلال لحظات.' }
   });
   const [autoRepliedItems, setAutoRepliedItems] = useState<Record<string, boolean>>({});
-  const [repliedUsersPerPost, setRepliedUsersPerPost] = useState<Record<string, string[]>>({});
+  const [repliedUsersPerPost, setRepliedUsersPerPost] = useState<Record<string, Record<string, boolean>>>({});
 
 
   const linkedInstagramTarget = useMemo(() => {
@@ -913,9 +913,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
                 
                 setInboxItems(prevItems => {
-                    const itemsMap = new Map<string, InboxItem>();
-                    [...prevItems, ...fetchedItems].forEach(item => { if(item?.id) itemsMap.set(item.id, item) });
-                    const validatedItems = Array.from(itemsMap.values()).filter(item => item?.timestamp && !isNaN(new Date(item.timestamp).getTime()));
+                    const itemsMap: Record<string, InboxItem> = {};
+                    [...prevItems, ...fetchedItems].forEach(item => { if(item?.id) itemsMap[item.id] = item });
+                    const validatedItems = Object.values(itemsMap).filter(item => item?.timestamp && !isNaN(new Date(item.timestamp).getTime()));
                     return validatedItems.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
                 });
             } catch (err: any) {
@@ -961,7 +961,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             const { comments: commentSettings, messages: messageSettings } = autoResponderSettings;
 
             let repliedItemsThisRun: Record<string, boolean> = {};
-            let repliedUsersThisRun: Record<string, string[]> = {};
+            let repliedUsersThisRun: Record<string, Record<string, boolean>> = {};
 
             const keywordsMatch = (text: string, keywordsStr: string) => {
                 const keywords = keywordsStr.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
@@ -974,7 +974,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                  const postKey = item.post?.id || 'unknown_post';
 
                  if (item.type === 'comment' && commentSettings.realtimeEnabled && keywordsMatch(item.text, commentSettings.keywords)) {
-                    if (commentSettings.replyOncePerUser && (repliedUsersPerPost[postKey]?.includes(item.authorId) || repliedUsersThisRun[postKey]?.includes(item.authorId))) {
+                    if (commentSettings.replyOncePerUser && (repliedUsersPerPost[postKey]?.[item.authorId] || repliedUsersThisRun[postKey]?.[item.authorId])) {
                         continue;
                     }
 
@@ -987,7 +987,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     
                     repliedItemsThisRun[item.id] = true;
                     if (postKey) {
-                        repliedUsersThisRun[postKey] = [...(repliedUsersThisRun[postKey] || []), item.authorId];
+                        if (!repliedUsersThisRun[postKey]) {
+                            repliedUsersThisRun[postKey] = {};
+                        }
+                        repliedUsersThisRun[postKey][item.authorId] = true;
                     }
 
                 } else if (item.type === 'message' && messageSettings.realtimeEnabled && keywordsMatch(item.text, messageSettings.keywords)) {
@@ -1001,9 +1004,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             }
             if(Object.keys(repliedUsersThisRun).length > 0) {
                 setRepliedUsersPerPost(prev => {
-                    const newRecord = {...prev};
-                    for (const key in repliedUsersThisRun) {
-                        newRecord[key] = [...(newRecord[key] || []), ...repliedUsersThisRun[key]];
+                    const newRecord = { ...prev };
+                    for (const postKey in repliedUsersThisRun) {
+                        if (!newRecord[postKey]) {
+                            newRecord[postKey] = {};
+                        }
+                        Object.assign(newRecord[postKey], repliedUsersThisRun[postKey]);
                     }
                     return newRecord;
                 });
