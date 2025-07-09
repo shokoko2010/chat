@@ -125,6 +125,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     return allTargets.find(t => t.type === 'instagram' && t.parentPageId === managedTarget.id) || null;
   }, [managedTarget, allTargets]);
 
+  const bulkSchedulerTargets = useMemo(() => {
+    const targets = [managedTarget];
+    if (linkedInstagramTarget) {
+        targets.push(linkedInstagramTarget);
+    }
+    return targets;
+  }, [managedTarget, linkedInstagramTarget]);
+
   const clearComposer = useCallback(() => {
     setPostText(''); setSelectedImage(null); setImagePreview(null);
     setScheduleDate(''); setComposerError('');
@@ -777,6 +785,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     };
 
     const onAddBulkPosts = (files: FileList) => {
+        const defaultTargetIds = [managedTarget.id];
+        if (linkedInstagramTarget) {
+            defaultTargetIds.push(linkedInstagramTarget.id);
+        }
+
         const newPosts: BulkPostItem[] = Array.from(files).map(file => {
             return {
                 id: `bulk_${Date.now()}_${Math.random()}`,
@@ -784,7 +797,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 imagePreview: URL.createObjectURL(file),
                 text: '',
                 scheduleDate: '',
-                targetIds: [managedTarget.id],
+                targetIds: defaultTargetIds,
             };
         });
         const combined = [...bulkPosts, ...newPosts];
@@ -924,7 +937,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         case 'analytics':
             return <AnalyticsPage period={analyticsPeriod} onPeriodChange={setAnalyticsPeriod} summaryData={summaryData} aiSummary={performanceSummaryText} isGeneratingSummary={isGeneratingSummary} posts={filteredPosts} isLoading={publishedPostsLoading} onFetchAnalytics={() => {}} onGenerateInsights={handleGenerateInsights} />;
         case 'bulk':
-            return <BulkSchedulerPage bulkPosts={bulkPosts} onAddPosts={onAddBulkPosts} onUpdatePost={onUpdateBulkPost} onRemovePost={onRemoveBulkPost} onScheduleAll={handleScheduleAll} isSchedulingAll={isSchedulingAll} targets={allTargets} aiClient={aiClient} onGenerateDescription={onGenerateBulkDescription} schedulingStrategy={schedulingStrategy} onSchedulingStrategyChange={setSchedulingStrategy} weeklyScheduleSettings={weeklyScheduleSettings} onWeeklyScheduleSettingsChange={setWeeklyScheduleSettings} onReschedule={handleReschedule} />;
+            return <BulkSchedulerPage bulkPosts={bulkPosts} onAddPosts={onAddBulkPosts} onUpdatePost={onUpdateBulkPost} onRemovePost={onRemoveBulkPost} onScheduleAll={handleScheduleAll} isSchedulingAll={isSchedulingAll} targets={bulkSchedulerTargets} aiClient={aiClient} onGenerateDescription={onGenerateBulkDescription} schedulingStrategy={schedulingStrategy} onSchedulingStrategyChange={setSchedulingStrategy} weeklyScheduleSettings={weeklyScheduleSettings} onWeeklyScheduleSettingsChange={setWeeklyScheduleSettings} onReschedule={handleReschedule} />;
         case 'planner':
             return <ContentPlannerPage aiClient={aiClient} isGenerating={isGeneratingPlan} error={planError} plan={contentPlan} onGeneratePlan={handleGeneratePlan} isSchedulingStrategy={isSchedulingStrategy} onScheduleStrategy={handleScheduleStrategy} onStartPost={handleStartPostFromPlan} pageProfile={pageProfile} strategyHistory={strategyHistory} onLoadFromHistory={setContentPlan} onDeleteFromHistory={(id) => setStrategyHistory(prev => prev.filter(h => h.id !== id))} />;
         case 'profile':
