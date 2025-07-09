@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings } from '../types';
 import Header from './Header';
@@ -36,6 +35,8 @@ interface DashboardPageProps {
   aiClient: GoogleGenAI | null;
   onSettingsClick: () => void;
   fetchWithPagination: (path: string) => Promise<any[]>;
+  onSyncHistory: (target: Target) => Promise<void>;
+  syncingTargetId: string | null;
 }
 
 const NavItem: React.FC<{
@@ -62,7 +63,7 @@ const NavItem: React.FC<{
 );
 
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick, fetchWithPagination }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'inbox' | 'profile'>('composer');
   
   // Composer state
@@ -478,6 +479,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     if (response && response.data) {
       setInboxItems(prevItems => prevItems.map(item => item.id === conversationId ? { ...item, messages: response.data.reverse() } : item));
     }
+  };
+
+  const handleInboxSync = async () => {
+    await onSyncHistory(managedTarget);
+    const dataKey = `zex-pages-data-${managedTarget.id}`;
+    const rawData = localStorage.getItem(dataKey);
+    const data = rawData ? JSON.parse(rawData) : {};
+    const syncedItems = data.inboxItems || [];
+    setInboxItems(syncedItems);
+    processAutoReplies(syncedItems);
   };
 
   useEffect(() => {
@@ -915,6 +926,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }
   
   const renderView = () => {
+    const isSyncing = syncingTargetId === managedTarget.id || (linkedInstagramTarget !== null && syncingTargetId === linkedInstagramTarget.id);
     switch(view) {
         case 'composer':
             return (
@@ -955,7 +967,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 </div>
             );
         case 'inbox':
-            return <InboxPage items={inboxItems} isLoading={isInboxLoading} onReply={handleReplySubmit} onGenerateSmartReplies={handleGenerateSmartReplies} onFetchMessageHistory={fetchMessageHistory} autoResponderSettings={autoResponderSettings} onAutoResponderSettingsChange={setAutoResponderSettings} />;
+            return <InboxPage items={inboxItems} isLoading={isInboxLoading} onReply={handleReplySubmit} onGenerateSmartReplies={handleGenerateSmartReplies} onFetchMessageHistory={fetchMessageHistory} autoResponderSettings={autoResponderSettings} onAutoResponderSettingsChange={setAutoResponderSettings} onSync={handleInboxSync} isSyncing={isSyncing} />;
         case 'calendar':
             return <ContentCalendar posts={scheduledPosts} onDelete={handleDeleteScheduledPost} />;
         case 'drafts':

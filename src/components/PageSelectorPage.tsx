@@ -1,14 +1,12 @@
 
-
-
-import React from 'react';
+import React, { useState } from 'react';
 import { Target, Business } from '../types';
 import Button from './ui/Button';
 import FacebookIcon from './icons/FacebookIcon';
 import InstagramIcon from './icons/InstagramIcon';
 import BusinessPortfolioManager from './BusinessPortfolioManager';
 import SettingsIcon from './icons/SettingsIcon';
-
+import SearchIcon from './icons/SearchIcon';
 
 interface PageSelectorPageProps {
   targets: Target[];
@@ -16,8 +14,6 @@ interface PageSelectorPageProps {
   onLoadPagesFromBusiness?: (businessId: string) => void;
   loadingBusinessId?: string | null;
   loadedBusinessIds?: Set<string>;
-  onSyncHistory: (target: Target) => void;
-  syncingTargetId: string | null;
   isLoading: boolean;
   error: string | null;
   onSelectTarget: (target: Target) => void;
@@ -25,45 +21,31 @@ interface PageSelectorPageProps {
   onSettingsClick: () => void;
 }
 
-const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void; onSync: () => void; isSyncing: boolean }> = ({ target, linkedInstagram, onSelect, onSync, isSyncing }) => {
+const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void; }> = ({ target, linkedInstagram, onSelect }) => {
     const typeText = 'صفحة فيسبوك';
 
     return (
-        <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col h-full">
-            <button
-                onClick={onSelect}
-                className="w-full text-right hover:-translate-y-1 transition-transform duration-300"
-            >
-                <div className="p-5 flex-grow">
-                    <div className="flex items-center gap-4">
-                        <img src={target.picture.data.url} alt={target.name} className="w-16 h-16 rounded-lg object-cover" />
-                        <div className="flex-grow">
-                            <p className="font-bold text-lg text-gray-900 dark:text-white line-clamp-2">{target.name}</p>
-                        </div>
+        <button
+            onClick={onSelect}
+            className="w-full bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 flex flex-col h-full text-right hover:-translate-y-1"
+        >
+            <div className="p-5 flex-grow">
+                <div className="flex items-center gap-4">
+                    <img src={target.picture.data.url} alt={target.name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                    <div className="flex-grow">
+                        <p className="font-bold text-lg text-gray-900 dark:text-white line-clamp-2">{target.name}</p>
                     </div>
                 </div>
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 flex items-center gap-2">
-                    <FacebookIcon className="w-5 h-5 text-blue-600" />
-                    {linkedInstagram && <InstagramIcon className="w-5 h-5" />}
-                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        {typeText}
-                        {linkedInstagram && ' + انستجرام'}
-                    </span>
-                </div>
-            </button>
-            <div className="p-2 border-t border-gray-100 dark:border-gray-700/50">
-                 <Button
-                    size="sm"
-                    variant="secondary"
-                    className="w-full"
-                    onClick={onSync}
-                    isLoading={isSyncing}
-                    disabled={isSyncing}
-                 >
-                   🔄 {isSyncing ? 'جاري المزامنة...' : 'مزامنة السجل الكامل'}
-                 </Button>
             </div>
-        </div>
+            <div className="p-3 bg-gray-50 dark:bg-gray-700/50 flex items-center gap-2 mt-auto border-t border-gray-100 dark:border-gray-700/50">
+                <FacebookIcon className="w-5 h-5 text-blue-600" />
+                {linkedInstagram && <InstagramIcon className="w-5 h-5" />}
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    {typeText}
+                    {linkedInstagram && ' + انستجرام'}
+                </span>
+            </div>
+        </button>
     );
 };
 
@@ -74,14 +56,13 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
   onLoadPagesFromBusiness,
   loadingBusinessId,
   loadedBusinessIds,
-  onSyncHistory,
-  syncingTargetId,
   isLoading,
   error,
   onSelectTarget,
   onLogout,
   onSettingsClick
 }) => {
+  const [searchQuery, setSearchQuery] = useState('');
 
   const renderContent = () => {
     if (isLoading && targets.length === 0) {
@@ -90,6 +71,22 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
     if (error) {
       return <div className="text-center text-red-500 py-10">{error}</div>;
     }
+
+    const instagramAccountsByParentId = new Map<string, Target>();
+    targets.filter(t => t.type === 'instagram' && t.parentPageId).forEach(ig => {
+      instagramAccountsByParentId.set(ig.parentPageId!, ig);
+    });
+
+    const primaryTargets = targets.filter(t => t.type === 'page');
+
+    const filteredTargets = primaryTargets.filter(target =>
+        target.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    if (targets.length > 0 && filteredTargets.length === 0) {
+        return <div className="text-center text-gray-500 dark:text-gray-400 py-10">لا توجد نتائج بحث تطابق "{searchQuery}".</div>;
+    }
+    
     if (targets.length === 0 && !isLoading) {
       return (
         <div className="text-center text-gray-500 dark:text-gray-400 p-8 border-2 border-dashed rounded-lg">
@@ -108,27 +105,17 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
       );
     }
     
-    const instagramAccountsByParentId = new Map<string, Target>();
-    targets.filter(t => t.type === 'instagram' && t.parentPageId).forEach(ig => {
-      instagramAccountsByParentId.set(ig.parentPageId!, ig);
-    });
-
-    const primaryTargets = targets.filter(t => t.type === 'page');
-
     return (
         <div className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {primaryTargets.map(target => {
+                {filteredTargets.map(target => {
                     const linkedInstagram = target.type === 'page' ? instagramAccountsByParentId.get(target.id) : null;
-                    const isSyncing = syncingTargetId === target.id || (linkedInstagram && syncingTargetId === linkedInstagram.id);
                     return (
                         <TargetCard
                             key={target.id}
                             target={target}
                             linkedInstagram={linkedInstagram || null}
                             onSelect={() => onSelectTarget(target)}
-                            onSync={() => onSyncHistory(target)}
-                            isSyncing={isSyncing}
                         />
                     );
                 })}
@@ -150,9 +137,21 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
         </header>
         <main className="p-4 sm:p-8">
             <div className="max-w-7xl mx-auto">
-              <div className="md:flex justify-between items-center mb-6">
-                <h1 className="text-3xl font-bold mb-4 md:mb-0 text-gray-900 dark:text-white">اختر وجهة لإدارتها</h1>
-                {(isLoading || syncingTargetId) && <p className="text-gray-500 animate-pulse">{syncingTargetId ? 'جاري مزامنة السجل...' : 'جاري تحديث القائمة...'}</p>}
+              <div className="md:flex justify-between items-center mb-6 gap-4">
+                <h1 className="text-3xl font-bold mb-4 md:mb-0 text-gray-900 dark:text-white whitespace-nowrap">اختر وجهة لإدارتها</h1>
+                <div className="relative w-full md:w-1/3">
+                    <input
+                      type="search"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="ابحث عن صفحة..."
+                      className="w-full p-3 pl-10 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"
+                      aria-label="البحث عن صفحة"
+                    />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <SearchIcon className="w-5 h-5 text-gray-400" />
+                    </div>
+                </div>
               </div>
               
               {businesses && businesses.length > 0 && onLoadPagesFromBusiness && loadingBusinessId !== undefined && loadedBusinessIds && (

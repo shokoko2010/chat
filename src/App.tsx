@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -110,7 +108,7 @@ const App: React.FC = () => {
       let allData: any[] = [];
       let path: string | null = initialPath;
       let counter = 0; // safety break to avoid infinite loops
-      while (path && counter < 20) { // Limit to 20 pages max for safety
+      while (path && counter < 50) { // Increased limit from 20 to 50
           const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
           if (response && response.data && response.data.length > 0) {
               allData = allData.concat(response.data);
@@ -445,6 +443,8 @@ const App: React.FC = () => {
             aiClient={aiClient}
             onSettingsClick={() => setIsSettingsModalOpen(true)}
             fetchWithPagination={fetchWithPagination}
+            onSyncHistory={handleFullHistorySync}
+            syncingTargetId={syncingTargetId}
           />
         );
       }
@@ -455,8 +455,6 @@ const App: React.FC = () => {
           onLoadPagesFromBusiness={handleLoadPagesFromBusiness}
           loadingBusinessId={loadingBusinessId}
           loadedBusinessIds={loadedBusinessIds}
-          onSyncHistory={handleFullHistorySync}
-          syncingTargetId={syncingTargetId}
           isLoading={targetsLoading}
           error={targetsError}
           onSelectTarget={handleSelectTarget}

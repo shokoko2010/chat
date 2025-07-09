@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { InboxItem, AutoResponderSettings, InboxMessage } from '../types';
 import Button from './ui/Button';
@@ -14,6 +15,8 @@ interface InboxPageProps {
   onFetchMessageHistory: (conversationId: string) => void;
   autoResponderSettings: AutoResponderSettings;
   onAutoResponderSettingsChange: (settings: AutoResponderSettings) => void;
+  onSync: () => Promise<void>;
+  isSyncing: boolean;
 }
 
 const timeSince = (dateString: string) => {
@@ -47,6 +50,8 @@ const InboxPage: React.FC<InboxPageProps> = ({
   onFetchMessageHistory,
   autoResponderSettings,
   onAutoResponderSettingsChange,
+  onSync,
+  isSyncing,
 }) => {
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [replyText, setReplyText] = useState('');
@@ -241,10 +246,15 @@ const InboxPage: React.FC<InboxPageProps> = ({
     <div className="flex flex-col lg:flex-row h-[calc(100vh-250px)] bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden fade-in">
         <div className="w-full lg:w-1/3 border-r dark:border-gray-700 flex flex-col">
           <div className="p-3 border-b dark:border-gray-700 flex-shrink-0">
-            <div className="flex items-center gap-2">
-                <FilterButton label="الكل" active={viewFilter === 'all'} onClick={() => setViewFilter('all')} />
-                <FilterButton label="الرسائل" active={viewFilter === 'messages'} onClick={() => setViewFilter('messages')} />
-                <FilterButton label="التعليقات" active={viewFilter === 'comments'} onClick={() => setViewFilter('comments')} />
+             <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                    <FilterButton label="الكل" active={viewFilter === 'all'} onClick={() => setViewFilter('all')} />
+                    <FilterButton label="الرسائل" active={viewFilter === 'messages'} onClick={() => setViewFilter('messages')} />
+                    <FilterButton label="التعليقات" active={viewFilter === 'comments'} onClick={() => setViewFilter('comments')} />
+                </div>
+                <Button onClick={onSync} isLoading={isSyncing} disabled={isSyncing} variant="secondary">
+                  🔄 {isSyncing ? 'جاري المزامنة...' : 'مزامنة السجل'}
+                </Button>
             </div>
           </div>
           <div className="overflow-y-auto">
