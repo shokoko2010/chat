@@ -34,7 +34,7 @@ interface DashboardPageProps {
   isSimulationMode: boolean;
   aiClient: GoogleGenAI | null;
   onSettingsClick: () => void;
-  fetchWithPagination: (path: string) => Promise<any[]>;
+  fetchWithPagination: (path: string, accessToken?: string) => Promise<any[]>;
   onSyncHistory: (target: Target) => Promise<void>;
   syncingTargetId: string | null;
 }
@@ -321,7 +321,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         const endpoint = 'published_posts';
         const fields = 'id,message,full_picture,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}';
 
-        fetchWithPagination(`/${managedTarget.id}/${endpoint}?fields=${fields}&limit=100`)
+        fetchWithPagination(`/${managedTarget.id}/${endpoint}?fields=${fields}&limit=100`, managedTarget.access_token)
         .then((response: any) => {
             if (response) {
             const fetchedPosts: PublishedPost[] = response.map((post: any) => ({
@@ -339,7 +339,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     } else {
         setPublishedPostsLoading(false);
     }
-  }, [managedTarget.id, isSimulationMode, clearComposer, fetchWithPagination, managedTarget.name, managedTarget.picture.data.url]);
+  }, [managedTarget.id, managedTarget.access_token, isSimulationMode, clearComposer, fetchWithPagination, managedTarget.name, managedTarget.picture.data.url]);
   
   useEffect(() => {
     try {
@@ -493,6 +493,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
   useEffect(() => {
     const fetchAllData = async () => {
+        const pageAccessToken = managedTarget.access_token;
+        if (!pageAccessToken) {
+            showNotification('error', 'صلاحية الوصول لهذه الصفحة غير متوفرة.');
+            setIsInboxLoading(false);
+            return;
+        }
+
         const isPage = managedTarget.type === 'page';
         const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
 
@@ -500,8 +507,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         const postFields = "id,message,full_picture,comments.summary(true)";
         const igMediaFields = "id,caption,media_url,timestamp,comments_count,username";
         
-        const pagePostsData = isPage ? await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${postFields}&limit=10`) : [];
-        const igPostsData = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=${igMediaFields}&limit=10`) : [];
+        const pagePostsData = isPage ? await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${postFields}&limit=10`, pageAccessToken) : [];
+        const igPostsData = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=${igMediaFields}&limit=10`, pageAccessToken) : [];
 
         // 2. Fetch comments for these posts, with platform-specific logic
         const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
@@ -510,7 +517,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         const fbCommentsPromise = Promise.all(
             pagePostsData.map(async (post) => {
                 if (post.comments?.summary?.total_count > 0) {
-                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=50&order=reverse_chronological`);
+                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=50&order=reverse_chronological`, pageAccessToken);
                     return commentsData.map((comment: any): InboxItem => ({
                         id: comment.id, type: 'comment', text: comment.message || '',
                         authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: comment.from?.id || 'Unknown',
@@ -526,7 +533,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         const igCommentsPromise = Promise.all(
             igPostsData.map(async (post) => {
                 if (post.comments_count > 0) {
-                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological`);
+                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological`, pageAccessToken);
                     return commentsData.map((comment: any): InboxItem => ({
                         id: comment.id, type: 'comment', text: comment.text || '',
                         authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
@@ -545,7 +552,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         // 3. Fetch all messages (for pages only)
         let allMessages: InboxItem[] = [];
         if (isPage) {
-            const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=25`);
+            const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=25`, pageAccessToken);
             allMessages = convosData.map((convo: any) => {
                 const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
                 return {
@@ -583,7 +590,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             setIsInboxLoading(false);
         });
     }
-  }, [view, managedTarget.id, linkedInstagramTarget?.id, isSimulationMode, fetchWithPagination, showNotification, processAutoReplies]);
+  }, [view, managedTarget.id, managedTarget.access_token, linkedInstagramTarget?.id, isSimulationMode, fetchWithPagination, showNotification, processAutoReplies]);
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.id, message);

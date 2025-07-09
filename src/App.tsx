@@ -104,17 +104,25 @@ const App: React.FC = () => {
     };
   }, [checkLoginStatus, isSimulationMode]);
   
-  const fetchWithPagination = useCallback(async (initialPath: string): Promise<any[]> => {
+  const fetchWithPagination = useCallback(async (initialPath: string, accessToken?: string): Promise<any[]> => {
       let allData: any[] = [];
       let path: string | null = initialPath;
+
+      // For the initial call, add the access token if provided and not already present.
+      if (accessToken && !path.includes('access_token=')) {
+          path = path.includes('?') ? `${path}&access_token=${accessToken}` : `${path}?access_token=${accessToken}`;
+      }
+
       let counter = 0; // safety break to avoid infinite loops
-      while (path && counter < 50) { // Increased limit from 20 to 50
+      while (path && counter < 50) {
           const response: any = await new Promise(resolve => window.FB.api(path, (res: any) => resolve(res)));
           if (response && response.data && response.data.length > 0) {
               allData = allData.concat(response.data);
               path = response.paging?.next ? response.paging.next.replace('https://graph.facebook.com', '') : null;
           } else {
-              if (response.error) console.error(`Error fetching paginated data for path ${path}:`, response.error);
+              if (response.error) {
+                console.error(`Error fetching paginated data for path ${path}:`, response.error);
+              }
               path = null;
           }
           counter++;
@@ -253,6 +261,12 @@ const App: React.FC = () => {
         alert("المزامنة الكاملة متاحة فقط لصفحات فيسبوك.");
         return;
     }
+
+    const pageAccessToken = pageTarget.access_token;
+    if (!pageAccessToken) {
+        alert(`لم يتم العثور على صلاحية الوصول (Access Token) للصفحة ${pageTarget.name}.`);
+        return;
+    }
     
     setSyncingTargetId(pageTarget.id);
     try {
@@ -265,7 +279,7 @@ const App: React.FC = () => {
         // --- 1. Fetch Facebook Page Data ---
         const fbPostFields = 'id,message,full_picture,created_time,from,likes.summary(true),shares,comments.summary(true),insights.metric(post_impressions_unique){values}';
         const fbPostsPath = `/${pageTarget.id}/published_posts?fields=${fbPostFields}&limit=25`;
-        const fbAllPostsData = await fetchWithPagination(fbPostsPath);
+        const fbAllPostsData = await fetchWithPagination(fbPostsPath, pageAccessToken);
         
         const fbFetchedPosts: PublishedPost[] = fbAllPostsData.map((post: any) => ({
             id: post.id, pageId: pageTarget.id, pageName: pageTarget.name, pageAvatarUrl: pageTarget.picture.data.url,
@@ -285,7 +299,7 @@ const App: React.FC = () => {
         const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
         const fbCommentPromises = fbAllPostsData.map(async (post) => {
             if (post.comments?.summary?.total_count > 0) {
-                const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=100`);
+                const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=100`, pageAccessToken);
                 return postComments.map((comment: any): InboxItem => {
                       const authorId = comment.from?.id;
                       const authorPictureUrl = comment.from?.picture?.data?.url || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
@@ -304,7 +318,7 @@ const App: React.FC = () => {
         fbCommentBatches.forEach(batch => combinedInboxItems.push(...batch));
 
         const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`;
-        const allConvosData = await fetchWithPagination(convosPath);
+        const allConvosData = await fetchWithPagination(convosPath, pageAccessToken);
         const allMessages: InboxItem[] = allConvosData.map((convo: any) => {
             const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
             const participantId = participant?.id;
@@ -320,9 +334,10 @@ const App: React.FC = () => {
         // --- 2. Fetch Instagram Data (if it exists) ---
         if (linkedIgTarget) {
             setSyncingTargetId(linkedIgTarget.id); // Update UI feedback
+            const igAccessToken = linkedIgTarget.access_token; // This is the parent page's token, which is correct.
             const igPostFields = 'id,caption,media_url,timestamp,like_count,comments_count,username';
             const igPostsPath = `/${linkedIgTarget.id}/media?fields=${igPostFields}&limit=25`;
-            const igAllPostsData = await fetchWithPagination(igPostsPath);
+            const igAllPostsData = await fetchWithPagination(igPostsPath, igAccessToken);
 
             const igFetchedPosts: PublishedPost[] = igAllPostsData.map((post: any) => ({
                 id: post.id, pageId: linkedIgTarget.id, pageName: linkedIgTarget.name, pageAvatarUrl: linkedIgTarget.picture.data.url,
@@ -342,7 +357,7 @@ const App: React.FC = () => {
             const igCommentFields = 'id,from{id,username},text,timestamp';
             const igCommentPromises = igAllPostsData.map(async (post) => {
                 if (post.comments_count > 0) {
-                    const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100`);
+                    const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100`, igAccessToken);
                     return postComments.map((comment: any): InboxItem => ({
                         id: comment.id, type: 'comment', text: comment.text || '',
                         authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
