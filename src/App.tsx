@@ -12,7 +12,6 @@ const isSimulation = window.location.protocol === 'http:';
 
 const MOCK_TARGETS: Target[] = [
     { id: '1', name: 'صفحة تجريبية 1', type: 'page', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/4B79A1/FFFFFF?text=Page1' } } },
-    { id: '101', name: 'مجموعة المطورين التجريبية', type: 'group', picture: { data: { url: 'https://via.placeholder.com/150/228B22/FFFFFF?text=Group1' } } },
     { id: 'ig1', name: 'Zex Pages IG (@zex_pages_ig)', type: 'instagram', parentPageId: '1', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/E4405F/FFFFFF?text=IG' } } }
 ];
 
@@ -182,17 +181,13 @@ const App: React.FC = () => {
         setTargetsError(null);
         try {
             const pagesPromise = fetchWithPagination('/me/accounts?fields=id,name,access_token,picture{url}&limit=100');
-            const groupsPromise = fetchWithPagination('/me/groups?fields=id,name,picture{url},permissions&limit=100');
             const businessesPromise = fetchWithPagination('/me/businesses?fields=id,name');
 
-            const [allPagesData, allGroupsRaw, allBusinessesData] = await Promise.all([pagesPromise, groupsPromise, businessesPromise]);
+            const [allPagesData, allBusinessesData] = await Promise.all([pagesPromise, businessesPromise]);
 
             const allTargetsMap = new Map<string, Target>();
             if (allPagesData) allPagesData.forEach(p => allTargetsMap.set(p.id, { ...p, type: 'page' }));
-            if (allGroupsRaw) {
-              const adminGroups = allGroupsRaw.filter(g => g.permissions?.data.some((p: any) => p.permission === 'admin'));
-              adminGroups.forEach(g => allTargetsMap.set(g.id, { ...g, type: 'group' }));
-            }
+            
             const igAccounts = await fetchInstagramAccounts(allPagesData);
             igAccounts.forEach(ig => allTargetsMap.set(ig.id, ig));
             
@@ -257,10 +252,6 @@ const App: React.FC = () => {
         if (target.type === 'page') {
             postEdge = 'published_posts';
             apiParams.fields = `${postBaseFields}${pageSpecificPostFields}`;
-            postsPath = `/${target.id}/${postEdge}`;
-        } else if (target.type === 'group') {
-            postEdge = 'feed';
-            apiParams.fields = postBaseFields;
             postsPath = `/${target.id}/${postEdge}`;
         } else {
              alert(`مزامنة السجل غير مدعومة حاليًا للنوع '${target.type}'.`);
@@ -365,7 +356,7 @@ const App: React.FC = () => {
         if (response.authResponse) setAuthStatus('connected');
         else setAuthStatus('not_authorized');
       }, { 
-        scope: 'business_management,email,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_manage_posts,pages_messaging,pages_read_engagement,pages_read_user_content,pages_show_list,public_profile,read_insights,publish_to_groups',
+        scope: 'business_management,email,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_manage_posts,pages_messaging,pages_read_engagement,pages_read_user_content,pages_show_list,public_profile,read_insights',
         auth_type: 'rerequest'
       });
   }, [isSimulationMode]);
