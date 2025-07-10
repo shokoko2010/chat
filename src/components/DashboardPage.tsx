@@ -623,7 +623,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         if (action.type === 'public_reply' && item.type === 'comment') {
                             success = await handleReplyToComment(item.id, finalMessage);
                         } else if (action.type === 'private_reply' && item.type === 'comment') {
-                            // A top-level comment's parentId is the post's ID.
+                            // A top-level comment's parent ID is the post ID. This is a robust check.
                             const isTopLevelComment = item.parentId === item.post?.id;
                             if (item.platform === 'facebook' && item.can_reply_privately && isTopLevelComment) {
                                 success = await handlePrivateReplyToComment(item.id, finalMessage);
@@ -771,7 +771,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         newItems.push(...fbNewMessages);
         
         // Fetch Instagram items if linked
-        if (linkedInstagramTarget && linkedInstagramTarget.access_token) {
+        if (linkedInstagramTarget?.access_token) {
             const igPostFields = "id,caption,media_url,comments.order(reverse_chronological).since(" + since + "){id,from{id,username},text,timestamp,replies{from{id}}}";
             const igRecentPostsData = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=${igPostFields}&limit=10`, linkedInstagramTarget.access_token);
             
