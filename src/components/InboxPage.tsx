@@ -10,6 +10,7 @@ import TrashIcon from './icons/TrashIcon';
 import { GoogleGenAI } from '@google/genai';
 import { generateReplyVariations } from '../services/geminiService';
 import GrabHandleIcon from './icons/GrabHandleIcon';
+import CheckCircleIcon from './icons/CheckCircleIcon';
 
 interface InboxPageProps {
   items: InboxItem[];
@@ -435,7 +436,10 @@ const InboxPage: React.FC<InboxPageProps> = ({
                                 <p className="font-bold text-gray-800 dark:text-white truncate">{item.authorName}</p>
                                 <p className="text-xs text-gray-400 flex-shrink-0">{timeSince(item.timestamp)}</p>
                             </div>
-                            <p className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.text}</p>
+                            <div className="flex items-center gap-1.5">
+                                {item.isReplied && <span className="flex-shrink-0" title="تم الرد تلقائياً"><CheckCircleIcon className="w-4 h-4 text-green-500" /></span>}
+                                <p className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.text}</p>
+                            </div>
                         </div>
                     </button>
                 )

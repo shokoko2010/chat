@@ -124,7 +124,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [isInboxLoading, setIsInboxLoading] = useState(true);
   const [autoResponderSettings, setAutoResponderSettings] = useState<AutoResponderSettings>(initialAutoResponderSettings);
-  const [autoRepliedItems, setAutoRepliedItems] = useState<Set<string>>(new Set());
   const [repliedUsersPerPost, setRepliedUsersPerPost] = useState<Record<string, string[]>>({});
   const isProcessingReplies = useRef(false);
 
@@ -403,9 +402,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setStrategyHistory(savedData.strategyHistory || []);
     setPublishedPosts(savedData.publishedPosts?.map((p:any) => ({...p, publishedAt: new Date(p.publishedAt)})) || []);
     
-    setAutoRepliedItems(new Set(savedData.autoRepliedItems || []));
+    // Compatibility: Initialize `isReplied` from old `autoRepliedItems` set.
+    const oldAutoRepliedItems = new Set(savedData.autoRepliedItems || []);
     setRepliedUsersPerPost(savedData.repliedUsersPerPost || {});
-    setInboxItems(savedData.inboxItems?.map((i:any) => ({...i, timestamp: new Date(i.timestamp).toISOString()})) || []);
+    setInboxItems(savedData.inboxItems?.map((i:any) => ({
+        ...i, 
+        timestamp: new Date(i.timestamp).toISOString(),
+        isReplied: oldAutoRepliedItems.has(i.id) || i.isReplied,
+    })) || []);
     
     setBulkPosts([]);
     clearComposer();
@@ -453,14 +457,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             publishedPosts,
             inboxItems,
             autoResponderSettings,
-            autoRepliedItems: Array.from(autoRepliedItems),
             repliedUsersPerPost
         };
         localStorage.setItem(dataKey, JSON.stringify(dataToStore));
     } catch(e) {
         console.error("Could not save data to localStorage:", e);
     }
-  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, publishedPosts, inboxItems, autoResponderSettings, autoRepliedItems, repliedUsersPerPost, managedTarget.id]);
+  }, [pageProfile, drafts, scheduledPosts, contentPlan, strategyHistory, publishedPosts, inboxItems, autoResponderSettings, repliedUsersPerPost, managedTarget.id]);
 
   const filteredPosts = useMemo(() => {
     const now = new Date();
@@ -551,26 +554,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     });
   };
 
-  const processAutoReplies = useCallback(async (currentInboxItems: InboxItem[]) => {
-    if (isProcessingReplies.current) {
-        return;
-    }
+  const processAutoReplies = useCallback(async () => {
+    if (isProcessingReplies.current) return;
     isProcessingReplies.current = true;
 
     try {
         const { rules, fallback } = autoResponderSettings;
         if (rules.length === 0 && fallback.mode === 'off') return;
 
-        const itemsToProcess = currentInboxItems.filter(item => !autoRepliedItems.has(item.id));
-        if (itemsToProcess.length === 0) {
-            isProcessingReplies.current = false;
-            return;
-        }
+        const itemsToProcess = inboxItems.filter(item => !item.isReplied);
+        if (itemsToProcess.length === 0) return;
 
-        const newRepliedItems = new Set(autoRepliedItems);
         const newRepliedUsers = JSON.parse(JSON.stringify(repliedUsersPerPost));
-        let replyCount = 0;
-        
+        let newlyRepliedItemIds: string[] = [];
         const usersRepliedThisRun: Record<string, Set<string>> = {};
 
         for (const item of itemsToProcess) {
@@ -610,11 +606,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         if (action.type === 'public_reply' && item.type === 'comment') {
                             success = await handleReplyToComment(item.id, finalMessage);
                         } else if (action.type === 'private_reply' && item.type === 'comment') {
-                            // API Limitation: Private replies are only supported on top-level comments.
                             if (!item.isReply) {
                                 success = await handlePrivateReplyToComment(item.id, finalMessage);
                             } else {
-                                console.log(`Auto-responder skipped private reply for comment ID ${item.id} because it is a reply to another comment, not a top-level comment.`);
+                                console.log(`Auto-responder skipped private reply for comment ID ${item.id} because it is a reply.`);
                             }
                         } else if (action.type === 'direct_message' && item.type === 'message') {
                             success = await handleSendMessage(item.conversationId || item.id, finalMessage);
@@ -631,7 +626,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             if (!usersRepliedThisRun[postId]) usersRepliedThisRun[postId] = new Set();
                             usersRepliedThisRun[postId].add(item.authorId);
                         }
-                        break; // Break from the rule loop, move to next item.
+                        break; 
                     }
                 }
             }
@@ -652,29 +647,29 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             }
 
             if (replied) {
-                newRepliedItems.add(item.id);
-                replyCount++;
+                newlyRepliedItemIds.push(item.id);
             }
         }
 
-        for (const postId in usersRepliedThisRun) {
-            if (!newRepliedUsers[postId]) newRepliedUsers[postId] = [];
-            usersRepliedThisRun[postId].forEach(userId => {
-                if (!newRepliedUsers[postId].includes(userId)) {
-                    newRepliedUsers[postId].push(userId);
-                }
-            });
-        }
+        if(newlyRepliedItemIds.length > 0) {
+            setInboxItems(prev => prev.map(i => newlyRepliedItemIds.includes(i.id) ? { ...i, isReplied: true } : i));
 
-        setAutoRepliedItems(newRepliedItems);
-        setRepliedUsersPerPost(newRepliedUsers);
-        if (replyCount > 0) {
-            showNotification('success', `تم إرسال ${replyCount} ردًا تلقائيًا.`);
+            for (const postId in usersRepliedThisRun) {
+                if (!newRepliedUsers[postId]) newRepliedUsers[postId] = [];
+                usersRepliedThisRun[postId].forEach(userId => {
+                    if (!newRepliedUsers[postId].includes(userId)) {
+                        newRepliedUsers[postId].push(userId);
+                    }
+                });
+            }
+    
+            setRepliedUsersPerPost(newRepliedUsers);
+            showNotification('success', `تم إرسال ${newlyRepliedItemIds.length} ردًا تلقائيًا.`);
         }
     } finally {
         isProcessingReplies.current = false;
     }
-  }, [autoResponderSettings, autoRepliedItems, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handlePrivateReplyToComment, handleSendMessage]);
+  }, [inboxItems, autoResponderSettings, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handlePrivateReplyToComment, handleSendMessage]);
 
 
   const fetchMessageHistory = async (conversationId: string) => {
@@ -691,7 +686,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     const data = rawData ? JSON.parse(rawData) : {};
     const syncedItems = data.inboxItems || [];
     setInboxItems(syncedItems);
-    processAutoReplies(syncedItems);
+    processAutoReplies();
   };
   
   const handleClearCache = () => {
@@ -699,7 +694,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       const dataKey = `zex-pages-data-${managedTarget.id}`;
       localStorage.removeItem(dataKey);
 
-      // Reset all state loaded from cache
       setPageProfile({ description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
       setScheduledPosts([]);
       setDrafts([]);
@@ -708,114 +702,104 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       setPublishedPosts([]);
       setInboxItems([]);
       setAutoResponderSettings(initialAutoResponderSettings);
-      setAutoRepliedItems(new Set());
       setRepliedUsersPerPost({});
       
       showNotification('success', 'تم حذف ذاكرة التخزين المؤقت بنجاح. قم بالمزامنة الكاملة الآن.');
     }
   };
-
+  
   useEffect(() => {
-    const fetchAllData = async () => {
-        const pageAccessToken = managedTarget.access_token;
-        if (!pageAccessToken) {
-            showNotification('error', 'صلاحية الوصول لهذه الصفحة غير متوفرة.');
-            setIsInboxLoading(false);
-            return;
-        }
+    if (view !== 'inbox' || isSimulationMode) {
+        return; 
+    }
 
+    const poll = async () => {
+        if (syncingTargetId || isProcessingReplies.current) return;
+
+        const pageAccessToken = managedTarget.access_token;
+        if (!pageAccessToken) return;
+
+        const lastTimestamp = inboxItems.length > 0 ? new Date(inboxItems[0].timestamp).getTime() : Date.now() - (15 * 60 * 1000);
+        const since = Math.floor(lastTimestamp / 1000);
+        
         const isPage = managedTarget.type === 'page';
         const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
 
-        // 1. Fetch recent posts/media for page and linked IG account
-        const postFields = "id,message,full_picture,comments.summary(true)";
-        const igMediaFields = "id,caption,media_url,timestamp,comments_count,username";
-        
-        const pagePostsData = isPage ? await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${postFields}&limit=10`, pageAccessToken) : [];
-        const igPostsData = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=${igMediaFields}&limit=10`, pageAccessToken) : [];
+        try {
+            const postFields = "id,message,full_picture";
+            const recentPostsData = isPage ? await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${postFields}&limit=10`, pageAccessToken) : [];
+            const recentIgPostsData = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url&limit=10`, pageAccessToken) : [];
 
-        // 2. Fetch comments for these posts, with platform-specific logic
-        const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
-        const igCommentFields = 'id,from{id,username},text,timestamp';
+            const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
+            const igCommentFields = 'id,from{id,username},text,timestamp';
 
-        const fbCommentsPromise = Promise.all(
-            pagePostsData.map(async (post) => {
-                if (post.comments?.summary?.total_count > 0) {
-                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=50&order=reverse_chronological`, pageAccessToken);
+            const fbCommentsPromise = Promise.all(
+                recentPostsData.map(async (post) => {
+                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
                     return commentsData.map((comment: any): InboxItem => ({
                         id: comment.id, type: 'comment', text: comment.message || '',
                         authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: comment.from?.id || 'Unknown',
                         authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
-                        timestamp: comment.created_time,
-                        post: { id: post.id, message: post.message, picture: post.full_picture }
+                        timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }, isReply: !!comment.parent
                     }));
-                }
-                return [];
-            })
-        );
-        
-        const igCommentsPromise = Promise.all(
-            igPostsData.map(async (post) => {
-                if (post.comments_count > 0) {
-                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological`, pageAccessToken);
+                })
+            );
+            
+            const igCommentsPromise = Promise.all(
+                recentIgPostsData.map(async (post) => {
+                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
                     return commentsData.map((comment: any): InboxItem => ({
                         id: comment.id, type: 'comment', text: comment.text || '',
                         authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
-                        authorPictureUrl: defaultPicture,
-                        timestamp: comment.timestamp,
-                        post: { id: post.id, message: post.caption, picture: post.media_url }
+                        authorPictureUrl: defaultPicture, timestamp: comment.timestamp, post: { id: post.id, message: post.caption, picture: post.media_url }, isReply: false
                     }));
-                }
-                return [];
-            })
-        );
+                })
+            );
 
-        const [fbCommentArrays, igCommentArrays] = await Promise.all([fbCommentsPromise, igCommentsPromise]);
-        const allComments = [...fbCommentArrays.flat(), ...igCommentArrays.flat()];
-
-        // 3. Fetch all messages (for pages only)
-        let allMessages: InboxItem[] = [];
-        if (isPage) {
-            const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=25`, pageAccessToken);
-            allMessages = convosData.map((convo: any) => {
-                const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
-                return {
-                    id: convo.id, type: 'message', text: convo.snippet,
-                    authorName: participant?.name || 'مستخدم غير معروف',
-                    authorId: participant?.id || 'Unknown',
-                    authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture?type=normal`,
-                    timestamp: convo.updated_time,
-                    conversationId: convo.id
-                };
-            });
-        }
-        
-        // 4. Combine and update state
-        const combinedItems = new Map<string, InboxItem>(inboxItems.map(item => [item.id, item]));
-        [...allComments, ...allMessages].forEach(item => {
-            if (item.type === 'message' && combinedItems.has(item.id)) {
-                const existingItem = combinedItems.get(item.id);
-                if (existingItem?.messages) item.messages = existingItem.messages;
+            let newMessages: InboxItem[] = [];
+            if (isPage) {
+                const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&since=${since}`, pageAccessToken);
+                newMessages = convosData.map((convo: any) => {
+                    const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
+                    return {
+                        id: convo.id, type: 'message', text: convo.snippet,
+                        authorName: participant?.name || 'مستخدم غير معروف', authorId: participant?.id || 'Unknown',
+                        authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture?type=normal`,
+                        timestamp: convo.updated_time, conversationId: convo.id
+                    };
+                });
             }
-            combinedItems.set(item.id, item);
-        });
 
-        const allItems = Array.from(combinedItems.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        setInboxItems(allItems);
-        processAutoReplies(allItems);
-        setIsInboxLoading(false);
+            const [fbCommentArrays, igCommentArrays] = await Promise.all([fbCommentsPromise, igCommentsPromise]);
+            const newItems = [...fbCommentArrays.flat(), ...igCommentArrays.flat(), ...newMessages];
+
+            if (newItems.length > 0) {
+                setInboxItems(prevItems => {
+                    const combined = new Map<string, InboxItem>(prevItems.map(item => [item.id, item]));
+                    newItems.forEach(item => { if (!combined.has(item.id)) combined.set(item.id, item) });
+                    return Array.from(combined.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                });
+            }
+        } catch (error) {
+            console.error("Error during inbox polling:", error);
+        }
     };
-
-    if (view === 'inbox' && !isSimulationMode) {
+    
+    if (inboxItems.length === 0 && !isInboxLoading) {
         setIsInboxLoading(true);
-        fetchAllData().catch((error) => {
-            console.error("Error fetching inbox data:", error);
-            showNotification('error', 'فشل في جلب البريد الوارد.');
-            setIsInboxLoading(false);
-        });
+        poll().finally(() => setIsInboxLoading(false));
     }
-  }, [view, managedTarget.id, managedTarget.access_token, linkedInstagramTarget?.id, isSimulationMode, fetchWithPagination, showNotification, processAutoReplies, inboxItems]);
+
+    const intervalId = setInterval(poll, 30000);
+    return () => clearInterval(intervalId);
+  }, [view, isSimulationMode, managedTarget.id, linkedInstagramTarget?.id, fetchWithPagination, syncingTargetId]);
   
+  useEffect(() => {
+    if (view === 'inbox' && !isSimulationMode && inboxItems.length > 0) {
+        processAutoReplies();
+    }
+  }, [inboxItems, view, isSimulationMode, processAutoReplies]);
+
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.conversationId || selectedItem.id, message);
   };

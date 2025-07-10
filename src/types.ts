@@ -192,6 +192,7 @@ export interface InboxItem {
   isReply?: boolean; // To indent replies in the UI
   conversationId?: string; // For messages
   messages?: InboxMessage[]; // For message history
+  isReplied?: boolean; // NEW: To show reply status icon
 }
 
 // --- Types for Auto-Responder (New IFTTT-style) ---
