@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -296,7 +297,7 @@ const App: React.FC = () => {
         }));
         fetchedPosts.push(...fbFetchedPosts);
 
-        const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent,comments{from{id}}';
+        const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}}';
         const fbCommentPromises = fbAllPostsData.map(async (post) => {
             if (post.comments?.summary?.total_count > 0) {
                 const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=100`, pageAccessToken);
@@ -307,9 +308,9 @@ const App: React.FC = () => {
                       return {
                         id: comment.id, type: 'comment', text: comment.message || '',
                         authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: authorId || 'Unknown',
-                        authorPictureUrl: authorPictureUrl, timestamp: comment.created_time,
+                        authorPictureUrl: authorPictureUrl, timestamp: new Date(comment.created_time).toISOString(),
                         post: { id: post.id, message: post.message, picture: post.full_picture },
-                        isReply: !!comment.parent,
+                        isReply: !!comment.parent?.id,
                         isReplied: pageHasReplied,
                       };
                 });
@@ -328,7 +329,7 @@ const App: React.FC = () => {
                 id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف',
                 authorId: participantId || 'Unknown',
                 authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture,
-                timestamp: convo.updated_time, conversationId: convo.id
+                timestamp: new Date(convo.updated_time).toISOString(), conversationId: convo.id
             };
         });
         combinedInboxItems.push(...allMessages);
@@ -356,17 +357,21 @@ const App: React.FC = () => {
             }));
             fetchedPosts.push(...igFetchedPosts);
 
-            const igCommentFields = 'id,from{id,username},text,timestamp';
+            const igCommentFields = 'id,from{id,username},text,timestamp,replies{from{id}}';
             const igCommentPromises = igAllPostsData.map(async (post) => {
                 if (post.comments_count > 0) {
                     const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100`, igAccessToken);
-                    return postComments.map((comment: any): InboxItem => ({
-                        id: comment.id, type: 'comment', text: comment.text || '',
-                        authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
-                        authorPictureUrl: defaultPicture, timestamp: comment.timestamp,
-                        post: { id: post.id, message: post.caption, picture: post.media_url },
-                        isReply: false
-                    }));
+                    return postComments.map((comment: any): InboxItem => {
+                        const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === linkedIgTarget.id);
+                        return {
+                            id: comment.id, type: 'comment', text: comment.text || '',
+                            authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
+                            authorPictureUrl: defaultPicture, timestamp: new Date(comment.timestamp).toISOString(),
+                            post: { id: post.id, message: post.caption, picture: post.media_url },
+                            isReply: false,
+                            isReplied: pageHasReplied
+                        };
+                    });
                 }
                 return [];
             });
