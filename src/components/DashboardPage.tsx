@@ -86,9 +86,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
   // Publishing state
   const [isPublishing, setIsPublishing] = useState(false);
-  const [notification, setNotification] = useState<{type: 'success' | 'error' | 'partial', message: string} | null>(null);
+  const [notification, setNotification] = useState<{type: 'success' | 'error' | 'partial', message: string, onUndo?: () => void} | null>(null);
   const [publishingReminderId, setPublishingReminderId] = useState<string | null>(null);
   const [isReplying, setIsReplying] = useState(false);
+  const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Data state, managed per target
   const [pageProfile, setPageProfile] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
@@ -148,9 +149,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setIncludeInstagram(!!linkedInstagramTarget);
   }, [linkedInstagramTarget]);
 
-  const showNotification = useCallback((type: 'success' | 'error' | 'partial', message: string) => {
-    setNotification({ type, message });
-    setTimeout(() => setNotification(null), 8000);
+  const showNotification = useCallback((type: 'success' | 'error' | 'partial', message: string, onUndo?: () => void) => {
+    setNotification({ type, message, onUndo });
+    // Only set a dismiss timer for non-undoable notifications
+    if (!onUndo) {
+        setTimeout(() => {
+            setNotification(currentNotif => (currentNotif?.message === message ? null : currentNotif));
+        }, 5000);
+    }
   }, []);
   
   const handleFetchProfile = useCallback(async () => {
@@ -730,10 +736,33 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }, [showNotification]);
 
   const handleDeleteDraft = (draftId: string) => {
-    if (window.confirm('هل أنت متأكد من حذف هذه المسودة؟')) {
-        setDrafts(prev => prev.filter(d => d.id !== draftId));
-        showNotification('success', 'تم حذف المسودة.');
+    const draftToDelete = drafts.find(d => d.id === draftId);
+    if (!draftToDelete) return;
+
+    if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current);
     }
+    
+    setDrafts(prev => prev.filter(d => d.id !== draftId));
+
+    const handleUndo = () => {
+        setDrafts(prev => {
+            const newDrafts = [draftToDelete, ...prev];
+            return newDrafts.sort((a,b) => parseInt(b.id.split('_')[1]) - parseInt(a.id.split('_')[1]));
+        });
+        if (undoTimerRef.current) {
+            clearTimeout(undoTimerRef.current);
+            undoTimerRef.current = null;
+        }
+        setNotification(null);
+    };
+    
+    showNotification('success', 'تم حذف المسودة.', handleUndo);
+
+    undoTimerRef.current = setTimeout(() => {
+        setNotification(null);
+        undoTimerRef.current = null;
+    }, 8000);
   };
   
   const handleLoadDraft = (draftId: string) => {
@@ -751,10 +780,33 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   };
   
   const handleDeleteScheduledPost = (postId: string) => {
-      if (window.confirm('هل أنت متأكد من إلغاء جدولة هذا المنشور؟')) {
-        setScheduledPosts(prev => prev.filter(p => p.id !== postId));
-        showNotification('success', 'تم إلغاء جدولة المنشور.');
+    const postToDelete = scheduledPosts.find(p => p.id === postId);
+    if (!postToDelete) return;
+
+    if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current);
     }
+    
+    setScheduledPosts(prev => prev.filter(p => p.id !== postId));
+
+    const handleUndo = () => {
+        setScheduledPosts(prev => {
+            const newPosts = [postToDelete, ...prev];
+            return newPosts.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+        });
+        if (undoTimerRef.current) {
+            clearTimeout(undoTimerRef.current);
+            undoTimerRef.current = null;
+        }
+        setNotification(null);
+    };
+    
+    showNotification('success', 'تم إلغاء جدولة المنشور.', handleUndo);
+
+    undoTimerRef.current = setTimeout(() => {
+        setNotification(null);
+        undoTimerRef.current = null;
+    }, 8000);
   };
   
   const handleScheduleStrategy = useCallback(async () => {
@@ -1294,9 +1346,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       />
       <div className="relative">
          {notification && (
-            <div className={`fixed top-20 right-5 p-4 rounded-lg shadow-lg z-50 text-white animate-fadeIn ${notification.type === 'success' ? 'bg-green-500' : notification.type === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}>
-                {notification.message}
-                <button onClick={() => setNotification(null)} className="absolute top-1 right-2 text-white font-bold">&times;</button>
+            <div className={`fixed top-20 right-5 p-4 rounded-lg shadow-lg z-50 text-white animate-fadeIn flex items-center justify-between gap-4 ${notification.type === 'success' ? 'bg-green-500' : notification.type === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}>
+                <span>{notification.message}</span>
+                <div className="flex items-center gap-3 mr-2">
+                    {notification.onUndo && (
+                        <button
+                            onClick={notification.onUndo}
+                            className="font-bold hover:underline p-1 text-sm bg-black/20 rounded-md"
+                        >
+                            تراجع
+                        </button>
+                    )}
+                    <button onClick={() => setNotification(null)} className="font-bold text-xl leading-none">&times;</button>
+                </div>
             </div>
         )}
       </div>
