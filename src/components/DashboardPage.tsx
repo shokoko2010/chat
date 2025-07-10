@@ -632,7 +632,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
 
                 if (matched) {
-                    let ruleMatchedAndActed = false;
+                    let anyActionSucceeded = false;
                     const enabledActions = rule.actions.filter(a => a.enabled && a.messageVariations.length > 0 && a.messageVariations[0].trim() !== '');
 
                     for (const action of enabledActions) {
@@ -651,11 +651,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         }
                         
                         if (success) {
-                            ruleMatchedAndActed = true;
+                            anyActionSucceeded = true;
                         }
                     }
 
-                    if (ruleMatchedAndActed) {
+                    if (anyActionSucceeded) {
                         itemHandled = true;
                         newlyRepliedItemIds.add(item.id);
 
