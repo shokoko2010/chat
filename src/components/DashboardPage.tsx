@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule, AutoResponderAction } from '../types';
 import Header from './Header';
@@ -551,12 +550,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 resolve(true);
             } else {
                 const errorMsg = response?.error?.message || 'خطأ غير معروف';
-                console.error(`Failed to send private reply to ${item.id}. Reason: ${errorMsg}`, response?.error || response);
+                showNotification('error', `فشل إرسال الرد الخاص للتعليق (${item.id}): ${errorMsg}`);
+                console.error(`Failed to send private reply to ${item.id}.`, response?.error || response);
                 resolve(false);
             }
         });
     });
-  }, [isSimulationMode, managedTarget.access_token]);
+  }, [isSimulationMode, managedTarget.access_token, showNotification]);
   
   const handleGenerateSmartReplies = useCallback(async (commentText: string): Promise<string[]> => {
     if (!aiClient) return [];
@@ -649,7 +649,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             if (action.type === 'public_reply' && item.type === 'comment') {
                 success = await handleReplySubmit(item, replyText, true);
             } else if (action.type === 'private_reply' && item.type === 'comment') {
-                if (item.platform === 'facebook' && !item.parentId && item.can_reply_privately === true) {
+                if (item.platform === 'facebook' && item.can_reply_privately === true) {
                     success = await handlePrivateReplySubmit(item, replyText);
                 }
             } else if (action.type === 'direct_message' && item.type === 'message') {
@@ -996,7 +996,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setBulkPosts(rescheduled);
   };
   const handleUpdateBulkPost = (id: string, updates: Partial<BulkPostItem>) => setBulkPosts(prev => prev.map(p => p.id === id ? {...p, ...updates} : p));
-  const handleRemoveBulkPost = (id: string) => setBulkPosts(prev => prev.filter(p => p.id !== id));
+  const handleRemoveBulkPost = (id: string) => {
+    setBulkPosts(prev => {
+        const newPosts = prev.filter(p => p.id !== id);
+        return rescheduleBulkPosts(newPosts, schedulingStrategy, weeklyScheduleSettings);
+    });
+};
   
   const handleScheduleAllBulkPosts = () => {
     setIsSchedulingAll(true);
