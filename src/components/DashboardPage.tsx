@@ -513,7 +513,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   }, [summaryData, aiClient, pageProfile, analyticsPeriod]);
   
-  const handleSendMessage = async (conversationId: string, message: string): Promise<boolean> => {
+  const handleSendMessage = useCallback(async (conversationId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {
         if(isSimulationMode) { resolve(true); return; }
         window.FB.api(`/${conversationId}/messages`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
@@ -526,9 +526,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             }
         });
     });
-  };
+  }, [isSimulationMode, managedTarget.access_token]);
 
-  const handleReplyToComment = async (commentId: string, message: string): Promise<boolean> => {
+  const handleReplyToComment = useCallback(async (commentId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {
         if(isSimulationMode) { resolve(true); return; }
         window.FB.api(`/${commentId}/comments`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
@@ -540,21 +540,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             }
         });
     });
-  };
+  }, [isSimulationMode, managedTarget.access_token]);
 
-  const handlePrivateReplyToComment = async (commentId: string, message: string): Promise<boolean> => {
+  const handlePrivateReplyToComment = useCallback(async (commentId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {
         if (isSimulationMode) { resolve(true); return; }
         window.FB.api(`/${commentId}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
             if (response && response.success) {
                 resolve(true);
             } else {
-                console.error(`Failed to send private reply to ${commentId}:`, response);
+                console.error(`Failed to send private reply to ${commentId}:`, response?.error || response);
                 resolve(false);
             }
         });
     });
-  };
+  }, [isSimulationMode, managedTarget.access_token]);
 
   const processAutoReplies = useCallback(async () => {
     if (isProcessingReplies.current) return;
@@ -564,82 +564,85 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         const { rules, fallback } = autoResponderSettings;
         if (rules.length === 0 && fallback.mode === 'off') return;
 
-        const itemsToProcess = inboxItems.filter(item => !item.isReplied);
+        const itemsToProcess = inboxItems.filter(item => 
+            !item.isReplied && 
+            item.authorId !== managedTarget.id && 
+            (!linkedInstagramTarget || item.authorId !== linkedInstagramTarget.id)
+        );
+
         if (itemsToProcess.length === 0) return;
 
         const newRepliedUsers = JSON.parse(JSON.stringify(repliedUsersPerPost));
-        let newlyRepliedItemIds: string[] = [];
-        const usersRepliedThisRun: Record<string, Set<string>> = {};
+        const newlyRepliedItemIds = new Set<string>();
         
-        const actionConfig: Record<string, { source: string }> = {
-            'public_reply': { source: 'comment'},
-            'private_reply': { source: 'comment'},
-            'direct_message': { source: 'message'},
-        };
-
         for (const item of itemsToProcess) {
-            let replied = false;
+            let itemHandled = false;
             const lowerCaseText = item.text.toLowerCase();
 
+            // Find the first matching, enabled rule
             for (const rule of rules) {
                 if (!rule.enabled || rule.trigger.source !== item.type) continue;
                 
-                const postId = item.post?.id || '';
+                const postId = item.post?.id || 'dm'; // 'dm' for direct messages
                 if (item.type === 'comment' && rule.replyOncePerUser) {
-                    const alreadyRepliedInStorage = (newRepliedUsers[postId] || []).includes(item.authorId);
-                    const alreadyRepliedThisRun = usersRepliedThisRun[postId]?.has(item.authorId);
-                    if (alreadyRepliedInStorage || alreadyRepliedThisRun) continue;
+                    if ((newRepliedUsers[postId] || []).includes(item.authorId)) {
+                        continue;
+                    }
                 }
 
                 const hasNegative = rule.trigger.negativeKeywords.filter(Boolean).some(nk => lowerCaseText.includes(nk.toLowerCase()));
                 if (hasNegative) continue;
 
                 const keywords = rule.trigger.keywords.filter(Boolean).map(k => k.toLowerCase());
-                let matched = keywords.length === 0;
-                if (!matched) {
+                let matched = keywords.length === 0; // Rule with no keywords matches everything
+                if (keywords.length > 0) {
                     if (rule.trigger.matchType === 'any') matched = keywords.some(k => lowerCaseText.includes(k));
                     else if (rule.trigger.matchType === 'all') matched = keywords.every(k => lowerCaseText.includes(k));
                     else if (rule.trigger.matchType === 'exact') matched = keywords.some(k => lowerCaseText === k);
                 }
 
                 if (matched) {
-                     const actionPromises = rule.actions
-                        .filter(a => a.enabled && a.messageVariations.length > 0 && a.messageVariations[0].trim() !== '' && actionConfig[a.type]?.source === item.type)
-                        .map(action => {
-                            const messageToSend = action.messageVariations[Math.floor(Math.random() * action.messageVariations.length)];
-                            const finalMessage = messageToSend.replace('{user_name}', item.authorName);
+                    let anActionSucceeded = false;
 
-                            if (action.type === 'public_reply') {
-                                return handleReplyToComment(item.id, finalMessage);
-                            }
-                            if (action.type === 'private_reply') {
-                                // IMPORTANT: Only send private replies to top-level FB comments
-                                if (item.platform === 'facebook' && !item.isReply) { 
-                                    return handlePrivateReplyToComment(item.id, finalMessage);
-                                }
-                                return Promise.resolve(false); 
-                            }
-                            if (action.type === 'direct_message') {
-                                return handleSendMessage(item.conversationId || item.id, finalMessage);
-                            }
-                            return Promise.resolve(false);
-                        });
+                    const enabledActions = rule.actions.filter(a => a.enabled && a.messageVariations.length > 0 && a.messageVariations[0].trim() !== '');
 
-                    const results = await Promise.all(actionPromises);
-                    const ruleActionSucceeded = results.some(success => success === true);
+                    // Sequential execution of actions
+                    for (const action of enabledActions) {
+                        const messageToSend = action.messageVariations[Math.floor(Math.random() * action.messageVariations.length)];
+                        const finalMessage = messageToSend.replace('{user_name}', item.authorName);
 
-                    if (ruleActionSucceeded) {
-                        replied = true;
+                        let success = false;
+                        if (action.type === 'public_reply' && item.type === 'comment') {
+                            success = await handleReplyToComment(item.id, finalMessage);
+                        } else if (action.type === 'private_reply' && item.type === 'comment') {
+                            if (item.platform === 'facebook' && !item.isReply) {
+                                success = await handlePrivateReplyToComment(item.id, finalMessage);
+                            }
+                        } else if (action.type === 'direct_message' && item.type === 'message') {
+                            success = await handleSendMessage(item.conversationId || item.id, finalMessage);
+                        }
+                        
+                        if (success) {
+                            anActionSucceeded = true;
+                        }
+                    }
+
+                    if (anActionSucceeded) {
+                        itemHandled = true;
+                        newlyRepliedItemIds.add(item.id);
+
                         if (item.type === 'comment' && rule.replyOncePerUser) {
-                            if (!usersRepliedThisRun[postId]) usersRepliedThisRun[postId] = new Set();
-                            usersRepliedThisRun[postId].add(item.authorId);
+                            if (!newRepliedUsers[postId]) newRepliedUsers[postId] = [];
+                            if (!newRepliedUsers[postId].includes(item.authorId)) {
+                                newRepliedUsers[postId].push(item.authorId);
+                            }
                         }
                         break; 
                     }
                 }
             }
 
-            if (!replied && item.type === 'message' && fallback.mode !== 'off') {
+            if (!itemHandled && item.type === 'message' && fallback.mode !== 'off') {
                 let fallbackMessage = '';
                 if (fallback.mode === 'static') {
                     fallbackMessage = fallback.staticMessage;
@@ -650,34 +653,25 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
                 if (fallbackMessage) {
                     const success = await handleSendMessage(item.conversationId || item.id, fallbackMessage.replace('{user_name}', item.authorName));
-                    if (success) replied = true;
+                    if (success) {
+                       itemHandled = true;
+                       newlyRepliedItemIds.add(item.id);
+                    }
                 }
             }
-
-            if (replied) {
-                newlyRepliedItemIds.push(item.id);
-            }
         }
 
-        if(newlyRepliedItemIds.length > 0) {
-            setInboxItems(prev => prev.map(i => newlyRepliedItemIds.includes(i.id) ? { ...i, isReplied: true } : i));
-
-            for (const postId in usersRepliedThisRun) {
-                if (!newRepliedUsers[postId]) newRepliedUsers[postId] = [];
-                usersRepliedThisRun[postId].forEach(userId => {
-                    if (!newRepliedUsers[postId].includes(userId)) {
-                        newRepliedUsers[postId].push(userId);
-                    }
-                });
-            }
-    
+        if(newlyRepliedItemIds.size > 0) {
+            setInboxItems(prev => prev.map(i => newlyRepliedItemIds.has(i.id) ? { ...i, isReplied: true } : i));
             setRepliedUsersPerPost(newRepliedUsers);
-            showNotification('success', `تم إرسال ${newlyRepliedItemIds.length} ردًا تلقائيًا.`);
+            showNotification('success', `تم إرسال ${newlyRepliedItemIds.size} ردًا تلقائيًا.`);
         }
+    } catch(e) {
+        console.error("Critical error in auto-reply processor:", e);
     } finally {
         isProcessingReplies.current = false;
     }
-  }, [inboxItems, autoResponderSettings, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handlePrivateReplyToComment, handleSendMessage]);
+  }, [inboxItems, autoResponderSettings, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handlePrivateReplyToComment, handleSendMessage, managedTarget.id, linkedInstagramTarget]);
 
 
   const fetchMessageHistory = async (conversationId: string) => {
@@ -732,50 +726,60 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
           const recentPostsData = isPage ? await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${postFields}&limit=10`, pageAccessToken) : [];
           const recentIgPostsData = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url&limit=10`, pageAccessToken) : [];
 
-          const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id}';
-          const igCommentFields = 'id,from{id,username},text,timestamp';
+          const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}}';
+          const igCommentFields = 'id,from{id,username},text,timestamp,replies{from{id}}';
 
           const fbCommentsPromise = Promise.all(
               recentPostsData.map(async (post) => {
                   const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
-                  return commentsData.map((comment: any): InboxItem => ({
-                      id: comment.id,
-                      platform: 'facebook',
-                      type: 'comment',
-                      text: comment.message || '',
-                      authorName: comment.from?.name || 'مستخدم فيسبوك',
-                      authorId: comment.from?.id || 'Unknown',
-                      authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
-                      timestamp: comment.created_time,
-                      post: { id: post.id, message: post.message, picture: post.full_picture },
-                      isReply: !!comment.parent
-                  }));
+                  return commentsData.map((comment: any): InboxItem => {
+                      const pageHasReplied = !!comment.comments?.data?.some((c: any) => c.from.id === managedTarget.id);
+                      return {
+                          id: comment.id,
+                          platform: 'facebook',
+                          type: 'comment',
+                          text: comment.message || '',
+                          authorName: comment.from?.name || 'مستخدم فيسبوك',
+                          authorId: comment.from?.id || 'Unknown',
+                          authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
+                          timestamp: new Date(comment.created_time).toISOString(),
+                          post: { id: post.id, message: post.message, picture: post.full_picture },
+                          isReply: !!comment.parent,
+                          isReplied: pageHasReplied
+                      };
+                  });
               })
           );
           
           const igCommentsPromise = Promise.all(
               recentIgPostsData.map(async (post) => {
                   const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
-                  return commentsData.map((comment: any): InboxItem => ({
-                      id: comment.id,
-                      platform: 'instagram',
-                      type: 'comment',
-                      text: comment.text || '',
-                      authorName: comment.from?.username || 'مستخدم انستجرام',
-                      authorId: comment.from?.id || 'Unknown',
-                      authorPictureUrl: defaultPicture,
-                      timestamp: comment.timestamp,
-                      post: { id: post.id, message: post.caption, picture: post.media_url },
-                      isReply: false
-                  }));
+                  return commentsData.map((comment: any): InboxItem => {
+                      const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === linkedInstagramTarget.id);
+                      return {
+                          id: comment.id,
+                          platform: 'instagram',
+                          type: 'comment',
+                          text: comment.text || '',
+                          authorName: comment.from?.username || 'مستخدم انستجرام',
+                          authorId: comment.from?.id || 'Unknown',
+                          authorPictureUrl: defaultPicture,
+                          timestamp: new Date(comment.timestamp).toISOString(),
+                          post: { id: post.id, message: post.caption, picture: post.media_url },
+                          isReply: false,
+                          isReplied: pageHasReplied
+                      };
+                  });
               })
           );
 
           let newMessages: InboxItem[] = [];
           if (isPage) {
-              const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&since=${since}`, pageAccessToken);
+              const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&since=${since}`, pageAccessToken);
               newMessages = convosData.map((convo: any) => {
                   const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
+                  const lastMessage = convo.messages?.data?.[0];
+                  const pageSentLastMessage = lastMessage?.from?.id === managedTarget.id;
                   return {
                       id: convo.id,
                       platform: 'facebook',
@@ -784,8 +788,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                       authorName: participant?.name || 'مستخدم غير معروف',
                       authorId: participant?.id || 'Unknown',
                       authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture?type=normal`,
-                      timestamp: convo.updated_time,
-                      conversationId: convo.id
+                      timestamp: new Date(convo.updated_time).toISOString(),
+                      conversationId: convo.id,
+                      isReplied: pageSentLastMessage
                   };
               });
           }
@@ -804,26 +809,46 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
           console.error("Error during inbox polling:", error);
       }
   }, [inboxItems, managedTarget, linkedInstagramTarget, fetchWithPagination, syncingTargetId]);
-
-  const pollFnRef = useRef(pollForNewItems);
-  useEffect(() => {
-    pollFnRef.current = pollForNewItems;
-  });
-
+  
+  // Robust polling mechanism
   useEffect(() => {
     if (view !== 'inbox' || isSimulationMode) {
-        return; 
-    }
-    
-    // Initial fetch when the component mounts or view changes to inbox
-    if (inboxItems.length === 0 && !isInboxLoading) {
-        setIsInboxLoading(true);
-        pollFnRef.current().finally(() => setIsInboxLoading(false));
+      return;
     }
 
-    const intervalId = setInterval(() => pollFnRef.current(), 30000);
-    return () => clearInterval(intervalId);
-  }, [view, isSimulationMode]);
+    let isMounted = true;
+    let timeoutId: number;
+
+    const poll = async () => {
+      if (!isMounted) return;
+      try {
+        await pollForNewItems();
+      } catch (e) {
+        console.error("Polling error:", e);
+      } finally {
+        if (isMounted) {
+          // Set timeout for the next poll
+          timeoutId = window.setTimeout(poll, 30000);
+        }
+      }
+    };
+    
+    // Initial fetch for the inbox view
+    if (inboxItems.length === 0 && !isInboxLoading) {
+        setIsInboxLoading(true);
+        poll().finally(() => {
+            if(isMounted) setIsInboxLoading(false);
+        });
+    } else {
+        // Start polling if not initial load
+        timeoutId = window.setTimeout(poll, 30000);
+    }
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [view, isSimulationMode, pollForNewItems, isInboxLoading, inboxItems.length]);
   
   // This useEffect triggers auto-replies whenever the inboxItems list is updated by polling or syncing.
   useEffect(() => {

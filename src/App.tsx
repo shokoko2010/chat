@@ -325,11 +325,13 @@ const App: React.FC = () => {
         const fbCommentBatches = await Promise.all(fbCommentPromises);
         fbCommentBatches.forEach(batch => combinedInboxItems.push(...batch));
 
-        const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants&limit=100`;
+        const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=100`;
         const allConvosData = await fetchWithPagination(convosPath, pageAccessToken);
         const allMessages: InboxItem[] = allConvosData.map((convo: any) => {
             const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
             const participantId = participant?.id;
+            const lastMessage = convo.messages?.data?.[0];
+            const pageSentLastMessage = lastMessage?.from?.id === pageTarget.id;
             return {
                 id: convo.id,
                 platform: 'facebook',
@@ -339,7 +341,8 @@ const App: React.FC = () => {
                 authorId: participantId || 'Unknown',
                 authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture,
                 timestamp: new Date(convo.updated_time).toISOString(),
-                conversationId: convo.id
+                conversationId: convo.id,
+                isReplied: pageSentLastMessage
             };
         });
         combinedInboxItems.push(...allMessages);
