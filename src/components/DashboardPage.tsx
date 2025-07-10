@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule, AutoResponderAction } from '../types';
 import Header from './Header';
@@ -610,18 +611,20 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         const keywords = rule.trigger.keywords.map(k => k.toLowerCase());
         const negativeKeywords = rule.trigger.negativeKeywords.map(k => k.toLowerCase());
 
-        if (keywords.length === 0) continue; // Don't match on empty keywords
-
-        const hasNegativeKeyword = negativeKeywords.some(nk => text.includes(nk));
+        // An empty keywords list in a rule should match all items for that source
+        const hasKeywords = keywords.length > 0;
+        const hasNegativeKeyword = hasKeywords && negativeKeywords.some(nk => text.includes(nk));
         if (hasNegativeKeyword) continue;
 
-        let isMatch = false;
-        if (rule.trigger.matchType === 'exact') {
-            isMatch = keywords.some(k => text === k);
-        } else if (rule.trigger.matchType === 'all') {
-            isMatch = keywords.every(k => text.includes(k));
-        } else { // 'any'
-            isMatch = keywords.some(k => text.includes(k));
+        let isMatch = !hasKeywords; // Match if no keywords are provided
+        if (hasKeywords) {
+            if (rule.trigger.matchType === 'exact') {
+                isMatch = keywords.some(k => text === k);
+            } else if (rule.trigger.matchType === 'all') {
+                isMatch = keywords.every(k => text.includes(k));
+            } else { // 'any'
+                isMatch = keywords.some(k => text.includes(k));
+            }
         }
         
         if (isMatch) {
@@ -638,6 +641,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         }
         
         let itemReplied = false;
+        
+        // Use a sequential loop to ensure actions are attempted one by one
         for (const action of matchedRule.actions) {
             if (!action.enabled) continue;
 
@@ -649,7 +654,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             if (action.type === 'public_reply' && item.type === 'comment') {
                 success = await handleReplySubmit(item, replyText, true);
             } else if (action.type === 'private_reply' && item.type === 'comment') {
-                if (item.platform === 'facebook' && item.can_reply_privately === true) {
+                // The most robust check for private reply eligibility.
+                if (item.platform === 'facebook' && !item.parentId && item.can_reply_privately) {
                     success = await handlePrivateReplySubmit(item, replyText);
                 }
             } else if (action.type === 'direct_message' && item.type === 'message') {
@@ -736,7 +742,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     // --- Fetch IG Comments ---
     let newInstagramComments: InboxItem[] = [];
     if (linkedInstagramTarget) {
-        const igCommentFields = 'id,from{id,username},text,timestamp';
+        const igCommentFields = 'id,from{id,username},text,timestamp,parent_id';
         const igMediaPath = `/${linkedInstagramTarget.id}/media?fields=id,comments_count,caption,media_url&since=${lastCheckTime.current}&limit=5`;
         const igNewPostsData = await fetchWithPagination(igMediaPath, linkedInstagramTarget.access_token);
         
@@ -923,8 +929,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     const newPost: ScheduledPost = {
       id: `scheduled_${Date.now()}`,
       text: postText,
-      imageUrl: imagePreview || undefined,
-      imageFile: selectedImage || undefined,
+      imageUrl: imagePreview ?? undefined,
+      imageFile: selectedImage ?? undefined,
       scheduledAt: scheduleDateTime,
       isReminder: includeInstagram,
       targetId: managedTarget.id,
@@ -1079,8 +1085,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     const reminder = {
       id: `reminder_${Date.now()}`,
       text: postText,
-      imageUrl: imagePreview,
-      imageFile: selectedImage,
+      imageUrl: imagePreview ?? undefined,
+      imageFile: selectedImage ?? undefined,
       scheduledAt: new Date(scheduleDate),
       isReminder: true,
       targetId: linkedInstagramTarget!.id,

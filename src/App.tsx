@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -375,7 +372,7 @@ const App: React.FC = () => {
             }));
             fetchedPosts.push(...igFetchedPosts);
 
-            const igCommentFields = 'id,from{id,username},text,timestamp,replies{from{id}}';
+            const igCommentFields = 'id,from{id,username},text,timestamp,parent_id,replies{from{id}}';
             const igCommentPromises = igAllPostsData.map(async (post) => {
                 if (post.comments_count > 0) {
                     const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100`, igAccessToken);
@@ -391,7 +388,7 @@ const App: React.FC = () => {
                             authorPictureUrl: defaultPicture,
                             timestamp: new Date(comment.timestamp).toISOString(),
                             post: { id: post.id, message: post.caption, picture: post.media_url },
-                            parentId: comment.parent?.id,
+                            parentId: comment.parent_id,
                             isReplied: pageHasReplied
                         };
                     });
