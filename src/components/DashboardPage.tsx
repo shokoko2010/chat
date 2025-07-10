@@ -828,7 +828,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     caption: postText
                 };
                 const igContainerResponse: any = await new Promise(resolve => {
-                    window.FB.api(`/${linkedInstagramTarget.id}/media`, 'POST', igContainerParams, res => resolve(res));
+                    window.FB.api(`/${linkedInstagramTarget.id}/media`, 'POST', igContainerParams, (res: any) => resolve(res));
                 });
                 
                 if (igContainerResponse.error) {
@@ -836,7 +836,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
                 
                 const igPublishResponse: any = await new Promise(resolve => {
-                    window.FB.api(`/${linkedInstagramTarget.id}/media_publish`, 'POST', { creation_id: igContainerResponse.id }, res => resolve(res));
+                    window.FB.api(`/${linkedInstagramTarget.id}/media_publish`, 'POST', { creation_id: igContainerResponse.id }, (res: any) => resolve(res));
                 });
 
                 if (igPublishResponse.error) {
