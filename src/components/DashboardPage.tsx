@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule, AutoResponderAction } from '../types';
 import Header from './Header';
@@ -618,7 +615,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             success = await handleReplyToComment(item.id, finalMessage);
                         } else if (action.type === 'private_reply' && item.type === 'comment') {
                             // Only send to top-level comments on Facebook
-                            const isTopLevelComment = !item.parentId;
+                            const isTopLevelComment = item.parentId === item.post?.id;
                             if (item.platform === 'facebook' && isTopLevelComment) {
                                 success = await handlePrivateReplyToComment(item.id, finalMessage);
                             }
