@@ -519,7 +519,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 fetchMessageHistory(conversationId);
                 resolve(true);
             } else {
-                console.error('Failed to send message:', response?.error);
+                console.error(`Failed to send message to ${conversationId}:`, response?.error);
                 resolve(false); 
             }
         });
@@ -533,7 +533,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             if (response && !response.error) {
                 resolve(true);
             } else {
-                console.error('Failed to reply to comment:', response?.error);
+                console.error(`Failed to reply to comment ${commentId}:`, response?.error);
                 resolve(false);
             }
         });
@@ -547,7 +547,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             if (response && response.success) {
                 resolve(true);
             } else {
-                console.error('Failed to send private reply:', response);
+                console.error(`Failed to send private reply to ${commentId}:`, response);
                 resolve(false);
             }
         });
@@ -691,7 +691,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     const data = rawData ? JSON.parse(rawData) : {};
     const syncedItems = data.inboxItems || [];
     setInboxItems(syncedItems);
-    processAutoReplies();
   };
   
   const handleClearCache = () => {
@@ -713,7 +712,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   };
   
-  // Polling logic encapsulated in a useCallback to ensure it has the latest state when called.
   const pollForNewItems = useCallback(async () => {
       if (syncingTargetId || isProcessingReplies.current) return;
 
@@ -731,7 +729,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
           const recentPostsData = isPage ? await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${postFields}&limit=10`, pageAccessToken) : [];
           const recentIgPostsData = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url&limit=10`, pageAccessToken) : [];
 
-          const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
+          const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id}';
           const igCommentFields = 'id,from{id,username},text,timestamp';
 
           const fbCommentsPromise = Promise.all(
@@ -741,7 +739,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                       id: comment.id, type: 'comment', text: comment.message || '',
                       authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: comment.from?.id || 'Unknown',
                       authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
-                      timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }, isReply: !!comment.parent?.id
+                      timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }, isReply: !!comment.parent
                   }));
               })
           );
@@ -784,11 +782,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
       } catch (error) {
           console.error("Error during inbox polling:", error);
       }
-  }, [inboxItems, managedTarget, linkedInstagramTarget, fetchWithPagination, syncingTargetId, isProcessingReplies]);
+  }, [inboxItems, managedTarget, linkedInstagramTarget, fetchWithPagination, syncingTargetId]);
 
-  // This useEffect manages the polling interval.
-  // It resets the interval whenever pollForNewItems changes (which it does when its dependencies change, like inboxItems)
-  // This ensures the polling function always has the latest state.
+  const pollFnRef = useRef(pollForNewItems);
+  useEffect(() => {
+    pollFnRef.current = pollForNewItems;
+  });
+
   useEffect(() => {
     if (view !== 'inbox' || isSimulationMode) {
         return; 
@@ -797,12 +797,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     // Initial fetch when the component mounts or view changes to inbox
     if (inboxItems.length === 0 && !isInboxLoading) {
         setIsInboxLoading(true);
-        pollForNewItems().finally(() => setIsInboxLoading(false));
+        pollFnRef.current().finally(() => setIsInboxLoading(false));
     }
 
-    const intervalId = setInterval(pollForNewItems, 30000);
+    const intervalId = setInterval(() => pollFnRef.current(), 30000);
     return () => clearInterval(intervalId);
-  }, [view, isSimulationMode, pollForNewItems, isInboxLoading, inboxItems.length]);
+  }, [view, isSimulationMode, isInboxLoading, inboxItems.length]);
   
   // This useEffect triggers auto-replies whenever the inboxItems list is updated by polling or syncing.
   useEffect(() => {
@@ -812,7 +812,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }, [inboxItems, view, isSimulationMode, processAutoReplies]);
 
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
-      return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.conversationId || selectedItem.id, message);
+      let success = false;
+      const promise = selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.conversationId || selectedItem.id, message);
+      success = await promise;
+
+      if (success) {
+          setInboxItems(prevItems =>
+              prevItems.map(item =>
+                  item.id === selectedItem.id ? { ...item, isReplied: true } : item
+              )
+          );
+           if (selectedItem.type === 'message' && selectedItem.conversationId) {
+                fetchMessageHistory(selectedItem.conversationId);
+            }
+      }
+      return success;
   };
 
   const handleGenerateSmartReplies = async (commentText: string): Promise<string[]> => {

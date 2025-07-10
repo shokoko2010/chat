@@ -296,19 +296,21 @@ const App: React.FC = () => {
         }));
         fetchedPosts.push(...fbFetchedPosts);
 
-        const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
+        const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent,comments{from{id}}';
         const fbCommentPromises = fbAllPostsData.map(async (post) => {
             if (post.comments?.summary?.total_count > 0) {
                 const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=100`, pageAccessToken);
                 return postComments.map((comment: any): InboxItem => {
                       const authorId = comment.from?.id;
                       const authorPictureUrl = comment.from?.picture?.data?.url || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
+                      const pageHasReplied = !!comment.comments?.data?.some((c: any) => c.from.id === pageTarget.id);
                       return {
                         id: comment.id, type: 'comment', text: comment.message || '',
                         authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: authorId || 'Unknown',
                         authorPictureUrl: authorPictureUrl, timestamp: comment.created_time,
                         post: { id: post.id, message: post.message, picture: post.full_picture },
-                        isReply: !!comment.parent
+                        isReply: !!comment.parent,
+                        isReplied: pageHasReplied,
                       };
                 });
             }
