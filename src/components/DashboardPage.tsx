@@ -632,41 +632,67 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
 
                 if (matched) {
-                    let anyActionSucceededForRule = false;
-                    const enabledActions = rule.actions.filter(a => a.enabled && a.messageVariations.length > 0 && a.messageVariations[0].trim() !== '');
+                    itemHandled = true;
+                    let actionSucceeded = false;
 
-                    for (const action of enabledActions) {
-                        const messageToSend = action.messageVariations[Math.floor(Math.random() * action.messageVariations.length)];
-                        const finalMessage = messageToSend.replace('{user_name}', item.authorName);
-
-                        let success = false;
-                        if (action.type === 'public_reply' && item.type === 'comment') {
-                            success = await handleReplyToComment(item.id, finalMessage);
-                            if (success) showNotification('success', 'تم إرسال الرد العام بنجاح.');
-                        } else if (action.type === 'private_reply' && item.type === 'comment') {
-                            if (item.platform === 'facebook' && item.can_reply_privately) {
-                                success = await handlePrivateReplyToComment(item.id, finalMessage);
-                                if (success) showNotification('success', 'تم إرسال الرد الخاص بنجاح.');
+                    // Handle comment actions sequentially
+                    if (item.type === 'comment') {
+                        const publicReply = rule.actions.find(a => a.type === 'public_reply' && a.enabled && a.messageVariations?.[0]);
+                        if (publicReply) {
+                            const message = publicReply.messageVariations[Math.floor(Math.random() * publicReply.messageVariations.length)];
+                            const success = await handleReplyToComment(item.id, message.replace('{user_name}', item.authorName));
+                            if (success) {
+                                actionSucceeded = true;
+                                showNotification('success', 'تم إرسال الرد العام بنجاح.');
+                                
+                                const privateReply = rule.actions.find(a => a.type === 'private_reply' && a.enabled && a.messageVariations?.[0]);
+                                if (privateReply && item.can_reply_privately) {
+                                    await new Promise(resolve => setTimeout(resolve, 5000));
+                                    const privateMessage = privateReply.messageVariations[Math.floor(Math.random() * privateReply.messageVariations.length)];
+                                    const privateSuccess = await handlePrivateReplyToComment(item.id, privateMessage.replace('{user_name}', item.authorName));
+                                    if (privateSuccess) {
+                                        showNotification('success', 'تم إرسال الرد الخاص بنجاح.');
+                                    }
+                                }
                             }
-                        } else if (action.type === 'direct_message' && item.type === 'message') {
-                            success = await handleSendMessage(item.conversationId || item.id, finalMessage);
-                            if (success) showNotification('success', 'تم إرسال الرسالة الخاصة بنجاح.');
+                        } else {
+                            // If no public reply, try private reply directly without delay
+                            const privateReply = rule.actions.find(a => a.type === 'private_reply' && a.enabled && a.messageVariations?.[0]);
+                            if (privateReply && item.can_reply_privately) {
+                                const privateMessage = privateReply.messageVariations[Math.floor(Math.random() * privateReply.messageVariations.length)];
+                                const success = await handlePrivateReplyToComment(item.id, privateMessage.replace('{user_name}', item.authorName));
+                                if (success) {
+                                    actionSucceeded = true;
+                                    showNotification('success', 'تم إرسال الرد الخاص بنجاح.');
+                                }
+                            }
                         }
-                        
-                        if (success) anyActionSucceededForRule = true;
                     }
 
-                    if (anyActionSucceededForRule) {
-                        itemHandled = true;
-                        newlyRepliedItemIds.add(item.id);
+                    // Handle message actions
+                    if (item.type === 'message') {
+                        const directMessage = rule.actions.find(a => a.type === 'direct_message' && a.enabled && a.messageVariations?.[0]);
+                        if (directMessage) {
+                            const message = directMessage.messageVariations[Math.floor(Math.random() * directMessage.messageVariations.length)];
+                            const success = await handleSendMessage(item.conversationId || item.id, message.replace('{user_name}', item.authorName));
+                            if (success) {
+                                actionSucceeded = true;
+                                showNotification('success', 'تم إرسال الرسالة الخاصة بنجاح.');
+                            }
+                        }
+                    }
 
+                    if (actionSucceeded) {
+                        newlyRepliedItemIds.add(item.id);
                         if (item.type === 'comment' && rule.replyOncePerUser) {
                             if (!newRepliedUsers[postId]) newRepliedUsers[postId] = [];
                             if (!newRepliedUsers[postId].includes(item.authorId)) {
                                 newRepliedUsers[postId].push(item.authorId);
                             }
                         }
-                        break;
+                        break; // Rule matched and acted, move to next item
+                    } else {
+                        itemHandled = false; // Reset since no action was successful
                     }
                 }
             }
@@ -1142,10 +1168,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
         let newInboxItems: InboxItem[] = [];
         const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
+        const pageAccessToken = pageTarget.access_token;
         
-        try {
-            const pageAccessToken = pageTarget.access_token;
-            if (pageAccessToken) {
+        // --- 1. Fetch Facebook Messages ---
+        if (pageAccessToken) {
+            try {
                 const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&updated_since=${sinceTimestamp}`;
                 const recentConvosData = await fetchWithPagination(convosPath, pageAccessToken);
                 const recentMessages: InboxItem[] = recentConvosData.map((convo: any) => {
@@ -1163,7 +1190,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     };
                 });
                 newInboxItems.push(...recentMessages);
+            } catch (error) {
+                console.warn("Auto-sync failed for Facebook Messages:", error);
+            }
+        }
 
+        // --- 2. Fetch Facebook Comments ---
+        if (pageAccessToken) {
+            try {
                 const feedPath = `/${pageTarget.id}/feed?fields=id,message,full_picture,created_time,comments.summary(true)&limit=10&since=${sinceTimestamp}`;
                 const recentFeedData = await fetchWithPagination(feedPath, pageAccessToken);
                 const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}},can_reply_privately';
@@ -1190,9 +1224,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 });
                 const fbCommentBatches = await Promise.all(fbCommentPromises);
                 fbCommentBatches.forEach(batch => newInboxItems.push(...batch));
+            } catch (error) {
+                 console.warn("Auto-sync failed for Facebook Comments:", error);
             }
-            
-            if (linkedIgTarget) {
+        }
+        
+        // --- 3. Fetch Instagram Comments ---
+        if (linkedIgTarget) {
+            try {
                 const igAccessToken = linkedIgTarget.access_token;
                 const igMediaSince = Math.floor((Date.now() - 3 * 24 * 60 * 60 * 1000) / 1000);
                 const igPostFields = 'id,caption,media_url,timestamp,comments_count';
@@ -1220,24 +1259,25 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 });
                 const igCommentBatches = await Promise.all(igCommentPromises);
                 igCommentBatches.forEach(batch => newInboxItems.push(...batch));
+            } catch (error) {
+                console.warn("Auto-sync failed for Instagram Comments:", error);
             }
-
-            if (newInboxItems.length > 0) {
-                setInboxItems(prevItems => {
-                    const existingIds = new Set(prevItems.map(i => i.id));
-                    const uniqueNewItems = newInboxItems.filter(i => !existingIds.has(i.id));
-                    if (uniqueNewItems.length === 0) return prevItems;
-                    
-                    const combined = [...uniqueNewItems, ...prevItems];
-                    combined.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                    return combined;
-                });
-            }
-        } catch (error) {
-            console.warn("Auto-sync background poll failed:", error);
-        } finally {
-            lastSyncTimestamp.current = Math.floor(Date.now() / 1000);
         }
+
+        // --- 4. Combine and Update State ---
+        if (newInboxItems.length > 0) {
+            setInboxItems(prevItems => {
+                const existingIds = new Set(prevItems.map(i => i.id));
+                const uniqueNewItems = newInboxItems.filter(i => !existingIds.has(i.id));
+                if (uniqueNewItems.length === 0) return prevItems;
+                
+                const combined = [...uniqueNewItems, ...prevItems];
+                combined.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                return combined;
+            });
+        }
+        
+        lastSyncTimestamp.current = Math.floor(Date.now() / 1000);
     }, [managedTarget, allTargets, isSimulationMode, fetchWithPagination]);
 
     useEffect(() => {
