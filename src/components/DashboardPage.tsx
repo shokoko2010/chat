@@ -823,7 +823,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
     const intervalId = setInterval(() => pollFnRef.current(), 30000);
     return () => clearInterval(intervalId);
-  }, [view, isSimulationMode, isInboxLoading, inboxItems.length]);
+  }, [view, isSimulationMode]);
   
   // This useEffect triggers auto-replies whenever the inboxItems list is updated by polling or syncing.
   useEffect(() => {
