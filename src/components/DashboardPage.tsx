@@ -439,7 +439,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     } else {
         setPublishedPostsLoading(false);
     }
-  }, [managedTarget.id, managedTarget.access_token, isSimulationMode, clearComposer, fetchWithPagination, managedTarget.name, managedTarget.picture.data.url]);
+  }, [managedTarget.id, managedTarget.access_token, isSimulationMode, clearComposer, fetchWithPagination, managedTarget.name, managedTarget.picture.data.url, showNotification]);
   
   useEffect(() => {
     try {
@@ -549,7 +549,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         if (rules.length === 0 && fallback.mode === 'off') return;
 
         const itemsToProcess = currentInboxItems.filter(item => !autoRepliedItems.has(item.id));
-        if (itemsToProcess.length === 0) return;
+        if (itemsToProcess.length === 0) {
+            isProcessingReplies.current = false;
+            return;
+        }
 
         const newRepliedItems = new Set(autoRepliedItems);
         const newRepliedUsers = JSON.parse(JSON.stringify(repliedUsersPerPost));
@@ -585,32 +588,32 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 if (matched) {
                     const activeActions = rule.actions.filter(a => a.enabled && a.messageVariations.length > 0 && a.messageVariations[0].trim() !== '');
                     
-                    const actionPromises = activeActions.map(action => {
-                        if ((action.type === 'public_reply' || action.type === 'private_reply') && item.type === 'comment') {
-                            const messageToSend = action.messageVariations[Math.floor(Math.random() * action.messageVariations.length)];
-                            const finalMessage = messageToSend.replace('{user_name}', item.authorName);
-                            return action.type === 'public_reply'
-                                ? handleReplyToComment(item.id, finalMessage)
-                                : handlePrivateReplyToComment(item.id, finalMessage);
-                        }
-                        if (action.type === 'direct_message' && item.type === 'message') {
-                            const messageToSend = action.messageVariations[Math.floor(Math.random() * action.messageVariations.length)];
-                            const finalMessage = messageToSend.replace('{user_name}', item.authorName);
-                            return handleSendMessage(item.conversationId || item.id, finalMessage);
-                        }
-                        return Promise.resolve(false);
-                    });
+                    let ruleActionSucceeded = false;
+                    for (const action of activeActions) {
+                        let success = false;
+                        const messageToSend = action.messageVariations[Math.floor(Math.random() * action.messageVariations.length)];
+                        const finalMessage = messageToSend.replace('{user_name}', item.authorName);
 
-                    const results = await Promise.all(actionPromises);
-                    const anyActionSucceeded = results.some(success => success);
+                        if (action.type === 'public_reply' && item.type === 'comment') {
+                            success = await handleReplyToComment(item.id, finalMessage);
+                        } else if (action.type === 'private_reply' && item.type === 'comment') {
+                            success = await handlePrivateReplyToComment(item.id, finalMessage);
+                        } else if (action.type === 'direct_message' && item.type === 'message') {
+                            success = await handleSendMessage(item.conversationId || item.id, finalMessage);
+                        }
+                        
+                        if (success) {
+                            ruleActionSucceeded = true;
+                        }
+                    }
 
-                    if (anyActionSucceeded) {
+                    if (ruleActionSucceeded) {
                         replied = true;
                         if (item.type === 'comment' && rule.replyOncePerUser) {
                             if (!usersRepliedThisRun[postId]) usersRepliedThisRun[postId] = new Set();
                             usersRepliedThisRun[postId].add(item.authorId);
                         }
-                        break;
+                        break; // Break from the rule loop
                     }
                 }
             }
@@ -793,7 +796,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             setIsInboxLoading(false);
         });
     }
-  }, [view, managedTarget.id, managedTarget.access_token, linkedInstagramTarget?.id, isSimulationMode, fetchWithPagination, showNotification, processAutoReplies]);
+  }, [view, managedTarget.id, managedTarget.access_token, linkedInstagramTarget?.id, isSimulationMode, fetchWithPagination, showNotification, processAutoReplies, inboxItems]);
   
   const handleReplySubmit = async (selectedItem: InboxItem, message: string): Promise<boolean> => {
       return selectedItem.type === 'comment' ? handleReplyToComment(selectedItem.id, message) : handleSendMessage(selectedItem.conversationId || selectedItem.id, message);
