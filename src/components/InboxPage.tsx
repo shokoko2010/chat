@@ -169,24 +169,48 @@ const AutoResponderRuleEditorCard: React.FC<{
         {/* Actions Section */}
         <div className="space-y-4 p-3 bg-white dark:bg-gray-800 rounded-md shadow-sm">
           <h4 className="font-bold text-gray-700 dark:text-gray-300">الإجراءات (ماذا سيحدث؟)</h4>
-          {rule.actions.filter(a => actionConfig[a.type].source === rule.trigger.source).map((action, index) => {
-              const fullAction = rule.actions.find(a => a.type === action.type)!;
-              const fullActionIndex = rule.actions.findIndex(a => a.type === action.type);
+          {rule.actions.map((action, index) => {
+              if (actionConfig[action.type].source !== rule.trigger.source) {
+                return null;
+              }
               
               return (
                 <div key={action.type} className="space-y-2">
-                  <div className="flex items-center"><input type="checkbox" id={`${rule.id}-${action.type}`} checked={fullAction.enabled} onChange={e => handleActionChange(fullActionIndex, 'enabled', e.target.checked)} className="h-4 w-4" /><label htmlFor={`${rule.id}-${action.type}`} className="mr-2 text-sm font-medium">{actionConfig[action.type].label}</label></div>
-                  {fullAction.enabled && (
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id={`${rule.id}-${action.type}`}
+                      checked={action.enabled}
+                      onChange={e => handleActionChange(index, 'enabled', e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    <label htmlFor={`${rule.id}-${action.type}`} className="mr-2 text-sm font-medium">
+                      {actionConfig[action.type].label}
+                    </label>
+                  </div>
+                  {action.enabled && (
                     <div className="pl-5 space-y-2">
-                      <textarea value={fullAction.messageVariations.join('\n')} onChange={e => handleActionChange(fullActionIndex, 'messageVariations', e.target.value.split('\n'))} className="w-full text-sm p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" rows={4} placeholder="اكتب ردًا أو أكثر (كل رد في سطر)"></textarea>
-                      <Button size="sm" variant="secondary" onClick={() => handleGenerateVariations(fullActionIndex)} disabled={!aiClient || isGenerating[action.type]} isLoading={isGenerating[action.type]}>
+                      <textarea
+                        value={action.messageVariations.join('\n')}
+                        onChange={e => handleActionChange(index, 'messageVariations', e.target.value.split('\n'))}
+                        className="w-full text-sm p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                        rows={4}
+                        placeholder="اكتب ردًا أو أكثر (كل رد في سطر)"
+                      ></textarea>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleGenerateVariations(index)}
+                        disabled={!aiClient || isGenerating[action.type]}
+                        isLoading={isGenerating[action.type]}
+                      >
                         <SparklesIcon className="w-4 h-4 ml-1" />
                         توليد تنويعات
                       </Button>
                     </div>
                   )}
                 </div>
-            )
+              );
           })}
         </div>
       </div>
