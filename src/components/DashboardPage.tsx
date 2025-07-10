@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule, AutoResponderAction } from '../types';
 import Header from './Header';
@@ -624,9 +625,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         if (action.type === 'public_reply' && item.type === 'comment') {
                             success = await handleReplyToComment(item.id, finalMessage);
                         } else if (action.type === 'private_reply' && item.type === 'comment') {
-                            // Only send to top-level comments on Facebook
-                            const isTopLevelComment = item.parentId === item.post?.id;
-                            if (item.platform === 'facebook' && isTopLevelComment) {
+                            if (item.platform === 'facebook' && item.can_reply_privately) {
                                 success = await handlePrivateReplyToComment(item.id, finalMessage);
                             }
                         } else if (action.type === 'direct_message' && item.type === 'message') {
@@ -735,7 +734,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
     try {
         // Fetch Facebook Page items
-        const fbPostFields = "id,message,full_picture,comments.order(reverse_chronological).since(" + since + "){id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}}}";
+        const fbPostFields = "id,message,full_picture,comments.order(reverse_chronological).since(" + since + "){id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}},can_reply_privately}";
         const fbRecentPostsData = await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${fbPostFields}&limit=10`, pageAccessToken);
         
         fbRecentPostsData.forEach(post => {
@@ -748,7 +747,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
                         timestamp: new Date(comment.created_time).toISOString(),
                         post: { id: post.id, message: post.message, picture: post.full_picture },
-                        parentId: comment.parent?.id, isReplied: pageHasReplied
+                        parentId: comment.parent?.id, isReplied: pageHasReplied,
+                        can_reply_privately: comment.can_reply_privately,
                     };
                 });
                 newItems.push(...postComments);

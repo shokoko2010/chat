@@ -298,7 +298,7 @@ const App: React.FC = () => {
         }));
         fetchedPosts.push(...fbFetchedPosts);
 
-        const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}}';
+        const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}},can_reply_privately';
         const fbCommentPromises = fbAllPostsData.map(async (post) => {
             if (post.comments?.summary?.total_count > 0) {
                 const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=100`, pageAccessToken);
@@ -318,6 +318,7 @@ const App: React.FC = () => {
                         post: { id: post.id, message: post.message, picture: post.full_picture },
                         parentId: comment.parent?.id,
                         isReplied: pageHasReplied,
+                        can_reply_privately: comment.can_reply_privately,
                       };
                 });
             }

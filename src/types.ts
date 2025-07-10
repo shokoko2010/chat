@@ -192,9 +192,10 @@ export interface InboxItem {
     picture?: string;
   };
   parentId?: string; // The ID of the parent comment, if this is a reply
+  can_reply_privately?: boolean; // From Facebook API
   conversationId?: string; // For messages
   messages?: InboxMessage[]; // For message history
-  isReplied?: boolean; // NEW: To show reply status icon
+  isReplied?: boolean; // To show reply status icon
 }
 
 // --- Types for Auto-Responder (New IFTTT-style) ---
