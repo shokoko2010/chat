@@ -28,6 +28,17 @@ const cleanAndParseJson = (rawText: string) => {
     }
 };
 
+const handleGeminiError = (error: any, context: string): never => {
+    console.error(`Error in ${context}:`, error);
+    if (error.constructor.name === 'ApiError' && (error.status === 429 || error.message.includes('RESOURCE_EXHAUSTED'))) {
+        throw new Error("لقد تجاوزت حصتك اليومية المجانية من استخدام واجهة Gemini API. يرجى المحاولة مرة أخرى غدًا أو الترقية.");
+    }
+    if (error instanceof Error) {
+        throw new Error(`حدث خطأ أثناء ${context}: ${error.message}`);
+    }
+    throw new Error(`حدث خطأ غير متوقع أثناء ${context}.`);
+};
+
 
 const createPageContext = (pageProfile?: PageProfile): string => {
   if (!pageProfile || Object.values(pageProfile).every(val => !val)) {
@@ -108,9 +119,7 @@ export const enhanceProfileFromFacebookData = async (
     throw new Error("فشل الذكاء الاصطناعي في إنشاء ملف شخصي بالتنسيق المطلوب.");
     
   } catch (error) {
-    console.error("Error enhancing profile from Facebook data:", error);
-    if (error instanceof Error) throw error;
-    throw new Error("حدث خطأ غير متوقع أثناء تحسين بيانات الصفحة بالذكاء الاصطناعي.");
+    handleGeminiError(error, "تحسين بيانات الصفحة");
   }
 };
 
@@ -150,8 +159,7 @@ export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string, pag
 
     return response.text ?? '';
   } catch (error: any) {
-    console.error("Error generating post suggestion:", error);
-    throw new Error(`حدث خطأ أثناء إنشاء الاقتراح: ${error.message}`);
+    handleGeminiError(error, "إنشاء اقتراح منشور");
   }
 };
 
@@ -173,10 +181,12 @@ export const generateImageFromPrompt = async (ai: GoogleGenAI, prompt: string): 
       throw new Error("فشل إنشاء الصورة. قد يكون السبب هو حظر المحتوى لأسباب تتعلق بالسلامة أو مشكلة أخرى في الاستجابة.");
     }
   } catch (error) {
-    console.error("Error generating image:", error);
     let detailedMessage = "حاول مرة أخرى.";
     if (error instanceof Error) {
         detailedMessage = error.message;
+    }
+    if (error.constructor.name === 'ApiError' && (error.status === 429 || error.message.includes('RESOURCE_EXHAUSTED'))) {
+      handleGeminiError(error, "إنشاء صورة");
     }
     throw new Error(`حدث خطأ أثناء إنشاء الصورة. السبب: ${detailedMessage}. يرجى التحقق من تفعيل الفوترة وواجهة Vertex AI API في مشروع Google Cloud.`);
   }
@@ -227,8 +237,7 @@ export const getBestPostingTime = async (ai: GoogleGenAI, postText: string): Pro
     throw new Error("لم يتمكن الذكاء الاصطناعي من اقتراح وقت صالح.");
 
   } catch (error: any) {
-    console.error("Error suggesting post time:", error);
-    throw new Error(`حدث خطأ أثناء اقتراح وقت النشر: ${error.message}`);
+    handleGeminiError(error, "اقتراح وقت النشر");
   }
 };
 
@@ -263,8 +272,7 @@ export const generateDescriptionForImage = async (ai: GoogleGenAI, imageFile: Fi
     
     return response.text ?? '';
   } catch (error: any) {
-    console.error("Error generating description for image:", error);
-    throw new Error(`حدث خطأ أثناء إنشاء الوصف: ${error.message}`);
+    handleGeminiError(error, "إنشاء وصف للصورة");
   }
 };
 
@@ -353,8 +361,7 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
     throw new Error("فشل الذكاء الاصطناعي في إنشاء خطة بالتنسيق المطلوب.");
 
   } catch (error: any) {
-    console.error("Error generating content plan:", error);
-    throw new Error(`حدث خطأ أثناء إنشاء خطة المحتوى: ${error.message}`);
+    handleGeminiError(error, "إنشاء خطة المحتوى");
   }
 };
 
@@ -394,8 +401,7 @@ export const generateOptimalSchedule = async (ai: GoogleGenAI, plan: ContentPlan
         }
         throw new Error("فشل الذكاء الاصطناعي في إنشاء جدول زمني بالتنسيق المطلوب.");
     } catch (error: any) {
-        console.error("Error generating optimal schedule:", error);
-        throw new Error(`حدث خطأ أثناء إنشاء الجدول الزمني الأمثل: ${error.message}`);
+        handleGeminiError(error, "إنشاء الجدول الزمني الأمثل");
     }
 };
 
@@ -446,8 +452,7 @@ export const generatePostInsights = async (
     }
     throw new Error("فشل الذكاء الاصطناعي في إنشاء التحليل بالتنسيق المطلوب.");
   } catch (error: any) {
-    console.error("Error generating post insights:", error);
-    throw new Error(`حدث خطأ أثناء إنشاء تحليل المنشور: ${error.message}`);
+    handleGeminiError(error, "إنشاء تحليل المنشور");
   }
 };
 
@@ -478,8 +483,7 @@ export const generatePerformanceSummary = async (
         });
         return response.text ?? 'لم يتمكن الذكاء الاصطناعي من إنشاء الملخص.';
     } catch(error: any) {
-        console.error("Error generating performance summary:", error);
-        throw new Error(`حدث خطأ أثناء إنشاء ملخص الأداء: ${error.message}`);
+        handleGeminiError(error, "إنشاء ملخص الأداء");
     }
 };
 
@@ -512,8 +516,7 @@ export const generateSmartReplies = async (ai: GoogleGenAI, commentText: string,
     }
     throw new Error("فشل الذكاء الاصطناعي في إنشاء ردود بالتنسيق المطلوب.");
   } catch (error: any) {
-    console.error("Error generating smart replies:", error);
-    throw new Error(`حدث خطأ أثناء اقتراح الردود الذكية: ${error.message}`);
+    handleGeminiError(error, "اقتراح ردود ذكية");
   }
 };
 
@@ -540,8 +543,7 @@ export const generateAutoReply = async (ai: GoogleGenAI, userMessage: string, pa
     });
     return response.text ?? 'شكرًا لتواصلك، سيتم الرد عليك في أقرب وقت.';
   } catch (error: any) {
-    console.error("Error generating auto-reply:", error);
-    throw new Error(`حدث خطأ أثناء إنشاء الرد التلقائي: ${error.message}`);
+    handleGeminiError(error, "إنشاء رد تلقائي");
   }
 };
 
@@ -581,7 +583,6 @@ export const generateReplyVariations = async (ai: GoogleGenAI, baseReply: string
     }
     throw new Error("فشل الذكاء الاصطناعي في إنشاء تنويعات بالتنسيق المطلوب.");
   } catch (error: any) {
-    console.error("Error generating reply variations:", error);
-    throw new Error(`حدث خطأ أثناء إنشاء تنويعات الرد: ${error.message}`);
+    handleGeminiError(error, "إنشاء تنويعات الرد");
   }
 };

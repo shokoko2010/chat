@@ -503,7 +503,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 const summaryText = await generatePerformanceSummary(aiClient, summaryData, pageProfile, analyticsPeriod);
                 setPerformanceSummaryText(summaryText);
             } catch (e: any) {
-                setPerformanceSummaryText("حدث خطأ أثناء إنشاء الملخص.");
+                setPerformanceSummaryText(`فشل إنشاء الملخص: ${e.message}`);
             } finally {
                 setIsGeneratingSummary(false);
             }
@@ -554,9 +554,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             } else {
                 const error = response?.error;
                 let errorMsg = error?.message || 'فشل إرسال الرد الخاص';
-                // Provide a more user-friendly error for common issues like this one.
                 if (error && error.code === 100) {
-                    errorMsg = 'لا يمكن إرسال رد خاص على هذا التعليق. قد يكون ردًا على تعليق آخر، أو تم حذفه، أو أن المستخدم لا يسمح بالردود الخاصة.';
+                    errorMsg = `لا يمكن إرسال رد خاص. الأسباب المحتملة: 
+1) مر أكثر من 7 أيام على التعليق.
+2) هذا التعليق هو رد على تعليق آخر.
+3) المستخدم لا يسمح بالرسائل من الصفحة.
+4) قد تكون صلاحيات الصفحة غير كافية (تحقق من صلاحية pages_messaging).`;
                 }
                 console.error(`Failed to send private reply to ${commentId}:`, error || response);
                 showNotification('error', `فشل الرد الخاص: ${errorMsg}`);
