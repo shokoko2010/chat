@@ -403,11 +403,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setStrategyHistory(savedData.strategyHistory || []);
     setPublishedPosts(savedData.publishedPosts?.map((p:any) => ({...p, publishedAt: new Date(p.publishedAt)})) || []);
     
-    // Compatibility: Initialize `isReplied` from old `autoRepliedItems` set.
+    // Compatibility: Initialize `isReplied` and `platform`.
     const oldAutoRepliedItems = new Set(savedData.autoRepliedItems || []);
     setRepliedUsersPerPost(savedData.repliedUsersPerPost || {});
     setInboxItems(savedData.inboxItems?.map((i:any) => ({
-        ...i, 
+        ...i,
+        platform: i.platform || 'facebook', // Add platform for old data
         timestamp: new Date(i.timestamp).toISOString(),
         isReplied: oldAutoRepliedItems.has(i.id) || i.isReplied,
     })) || []);
@@ -612,7 +613,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                                 return handleReplyToComment(item.id, finalMessage);
                             }
                             if (action.type === 'private_reply') {
-                                if (!item.isReply) { // Required by FB API
+                                // IMPORTANT: Only send private replies to top-level FB comments
+                                if (item.platform === 'facebook' && !item.isReply) { 
                                     return handlePrivateReplyToComment(item.id, finalMessage);
                                 }
                                 return Promise.resolve(false); 
@@ -737,10 +739,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
               recentPostsData.map(async (post) => {
                   const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
                   return commentsData.map((comment: any): InboxItem => ({
-                      id: comment.id, type: 'comment', text: comment.message || '',
-                      authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: comment.from?.id || 'Unknown',
+                      id: comment.id,
+                      platform: 'facebook',
+                      type: 'comment',
+                      text: comment.message || '',
+                      authorName: comment.from?.name || 'مستخدم فيسبوك',
+                      authorId: comment.from?.id || 'Unknown',
                       authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
-                      timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }, isReply: !!comment.parent
+                      timestamp: comment.created_time,
+                      post: { id: post.id, message: post.message, picture: post.full_picture },
+                      isReply: !!comment.parent
                   }));
               })
           );
@@ -749,9 +757,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
               recentIgPostsData.map(async (post) => {
                   const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
                   return commentsData.map((comment: any): InboxItem => ({
-                      id: comment.id, type: 'comment', text: comment.text || '',
-                      authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
-                      authorPictureUrl: defaultPicture, timestamp: comment.timestamp, post: { id: post.id, message: post.caption, picture: post.media_url }, isReply: false
+                      id: comment.id,
+                      platform: 'instagram',
+                      type: 'comment',
+                      text: comment.text || '',
+                      authorName: comment.from?.username || 'مستخدم انستجرام',
+                      authorId: comment.from?.id || 'Unknown',
+                      authorPictureUrl: defaultPicture,
+                      timestamp: comment.timestamp,
+                      post: { id: post.id, message: post.caption, picture: post.media_url },
+                      isReply: false
                   }));
               })
           );
@@ -762,10 +777,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
               newMessages = convosData.map((convo: any) => {
                   const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
                   return {
-                      id: convo.id, type: 'message', text: convo.snippet,
-                      authorName: participant?.name || 'مستخدم غير معروف', authorId: participant?.id || 'Unknown',
+                      id: convo.id,
+                      platform: 'facebook',
+                      type: 'message',
+                      text: convo.snippet,
+                      authorName: participant?.name || 'مستخدم غير معروف',
+                      authorId: participant?.id || 'Unknown',
                       authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture?type=normal`,
-                      timestamp: convo.updated_time, conversationId: convo.id
+                      timestamp: convo.updated_time,
+                      conversationId: convo.id
                   };
               });
           }

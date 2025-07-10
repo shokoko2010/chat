@@ -306,9 +306,14 @@ const App: React.FC = () => {
                       const authorPictureUrl = comment.from?.picture?.data?.url || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
                       const pageHasReplied = !!comment.comments?.data?.some((c: any) => c.from.id === pageTarget.id);
                       return {
-                        id: comment.id, type: 'comment', text: comment.message || '',
-                        authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: authorId || 'Unknown',
-                        authorPictureUrl: authorPictureUrl, timestamp: new Date(comment.created_time).toISOString(),
+                        id: comment.id,
+                        platform: 'facebook',
+                        type: 'comment',
+                        text: comment.message || '',
+                        authorName: comment.from?.name || 'مستخدم فيسبوك',
+                        authorId: authorId || 'Unknown',
+                        authorPictureUrl: authorPictureUrl,
+                        timestamp: new Date(comment.created_time).toISOString(),
                         post: { id: post.id, message: post.message, picture: post.full_picture },
                         isReply: !!comment.parent?.id,
                         isReplied: pageHasReplied,
@@ -326,10 +331,15 @@ const App: React.FC = () => {
             const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
             const participantId = participant?.id;
             return {
-                id: convo.id, type: 'message', text: convo.snippet, authorName: participant?.name || 'مستخدم غير معروف',
+                id: convo.id,
+                platform: 'facebook',
+                type: 'message',
+                text: convo.snippet,
+                authorName: participant?.name || 'مستخدم غير معروف',
                 authorId: participantId || 'Unknown',
                 authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture,
-                timestamp: new Date(convo.updated_time).toISOString(), conversationId: convo.id
+                timestamp: new Date(convo.updated_time).toISOString(),
+                conversationId: convo.id
             };
         });
         combinedInboxItems.push(...allMessages);
@@ -350,8 +360,8 @@ const App: React.FC = () => {
                 analytics: {
                     likes: post.like_count ?? 0,
                     comments: post.comments_count ?? 0,
-                    shares: 0,
-                    reach: 0, // Reach is not directly available for IG media this way
+                    shares: 0, // Reach is not directly available for IG media this way
+                    reach: 0,
                     loading: false, lastUpdated: new Date(), isGeneratingInsights: false
                 }
             }));
@@ -364,9 +374,14 @@ const App: React.FC = () => {
                     return postComments.map((comment: any): InboxItem => {
                         const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === linkedIgTarget.id);
                         return {
-                            id: comment.id, type: 'comment', text: comment.text || '',
-                            authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
-                            authorPictureUrl: defaultPicture, timestamp: new Date(comment.timestamp).toISOString(),
+                            id: comment.id,
+                            platform: 'instagram',
+                            type: 'comment',
+                            text: comment.text || '',
+                            authorName: comment.from?.username || 'مستخدم انستجرام',
+                            authorId: comment.from?.id || 'Unknown',
+                            authorPictureUrl: defaultPicture,
+                            timestamp: new Date(comment.timestamp).toISOString(),
                             post: { id: post.id, message: post.caption, picture: post.media_url },
                             isReply: false,
                             isReplied: pageHasReplied

@@ -155,7 +155,7 @@ export type StrategyRequest = StandardContentRequest | CampaignRequest | PillarC
 
 export interface ContentPlanItem {
   day: string; // e.g., "الأسبوع 1 - الاثنين" or "يناير"
-  theme: string; // e.g., "نصيحة الأسبوع" or "موضوع شهر يناير"
+  theme: string; // e.g., "موضوع شهر يناير" or "نصيحة الأسبوع"
   postSuggestion: string; // The full suggested post text or theme description
   contentType: string; // e.g., "صورة عالية الجودة", "استطلاع رأي"
   cta: string; // e.g., "ما رأيكم؟ شاركونا في التعليقات!"
@@ -178,6 +178,7 @@ export interface InboxMessage {
 }
 export interface InboxItem {
   id: string; // comment_id or conversation_id
+  platform: 'facebook' | 'instagram';
   type: 'comment' | 'message';
   text: string; // last message snippet
   authorName: string;
