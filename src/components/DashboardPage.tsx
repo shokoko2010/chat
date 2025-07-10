@@ -515,7 +515,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             if(response && !response.error) {
                 fetchMessageHistory(conversationId);
                 resolve(true);
-            } else { resolve(false); }
+            } else {
+                console.error('Failed to send message:', response?.error);
+                resolve(false); 
+            }
         });
     });
   };
@@ -524,7 +527,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     return new Promise(resolve => {
         if(isSimulationMode) { resolve(true); return; }
         window.FB.api(`/${commentId}/comments`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
-            resolve(response && !response.error);
+            if (response && !response.error) {
+                resolve(true);
+            } else {
+                console.error('Failed to reply to comment:', response?.error);
+                resolve(false);
+            }
         });
     });
   };
@@ -533,7 +541,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     return new Promise(resolve => {
         if (isSimulationMode) { resolve(true); return; }
         window.FB.api(`/${commentId}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
-            resolve(response && response.success);
+            if (response && response.success) {
+                resolve(true);
+            } else {
+                console.error('Failed to send private reply:', response);
+                resolve(false);
+            }
         });
     });
   };
@@ -597,7 +610,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         if (action.type === 'public_reply' && item.type === 'comment') {
                             success = await handleReplyToComment(item.id, finalMessage);
                         } else if (action.type === 'private_reply' && item.type === 'comment') {
-                            success = await handlePrivateReplyToComment(item.id, finalMessage);
+                            // API Limitation: Private replies are only supported on top-level comments.
+                            if (!item.isReply) {
+                                success = await handlePrivateReplyToComment(item.id, finalMessage);
+                            } else {
+                                console.log(`Auto-responder skipped private reply for comment ID ${item.id} because it is a reply to another comment, not a top-level comment.`);
+                            }
                         } else if (action.type === 'direct_message' && item.type === 'message') {
                             success = await handleSendMessage(item.conversationId || item.id, finalMessage);
                         }
@@ -613,7 +631,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             if (!usersRepliedThisRun[postId]) usersRepliedThisRun[postId] = new Set();
                             usersRepliedThisRun[postId].add(item.authorId);
                         }
-                        break; // Break from the rule loop
+                        break; // Break from the rule loop, move to next item.
                     }
                 }
             }
