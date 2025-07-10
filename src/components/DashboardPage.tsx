@@ -711,24 +711,48 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   
   const pollForNewItems = useCallback(async () => {
       if (syncingTargetId || isProcessingReplies.current) return;
-
+  
       const pageAccessToken = managedTarget.access_token;
       if (!pageAccessToken) return;
-
+  
       const lastTimestamp = inboxItems.length > 0 ? new Date(inboxItems[0].timestamp).getTime() : Date.now() - (15 * 60 * 1000);
       const since = Math.floor(lastTimestamp / 1000) + 1; // +1 to avoid refetching the last item
       
       const isPage = managedTarget.type === 'page';
       const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
-
+  
       try {
           const postFields = "id,message,full_picture";
           const recentPostsData = isPage ? await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${postFields}&limit=10`, pageAccessToken) : [];
-          const recentIgPostsData = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url&limit=10`, pageAccessToken) : [];
-
+          
+          let igCommentsPromise: Promise<InboxItem[][]> = Promise.resolve([]);
+          if (linkedInstagramTarget) {
+              const recentIgPostsData = await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url&limit=10`, pageAccessToken);
+              const igCommentFields = 'id,from{id,username},text,timestamp,replies{from{id}}';
+              igCommentsPromise = Promise.all(
+                  recentIgPostsData.map(async (post) => {
+                      const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
+                      return commentsData.map((comment: any): InboxItem => {
+                          const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === linkedInstagramTarget.id);
+                          return {
+                              id: comment.id,
+                              platform: 'instagram',
+                              type: 'comment',
+                              text: comment.text || '',
+                              authorName: comment.from?.username || 'مستخدم انستجرام',
+                              authorId: comment.from?.id || 'Unknown',
+                              authorPictureUrl: defaultPicture,
+                              timestamp: new Date(comment.timestamp).toISOString(),
+                              post: { id: post.id, message: post.caption, picture: post.media_url },
+                              isReply: false,
+                              isReplied: pageHasReplied
+                          };
+                      });
+                  })
+              );
+          }
+  
           const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}}';
-          const igCommentFields = 'id,from{id,username},text,timestamp,replies{from{id}}';
-
           const fbCommentsPromise = Promise.all(
               recentPostsData.map(async (post) => {
                   const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
@@ -751,28 +775,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
               })
           );
           
-          const igCommentsPromise = Promise.all(
-              recentIgPostsData.map(async (post) => {
-                  const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
-                  return commentsData.map((comment: any): InboxItem => {
-                      const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === linkedInstagramTarget.id);
-                      return {
-                          id: comment.id,
-                          platform: 'instagram',
-                          type: 'comment',
-                          text: comment.text || '',
-                          authorName: comment.from?.username || 'مستخدم انستجرام',
-                          authorId: comment.from?.id || 'Unknown',
-                          authorPictureUrl: defaultPicture,
-                          timestamp: new Date(comment.timestamp).toISOString(),
-                          post: { id: post.id, message: post.caption, picture: post.media_url },
-                          isReply: false,
-                          isReplied: pageHasReplied
-                      };
-                  });
-              })
-          );
-
           let newMessages: InboxItem[] = [];
           if (isPage) {
               const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&since=${since}`, pageAccessToken);
@@ -794,10 +796,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                   };
               });
           }
-
+  
           const [fbCommentArrays, igCommentArrays] = await Promise.all([fbCommentsPromise, igCommentsPromise]);
           const newItems = [...fbCommentArrays.flat(), ...igCommentArrays.flat(), ...newMessages];
-
+  
           if (newItems.length > 0) {
               setInboxItems(prevItems => {
                   const combined = new Map<string, InboxItem>(prevItems.map(item => [item.id, item]));
