@@ -552,8 +552,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             if (response && response.success) {
                 resolve(true);
             } else {
-                const errorMsg = response?.error?.message || 'فشل إرسال الرد الخاص';
-                console.error(`Failed to send private reply to ${commentId}:`, response?.error || response);
+                const error = response?.error;
+                let errorMsg = error?.message || 'فشل إرسال الرد الخاص';
+                // Provide a more user-friendly error for common issues like this one.
+                if (error && error.code === 100) {
+                    errorMsg = 'لا يمكن إرسال رد خاص على هذا التعليق. قد يكون ردًا على تعليق آخر، أو تم حذفه، أو أن المستخدم لا يسمح بالردود الخاصة.';
+                }
+                console.error(`Failed to send private reply to ${commentId}:`, error || response);
                 showNotification('error', `فشل الرد الخاص: ${errorMsg}`);
                 resolve(false);
             }
@@ -629,8 +634,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         if (action.type === 'public_reply' && item.type === 'comment') {
                             success = await handleReplyToComment(item.id, finalMessage);
                         } else if (action.type === 'private_reply' && item.type === 'comment') {
-                            const isTopLevelComment = !item.parentId;
-                            if (item.platform === 'facebook' && item.can_reply_privately && isTopLevelComment) {
+                            if (item.platform === 'facebook' && item.can_reply_privately) {
                                 success = await handlePrivateReplyToComment(item.id, finalMessage);
                             }
                         } else if (action.type === 'direct_message' && item.type === 'message') {
