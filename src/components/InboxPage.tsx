@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { InboxItem, AutoResponderSettings, InboxMessage, AutoResponderRule, AutoResponderAction, AutoResponderTriggerSource, AutoResponderMatchType, AutoResponderActionType } from '../types';
 import Button from './ui/Button';
@@ -104,13 +105,12 @@ const AutoResponderRuleEditorCard: React.FC<{
   };
   
   const handleActionChange = <K extends keyof AutoResponderAction>(actionType: AutoResponderActionType, key: K, value: AutoResponderAction[K]) => {
-    const newActions = rule.actions.map(a => {
-        if (a.type === actionType) {
-            return { ...a, [key]: value };
-        }
-        return a;
-    });
-    onUpdate({ ...rule, actions: newActions });
+      onUpdate({
+          ...rule,
+          actions: rule.actions.map(a => 
+              a.type === actionType ? { ...a, [key]: value } : a
+          )
+      });
   };
   
   const handleGenerateVariations = async (actionType: AutoResponderActionType) => {
@@ -173,48 +173,48 @@ const AutoResponderRuleEditorCard: React.FC<{
         {/* Actions Section */}
         <div className="space-y-4 p-3 bg-white dark:bg-gray-800 rounded-md shadow-sm">
           <h4 className="font-bold text-gray-700 dark:text-gray-300">الإجراءات (ماذا سيحدث؟)</h4>
-          {rule.actions.map((action) => {
-              if (actionConfig[action.type].source !== rule.trigger.source) {
-                return null;
-              }
-              
-              return (
-                <div key={action.type} className="space-y-2">
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id={`${rule.id}-${action.type}`}
-                      checked={action.enabled}
-                      onChange={e => handleActionChange(action.type, 'enabled', e.target.checked)}
-                      className="h-4 w-4"
-                    />
-                    <label htmlFor={`${rule.id}-${action.type}`} className="mr-2 text-sm font-medium">
-                      {actionConfig[action.type].label}
-                    </label>
-                  </div>
-                  {action.enabled && (
-                    <div className="pl-5 space-y-2">
-                      <textarea
-                        value={action.messageVariations.join('\n')}
-                        onChange={e => handleActionChange(action.type, 'messageVariations', e.target.value.split('\n'))}
-                        className="w-full text-sm p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
-                        rows={4}
-                        placeholder="اكتب ردًا أو أكثر (كل رد في سطر)"
-                      ></textarea>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => handleGenerateVariations(action.type)}
-                        disabled={!aiClient || isGenerating[action.type]}
-                        isLoading={isGenerating[action.type]}
-                      >
-                        <SparklesIcon className="w-4 h-4 ml-1" />
-                        توليد تنويعات
-                      </Button>
-                    </div>
-                  )}
+          {Object.entries(actionConfig).map(([type, { label, source }]) => {
+            if (source !== rule.trigger.source) return null;
+            const action = rule.actions.find(a => a.type === type);
+            if (!action) return null; // Should not happen with well-formed data
+
+            return (
+              <div key={action.type} className="space-y-2">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id={`${rule.id}-${action.type}`}
+                    checked={action.enabled}
+                    onChange={e => handleActionChange(action.type, 'enabled', e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <label htmlFor={`${rule.id}-${action.type}`} className="mr-2 text-sm font-medium">
+                    {label}
+                  </label>
                 </div>
-              );
+                {action.enabled && (
+                  <div className="pl-5 space-y-2">
+                    <textarea
+                      value={action.messageVariations.join('\n')}
+                      onChange={e => handleActionChange(action.type, 'messageVariations', e.target.value.split('\n'))}
+                      className="w-full text-sm p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                      rows={4}
+                      placeholder="اكتب ردًا أو أكثر (كل رد في سطر)"
+                    ></textarea>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleGenerateVariations(action.type)}
+                      disabled={!aiClient || isGenerating[action.type]}
+                      isLoading={isGenerating[action.type]}
+                    >
+                      <SparklesIcon className="w-4 h-4 ml-1" />
+                      توليد تنويعات
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
           })}
         </div>
       </div>
@@ -465,7 +465,7 @@ const InboxPage: React.FC<InboxPageProps> = ({
                                 <p className="text-xs text-gray-400 flex-shrink-0">{timeSince(item.timestamp)}</p>
                             </div>
                             <div className="flex items-center gap-1.5">
-                                {item.isReplied && <span className="flex-shrink-0" title="تم الرد تلقائياً"><CheckCircleIcon className="w-4 h-4 text-green-500" /></span>}
+                                {item.isReplied && <span className="flex-shrink-0" title="تم الرد"><CheckCircleIcon className="w-4 h-4 text-green-500" /></span>}
                                 <p className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.text}</p>
                             </div>
                         </div>
