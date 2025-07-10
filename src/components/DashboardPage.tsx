@@ -568,6 +568,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         const newRepliedUsers = JSON.parse(JSON.stringify(repliedUsersPerPost));
         let newlyRepliedItemIds: string[] = [];
         const usersRepliedThisRun: Record<string, Set<string>> = {};
+        
+        const actionConfig: Record<string, { source: string }> = {
+            'public_reply': { source: 'comment'},
+            'private_reply': { source: 'comment'},
+            'direct_message': { source: 'message'},
+        };
 
         for (const item of itemsToProcess) {
             let replied = false;
@@ -595,30 +601,29 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
 
                 if (matched) {
-                    const activeActions = rule.actions.filter(a => a.enabled && a.messageVariations.length > 0 && a.messageVariations[0].trim() !== '');
-                    
-                    let ruleActionSucceeded = false;
-                    for (const action of activeActions) {
-                        let success = false;
-                        const messageToSend = action.messageVariations[Math.floor(Math.random() * action.messageVariations.length)];
-                        const finalMessage = messageToSend.replace('{user_name}', item.authorName);
+                     const actionPromises = rule.actions
+                        .filter(a => a.enabled && a.messageVariations.length > 0 && a.messageVariations[0].trim() !== '' && actionConfig[a.type]?.source === item.type)
+                        .map(action => {
+                            const messageToSend = action.messageVariations[Math.floor(Math.random() * action.messageVariations.length)];
+                            const finalMessage = messageToSend.replace('{user_name}', item.authorName);
 
-                        if (action.type === 'public_reply' && item.type === 'comment') {
-                            success = await handleReplyToComment(item.id, finalMessage);
-                        } else if (action.type === 'private_reply' && item.type === 'comment') {
-                            if (!item.isReply) {
-                                success = await handlePrivateReplyToComment(item.id, finalMessage);
-                            } else {
-                                console.log(`Auto-responder skipped private reply for comment ID ${item.id} because it is a reply.`);
+                            if (action.type === 'public_reply') {
+                                return handleReplyToComment(item.id, finalMessage);
                             }
-                        } else if (action.type === 'direct_message' && item.type === 'message') {
-                            success = await handleSendMessage(item.conversationId || item.id, finalMessage);
-                        }
-                        
-                        if (success) {
-                            ruleActionSucceeded = true;
-                        }
-                    }
+                            if (action.type === 'private_reply') {
+                                if (!item.isReply) { // Required by FB API
+                                    return handlePrivateReplyToComment(item.id, finalMessage);
+                                }
+                                return Promise.resolve(false); 
+                            }
+                            if (action.type === 'direct_message') {
+                                return handleSendMessage(item.conversationId || item.id, finalMessage);
+                            }
+                            return Promise.resolve(false);
+                        });
+
+                    const results = await Promise.all(actionPromises);
+                    const ruleActionSucceeded = results.some(success => success === true);
 
                     if (ruleActionSucceeded) {
                         replied = true;
@@ -708,92 +713,98 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   };
   
+  // Polling logic encapsulated in a useCallback to ensure it has the latest state when called.
+  const pollForNewItems = useCallback(async () => {
+      if (syncingTargetId || isProcessingReplies.current) return;
+
+      const pageAccessToken = managedTarget.access_token;
+      if (!pageAccessToken) return;
+
+      const lastTimestamp = inboxItems.length > 0 ? new Date(inboxItems[0].timestamp).getTime() : Date.now() - (15 * 60 * 1000);
+      const since = Math.floor(lastTimestamp / 1000) + 1; // +1 to avoid refetching the last item
+      
+      const isPage = managedTarget.type === 'page';
+      const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
+
+      try {
+          const postFields = "id,message,full_picture";
+          const recentPostsData = isPage ? await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${postFields}&limit=10`, pageAccessToken) : [];
+          const recentIgPostsData = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url&limit=10`, pageAccessToken) : [];
+
+          const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
+          const igCommentFields = 'id,from{id,username},text,timestamp';
+
+          const fbCommentsPromise = Promise.all(
+              recentPostsData.map(async (post) => {
+                  const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
+                  return commentsData.map((comment: any): InboxItem => ({
+                      id: comment.id, type: 'comment', text: comment.message || '',
+                      authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: comment.from?.id || 'Unknown',
+                      authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
+                      timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }, isReply: !!comment.parent?.id
+                  }));
+              })
+          );
+          
+          const igCommentsPromise = Promise.all(
+              recentIgPostsData.map(async (post) => {
+                  const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
+                  return commentsData.map((comment: any): InboxItem => ({
+                      id: comment.id, type: 'comment', text: comment.text || '',
+                      authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
+                      authorPictureUrl: defaultPicture, timestamp: comment.timestamp, post: { id: post.id, message: post.caption, picture: post.media_url }, isReply: false
+                  }));
+              })
+          );
+
+          let newMessages: InboxItem[] = [];
+          if (isPage) {
+              const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&since=${since}`, pageAccessToken);
+              newMessages = convosData.map((convo: any) => {
+                  const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
+                  return {
+                      id: convo.id, type: 'message', text: convo.snippet,
+                      authorName: participant?.name || 'مستخدم غير معروف', authorId: participant?.id || 'Unknown',
+                      authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture?type=normal`,
+                      timestamp: convo.updated_time, conversationId: convo.id
+                  };
+              });
+          }
+
+          const [fbCommentArrays, igCommentArrays] = await Promise.all([fbCommentsPromise, igCommentsPromise]);
+          const newItems = [...fbCommentArrays.flat(), ...igCommentArrays.flat(), ...newMessages];
+
+          if (newItems.length > 0) {
+              setInboxItems(prevItems => {
+                  const combined = new Map<string, InboxItem>(prevItems.map(item => [item.id, item]));
+                  newItems.forEach(item => { if (!combined.has(item.id)) combined.set(item.id, item) });
+                  return Array.from(combined.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+              });
+          }
+      } catch (error) {
+          console.error("Error during inbox polling:", error);
+      }
+  }, [inboxItems, managedTarget, linkedInstagramTarget, fetchWithPagination, syncingTargetId, isProcessingReplies]);
+
+  // This useEffect manages the polling interval.
+  // It resets the interval whenever pollForNewItems changes (which it does when its dependencies change, like inboxItems)
+  // This ensures the polling function always has the latest state.
   useEffect(() => {
     if (view !== 'inbox' || isSimulationMode) {
         return; 
     }
-
-    const poll = async () => {
-        if (syncingTargetId || isProcessingReplies.current) return;
-
-        const pageAccessToken = managedTarget.access_token;
-        if (!pageAccessToken) return;
-
-        const lastTimestamp = inboxItems.length > 0 ? new Date(inboxItems[0].timestamp).getTime() : Date.now() - (15 * 60 * 1000);
-        const since = Math.floor(lastTimestamp / 1000);
-        
-        const isPage = managedTarget.type === 'page';
-        const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
-
-        try {
-            const postFields = "id,message,full_picture";
-            const recentPostsData = isPage ? await fetchWithPagination(`/${managedTarget.id}/published_posts?fields=${postFields}&limit=10`, pageAccessToken) : [];
-            const recentIgPostsData = linkedInstagramTarget ? await fetchWithPagination(`/${linkedInstagramTarget.id}/media?fields=id,caption,media_url&limit=10`, pageAccessToken) : [];
-
-            const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent';
-            const igCommentFields = 'id,from{id,username},text,timestamp';
-
-            const fbCommentsPromise = Promise.all(
-                recentPostsData.map(async (post) => {
-                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
-                    return commentsData.map((comment: any): InboxItem => ({
-                        id: comment.id, type: 'comment', text: comment.message || '',
-                        authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: comment.from?.id || 'Unknown',
-                        authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
-                        timestamp: comment.created_time, post: { id: post.id, message: post.message, picture: post.full_picture }, isReply: !!comment.parent
-                    }));
-                })
-            );
-            
-            const igCommentsPromise = Promise.all(
-                recentIgPostsData.map(async (post) => {
-                    const commentsData = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=50&order=reverse_chronological&since=${since}`, pageAccessToken);
-                    return commentsData.map((comment: any): InboxItem => ({
-                        id: comment.id, type: 'comment', text: comment.text || '',
-                        authorName: comment.from?.username || 'مستخدم انستجرام', authorId: comment.from?.id || 'Unknown',
-                        authorPictureUrl: defaultPicture, timestamp: comment.timestamp, post: { id: post.id, message: post.caption, picture: post.media_url }, isReply: false
-                    }));
-                })
-            );
-
-            let newMessages: InboxItem[] = [];
-            if (isPage) {
-                const convosData = await fetchWithPagination(`/${managedTarget.id}/conversations?fields=id,snippet,updated_time,participants&since=${since}`, pageAccessToken);
-                newMessages = convosData.map((convo: any) => {
-                    const participant = convo.participants.data.find((p: any) => p.id !== managedTarget.id);
-                    return {
-                        id: convo.id, type: 'message', text: convo.snippet,
-                        authorName: participant?.name || 'مستخدم غير معروف', authorId: participant?.id || 'Unknown',
-                        authorPictureUrl: `https://graph.facebook.com/${participant?.id}/picture?type=normal`,
-                        timestamp: convo.updated_time, conversationId: convo.id
-                    };
-                });
-            }
-
-            const [fbCommentArrays, igCommentArrays] = await Promise.all([fbCommentsPromise, igCommentsPromise]);
-            const newItems = [...fbCommentArrays.flat(), ...igCommentArrays.flat(), ...newMessages];
-
-            if (newItems.length > 0) {
-                setInboxItems(prevItems => {
-                    const combined = new Map<string, InboxItem>(prevItems.map(item => [item.id, item]));
-                    newItems.forEach(item => { if (!combined.has(item.id)) combined.set(item.id, item) });
-                    return Array.from(combined.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                });
-            }
-        } catch (error) {
-            console.error("Error during inbox polling:", error);
-        }
-    };
     
+    // Initial fetch when the component mounts or view changes to inbox
     if (inboxItems.length === 0 && !isInboxLoading) {
         setIsInboxLoading(true);
-        poll().finally(() => setIsInboxLoading(false));
+        pollForNewItems().finally(() => setIsInboxLoading(false));
     }
 
-    const intervalId = setInterval(poll, 30000);
+    const intervalId = setInterval(pollForNewItems, 30000);
     return () => clearInterval(intervalId);
-  }, [view, isSimulationMode, managedTarget.id, linkedInstagramTarget?.id, fetchWithPagination, syncingTargetId]);
+  }, [view, isSimulationMode, pollForNewItems, isInboxLoading, inboxItems.length]);
   
+  // This useEffect triggers auto-replies whenever the inboxItems list is updated by polling or syncing.
   useEffect(() => {
     if (view === 'inbox' && !isSimulationMode && inboxItems.length > 0) {
         processAutoReplies();
