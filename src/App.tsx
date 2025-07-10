@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -315,7 +316,7 @@ const App: React.FC = () => {
                         authorPictureUrl: authorPictureUrl,
                         timestamp: new Date(comment.created_time).toISOString(),
                         post: { id: post.id, message: post.message, picture: post.full_picture },
-                        isReply: !!comment.parent?.id,
+                        parentId: comment.parent?.id,
                         isReplied: pageHasReplied,
                       };
                 });
@@ -386,7 +387,7 @@ const App: React.FC = () => {
                             authorPictureUrl: defaultPicture,
                             timestamp: new Date(comment.timestamp).toISOString(),
                             post: { id: post.id, message: post.caption, picture: post.media_url },
-                            isReply: false,
+                            parentId: comment.parent?.id,
                             isReplied: pageHasReplied
                         };
                     });

@@ -1,5 +1,7 @@
 
 
+
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule, AutoResponderAction } from '../types';
 import Header from './Header';
@@ -615,7 +617,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         if (action.type === 'public_reply' && item.type === 'comment') {
                             success = await handleReplyToComment(item.id, finalMessage);
                         } else if (action.type === 'private_reply' && item.type === 'comment') {
-                            if (item.platform === 'facebook' && !item.isReply) {
+                            // Only send to top-level comments on Facebook
+                            const isTopLevelComment = !item.parentId;
+                            if (item.platform === 'facebook' && isTopLevelComment) {
                                 success = await handlePrivateReplyToComment(item.id, finalMessage);
                             }
                         } else if (action.type === 'direct_message' && item.type === 'message') {
@@ -744,7 +748,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                               authorPictureUrl: defaultPicture,
                               timestamp: new Date(comment.timestamp).toISOString(),
                               post: { id: post.id, message: post.caption, picture: post.media_url },
-                              isReply: false,
+                              parentId: comment.parent?.id,
                               isReplied: pageHasReplied
                           };
                       });
@@ -768,7 +772,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                           authorPictureUrl: comment.from?.picture?.data?.url || `https://graph.facebook.com/${comment.from?.id}/picture`,
                           timestamp: new Date(comment.created_time).toISOString(),
                           post: { id: post.id, message: post.message, picture: post.full_picture },
-                          isReply: !!comment.parent,
+                          parentId: comment.parent?.id,
                           isReplied: pageHasReplied
                       };
                   });

@@ -1,4 +1,5 @@
 
+
 declare global {
   interface Window {
     FB: any;
@@ -190,7 +191,7 @@ export interface InboxItem {
     message?: string;
     picture?: string;
   };
-  isReply?: boolean; // To indent replies in the UI
+  parentId?: string; // The ID of the parent comment, if this is a reply
   conversationId?: string; // For messages
   messages?: InboxMessage[]; // For message history
   isReplied?: boolean; // NEW: To show reply status icon
