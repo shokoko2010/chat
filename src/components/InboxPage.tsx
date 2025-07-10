@@ -103,19 +103,23 @@ const AutoResponderRuleEditorCard: React.FC<{
     onUpdate({ ...rule, trigger: { ...rule.trigger, [key]: value } });
   };
   
-  const handleActionChange = <K extends keyof AutoResponderAction>(index: number, key: K, value: AutoResponderAction[K]) => {
-    const newActions = [...rule.actions];
-    newActions[index] = { ...newActions[index], [key]: value };
+  const handleActionChange = <K extends keyof AutoResponderAction>(actionType: AutoResponderActionType, key: K, value: AutoResponderAction[K]) => {
+    const newActions = rule.actions.map(a => {
+        if (a.type === actionType) {
+            return { ...a, [key]: value };
+        }
+        return a;
+    });
     onUpdate({ ...rule, actions: newActions });
   };
   
-  const handleGenerateVariations = async (actionIndex: number) => {
-    const action = rule.actions[actionIndex];
-    if (!aiClient || action.messageVariations.length === 0 || !action.messageVariations[0]) return;
+  const handleGenerateVariations = async (actionType: AutoResponderActionType) => {
+    const action = rule.actions.find(a => a.type === actionType);
+    if (!aiClient || !action || action.messageVariations.length === 0 || !action.messageVariations[0]) return;
     setIsGenerating(prev => ({...prev, [action.type]: true}));
     try {
       const variations = await generateReplyVariations(aiClient, action.messageVariations[0]);
-      handleActionChange(actionIndex, 'messageVariations', variations);
+      handleActionChange(actionType, 'messageVariations', variations);
     } catch (error) {
       console.error(error);
       alert('فشل إنشاء التنويعات.');
@@ -169,7 +173,7 @@ const AutoResponderRuleEditorCard: React.FC<{
         {/* Actions Section */}
         <div className="space-y-4 p-3 bg-white dark:bg-gray-800 rounded-md shadow-sm">
           <h4 className="font-bold text-gray-700 dark:text-gray-300">الإجراءات (ماذا سيحدث؟)</h4>
-          {rule.actions.map((action, index) => {
+          {rule.actions.map((action) => {
               if (actionConfig[action.type].source !== rule.trigger.source) {
                 return null;
               }
@@ -181,7 +185,7 @@ const AutoResponderRuleEditorCard: React.FC<{
                       type="checkbox"
                       id={`${rule.id}-${action.type}`}
                       checked={action.enabled}
-                      onChange={e => handleActionChange(index, 'enabled', e.target.checked)}
+                      onChange={e => handleActionChange(action.type, 'enabled', e.target.checked)}
                       className="h-4 w-4"
                     />
                     <label htmlFor={`${rule.id}-${action.type}`} className="mr-2 text-sm font-medium">
@@ -192,7 +196,7 @@ const AutoResponderRuleEditorCard: React.FC<{
                     <div className="pl-5 space-y-2">
                       <textarea
                         value={action.messageVariations.join('\n')}
-                        onChange={e => handleActionChange(index, 'messageVariations', e.target.value.split('\n'))}
+                        onChange={e => handleActionChange(action.type, 'messageVariations', e.target.value.split('\n'))}
                         className="w-full text-sm p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
                         rows={4}
                         placeholder="اكتب ردًا أو أكثر (كل رد في سطر)"
@@ -200,7 +204,7 @@ const AutoResponderRuleEditorCard: React.FC<{
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => handleGenerateVariations(index)}
+                        onClick={() => handleGenerateVariations(action.type)}
                         disabled={!aiClient || isGenerating[action.type]}
                         isLoading={isGenerating[action.type]}
                       >
