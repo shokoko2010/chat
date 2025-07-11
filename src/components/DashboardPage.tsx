@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule, AutoResponderAction } from '../types';
 import Header from './Header';
@@ -1331,7 +1332,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             // --- 1. Fetch Facebook Messages ---
             if (pageAccessToken) {
                 try {
-                    const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
+                    const convosPath = `/${pageTarget.id}/conversations?platform=messenger&fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
                     const recentConvosData = await fetchWithPagination(convosPath, pageAccessToken);
                     const recentMessages: InboxItem[] = recentConvosData.map((convo: any) => {
                         const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
@@ -1359,10 +1360,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     const igConvosPath = `/${pageTarget.id}/conversations?platform=instagram&fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
                     const recentIgConvosData = await fetchWithPagination(igConvosPath, pageAccessToken);
                     const recentIgMessages: InboxItem[] = recentIgConvosData.map((convo: any) => {
-                        const participant = convo.participants.data.find((p: any) => p.id !== linkedIgTarget.id);
+                        const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
                         const participantId = participant?.id;
                         const lastMessage = convo.messages?.data?.[0];
-                        const pageSentLastMessage = lastMessage?.from?.id === linkedIgTarget.id;
+                        const pageSentLastMessage = lastMessage?.from?.id === pageTarget.id;
                         return {
                             id: convo.id, platform: 'instagram', type: 'message', text: convo.snippet,
                             authorName: participant?.name || 'مستخدم انستجرام',
@@ -1427,7 +1428,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         if (post.comments_count > 0) {
                             const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100&since=${sinceTimestamp}`, igAccessToken);
                             return postComments.map((comment: any): InboxItem => {
-                                const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === linkedIgTarget.id);
+                                const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === pageTarget.id);
                                 return {
                                     id: comment.id, platform: 'instagram', type: 'comment', text: comment.text || '',
                                     authorName: comment.from?.username || 'مستخدم انستجرام',

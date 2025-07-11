@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -327,7 +328,7 @@ const App: React.FC = () => {
         const fbCommentBatches = await Promise.all(fbCommentPromises);
         fbCommentBatches.forEach(batch => combinedInboxItems.push(...batch));
 
-        const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=100`;
+        const convosPath = `/${pageTarget.id}/conversations?platform=messenger&fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=100`;
         const allConvosData = await fetchWithPagination(convosPath, pageAccessToken);
         const allMessages: InboxItem[] = allConvosData.map((convo: any) => {
             const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
@@ -377,7 +378,7 @@ const App: React.FC = () => {
                 if (post.comments_count > 0) {
                     const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100`, igAccessToken);
                     return postComments.map((comment: any): InboxItem => {
-                        const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === linkedIgTarget.id);
+                        const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === pageTarget.id);
                         return {
                             id: comment.id,
                             platform: 'instagram',
@@ -402,10 +403,10 @@ const App: React.FC = () => {
             const igConvosPath = `/${pageTarget.id}/conversations?platform=instagram&fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=100`;
             const allIgConvosData = await fetchWithPagination(igConvosPath, pageAccessToken);
             const allIgMessages: InboxItem[] = allIgConvosData.map((convo: any) => {
-                const participant = convo.participants.data.find((p: any) => p.id !== linkedIgTarget.id);
+                const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
                 const participantId = participant?.id;
                 const lastMessage = convo.messages?.data?.[0];
-                const pageSentLastMessage = lastMessage?.from?.id === linkedIgTarget.id;
+                const pageSentLastMessage = lastMessage?.from?.id === pageTarget.id;
                 return {
                     id: convo.id,
                     platform: 'instagram',
