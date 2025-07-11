@@ -151,6 +151,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const pollingIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isProcessingReplies = useRef(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [isSyncingScheduled, setIsSyncingScheduled] = useState(false);
 
 
   const linkedInstagramTarget = useMemo(() => {
@@ -321,6 +322,46 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     const rescheduled = rescheduleBulkPosts(bulkPosts, schedulingStrategy, weeklyScheduleSettings);
     setBulkPosts(rescheduled);
   }, [bulkPosts, schedulingStrategy, weeklyScheduleSettings, rescheduleBulkPosts]);
+
+  const syncScheduledPosts = useCallback(async () => {
+    if (isSimulationMode || managedTarget.type !== 'page') return;
+    setIsSyncingScheduled(true);
+    try {
+        const path = `/${managedTarget.id}/scheduled_posts?fields=id,message,scheduled_publish_time&limit=100`;
+        const fbPosts = await fetchWithPagination(path, managedTarget.access_token);
+
+        const syncedPosts: ScheduledPost[] = fbPosts.map((post: any) => ({
+            id: post.id,
+            postId: post.id,
+            text: post.message || 'منشور بصورة مجدول',
+            scheduledAt: new Date(post.scheduled_publish_time * 1000),
+            isReminder: false,
+            isSynced: true,
+            targetId: managedTarget.id,
+            targetInfo: {
+                name: managedTarget.name,
+                avatarUrl: managedTarget.picture.data.url,
+                type: 'page',
+            },
+        }));
+
+        setScheduledPosts(prevPosts => {
+            const localOnlyPosts = prevPosts.filter(p => !p.isSynced);
+            const mergedMap = new Map<string, ScheduledPost>();
+
+            syncedPosts.forEach(p => mergedMap.set(p.id, p));
+            localOnlyPosts.forEach(p => mergedMap.set(p.id, p));
+
+            return Array.from(mergedMap.values()).sort((a,b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+        });
+        showNotification('success', 'تمت مزامنة التقويم مع فيسبوك.');
+    } catch (e: any) {
+        console.error('Failed to sync scheduled posts:', e);
+        showNotification('error', `فشل مزامنة التقويم: ${e.message}`);
+    } finally {
+        setIsSyncingScheduled(false);
+    }
+  }, [managedTarget, isSimulationMode, fetchWithPagination, showNotification]);
 
   useEffect(() => {
     const dataKey = `zex-pages-data-${managedTarget.id}`;
@@ -815,34 +856,44 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   };
   
-  const handleDeleteScheduledPost = (postId: string) => {
-    const postToDelete = scheduledPosts.find(p => p.id === postId);
+  const handleDeleteScheduledPost = async (postId: string) => {
+    const postToDelete = scheduledPosts.find(p => p.id === postId || p.postId === postId);
     if (!postToDelete) return;
 
-    if (undoTimerRef.current) {
-        clearTimeout(undoTimerRef.current);
-    }
-    
-    setScheduledPosts(prev => prev.filter(p => p.id !== postId));
-
-    const handleUndo = () => {
-        setScheduledPosts(prev => {
-            const newPosts = [postToDelete, ...prev];
-            return newPosts.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
-        });
-        if (undoTimerRef.current) {
-            clearTimeout(undoTimerRef.current);
-            undoTimerRef.current = null;
+    if (postToDelete.isSynced && postToDelete.postId) {
+        try {
+            const response: any = await new Promise(resolve => window.FB.api(`/${postToDelete.postId}`, 'DELETE', { access_token: managedTarget.access_token }, res => resolve(res)));
+            if (!response || response.error) {
+                throw new Error(response?.error?.message || 'فشل حذف المنشور من فيسبوك.');
+            }
+            setScheduledPosts(prev => prev.filter(p => p.id !== postToDelete.id));
+            showNotification('success', 'تم حذف المنشور المجدول من فيسبوك بنجاح.');
+        } catch (e: any) {
+            showNotification('error', `فشل الحذف من فيسبوك: ${e.message}`);
         }
-        setNotification(null);
-    };
-    
-    showNotification('success', 'تم إلغاء جدولة المنشور.', handleUndo);
+    } else {
+        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+        setScheduledPosts(prev => prev.filter(d => d.id !== postId));
 
-    undoTimerRef.current = setTimeout(() => {
-        setNotification(null);
-        undoTimerRef.current = null;
-    }, 8000);
+        const handleUndo = () => {
+            setScheduledPosts(prev => {
+                const newPosts = [postToDelete, ...prev].sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+                return newPosts;
+            });
+            if (undoTimerRef.current) {
+                clearTimeout(undoTimerRef.current);
+                undoTimerRef.current = null;
+            }
+            setNotification(null);
+        };
+        
+        showNotification('success', 'تم إلغاء جدولة المنشور.', handleUndo);
+
+        undoTimerRef.current = setTimeout(() => {
+            setNotification(null);
+            undoTimerRef.current = null;
+        }, 8000);
+    }
   };
   
   const handleScheduleStrategy = useCallback(async () => {
@@ -880,7 +931,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             return;
         }
 
-        if (postToLoad.imageUrl && !postToLoad.imageFile) {
+        if (postToLoad.imageUrl && !postToLoad.imageFile && !postToLoad.isSynced) {
             showNotification('error', 'لا يمكن تعديل منشور الصورة هذا لأنه تم تحميله في جلسة سابقة. يرجى إعادة إنشائه.');
             return;
         }
@@ -1031,6 +1082,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             if (isScheduled) {
                 const newScheduledPost: ScheduledPost = {
                     id: fbPostId || `local_${Date.now()}`,
+                    postId: fbPostId || undefined,
+                    isSynced: !!fbPostId,
                     text: postText,
                     imageUrl: imagePreview || undefined,
                     imageFile: selectedImage || undefined,
@@ -1210,7 +1263,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 if (response && !response.error) {
                     const fbPostId = response.id;
                     postsToSchedule.push({
-                        id: fbPostId, text: item.text, imageUrl: item.imagePreview, imageFile: item.imageFile,
+                        id: fbPostId, postId: fbPostId, isSynced: true, text: item.text, imageUrl: item.imagePreview, imageFile: item.imageFile,
                         scheduledAt: new Date(item.scheduleDate), isReminder: false, targetId: fbTarget.id,
                         targetInfo: { name: fbTarget.name, avatarUrl: fbTarget.picture.data.url, type: 'page' }
                     });
@@ -1450,8 +1503,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
     useEffect(() => {
         if (isSimulationMode) return;
+        
+        const initialSync = async () => {
+            await handleQuickRefresh();
+            await syncScheduledPosts();
+        }
 
-        handleQuickRefresh(); // Initial fetch
+        initialSync();
         
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
 
@@ -1460,7 +1518,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         return () => {
             if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
         };
-    }, [isSimulationMode, handleQuickRefresh]);
+    }, [isSimulationMode, handleQuickRefresh, syncScheduledPosts]);
 
 
     useEffect(() => {
@@ -1566,6 +1624,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     posts={scheduledPosts}
                     onDelete={handleDeleteScheduledPost}
                     onEdit={handleEditFromCalendar}
+                    onSync={syncScheduledPosts}
+                    isSyncing={isSyncingScheduled}
                 />
             </div>
         );
@@ -1692,7 +1752,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         <aside className="w-full md:w-64 bg-white dark:bg-gray-800 p-4 border-l dark:border-gray-700/50 flex-shrink-0">
           <nav className="space-y-2">
             <NavItem icon={<PencilSquareIcon className="w-5 h-5"/>} label="إنشاء منشور" active={view === 'composer'} onClick={() => setView('composer')} />
-            <NavItem icon={<CalendarIcon className="w-5 h-5"/>} label="تقويم المحتوى" active={view === 'calendar'} onClick={() => setView('calendar')} />
+            <NavItem icon={<CalendarIcon className="w-5 h-5"/>} label="تقويم المحتوى" active={view === 'calendar'} onClick={() => { setView('calendar'); syncScheduledPosts(); }} />
             <NavItem icon={<ArchiveBoxIcon className="w-5 h-5"/>} label="المسودات" active={view === 'drafts'} onClick={() => setView('drafts')} />
             <NavItem icon={<QueueListIcon className="w-5 h-5"/>} label="الجدولة المجمعة" active={view === 'bulk'} onClick={() => setView('bulk')} />
             <NavItem icon={<ChartBarIcon className="w-5 h-5"/>} label="التحليلات" active={view === 'analytics'} onClick={() => setView('analytics')} />

@@ -5,14 +5,19 @@ import BellIcon from './icons/BellIcon';
 import TrashIcon from './icons/TrashIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import PencilSquareIcon from './icons/PencilSquareIcon';
+import Button from './ui/Button';
+import ArrowPathIcon from './icons/ArrowPathIcon';
+import CloudIcon from './icons/CloudIcon';
 
 interface ContentCalendarProps {
     posts: ScheduledPost[];
     onDelete: (postId: string) => void;
     onEdit: (postId: string) => void;
+    onSync: () => void;
+    isSyncing: boolean;
 }
 
-const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts, onDelete, onEdit }) => {
+const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts, onDelete, onEdit, onSync, isSyncing }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
 
     const daysOfWeek = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
@@ -82,7 +87,7 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts, onDelete, onEd
                         <div className="mt-1 space-y-2">
                             {postsForDay.map(post => {
                                 const postDate = new Date(post.scheduledAt);
-                                const hasBeenPublished = post.publishedAt || (postDate < new Date() && !post.isReminder);
+                                const hasBeenPublished = post.publishedAt || (post.isSynced && !post.isReminder && postDate < new Date());
                                 const displayDate = post.publishedAt ? new Date(post.publishedAt) : postDate;
                                 
                                 return (
@@ -100,6 +105,7 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts, onDelete, onEd
                                             <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
                                                 <span className="font-semibold">{hasBeenPublished ? `نُشر:` : ''} {displayDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
                                                 <div className="flex items-center gap-1">
+                                                    {post.isSynced && !hasBeenPublished && <span title="تمت المزامنة مع فيسبوك"><CloudIcon className="w-4 h-4 text-blue-400" /></span>}
                                                     {hasBeenPublished && <span title="تم النشر"><CheckCircleIcon className="w-4 h-4 text-green-500" /></span>}
                                                     {post.isReminder && !hasBeenPublished && <span title="تذكير لنشر انستجرام"><BellIcon className="w-4 h-4 text-yellow-500" /></span>}
                                                     {post.imageUrl && <PhotoIcon className="w-4 h-4" />}
@@ -118,7 +124,7 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts, onDelete, onEd
                                                 </button>
                                             )}
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); onDelete(post.id); }}
+                                                onClick={(e) => { e.stopPropagation(); onDelete(post.postId || post.id); }}
                                                 className="p-1 bg-red-600 text-white rounded-full hover:bg-red-700"
                                                 aria-label="حذف"
                                                 title="حذف"
@@ -140,15 +146,17 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts, onDelete, onEd
     return (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg fade-in">
             <div className="flex justify-between items-center mb-6">
-                <button onClick={goToPreviousMonth} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
-                    &lt; الشهر السابق
-                </button>
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
+                 <div className="flex items-center gap-2">
+                    <button onClick={goToPreviousMonth} className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">&lt;</button>
+                     <button onClick={goToNextMonth} className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">&gt;</button>
+                </div>
+                <h2 className="text-xl md:text-2xl font-bold text-gray-800 dark:text-white">
                     {currentDate.toLocaleString('ar-EG', { month: 'long', year: 'numeric' })}
                 </h2>
-                <button onClick={goToNextMonth} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
-                    الشهر التالي &gt;
-                </button>
+                <Button onClick={onSync} isLoading={isSyncing} variant="secondary" title="مزامنة مع فيسبوك">
+                    <ArrowPathIcon className="w-5 h-5 ml-2" />
+                    مزامنة
+                </Button>
             </div>
 
             <div className="grid grid-cols-7 gap-1 text-center font-semibold text-gray-600 dark:text-gray-300">

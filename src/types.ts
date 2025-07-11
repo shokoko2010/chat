@@ -21,7 +21,8 @@ export interface Target {
 }
 
 export interface ScheduledPost {
-  id: string;
+  id: string; // This can be the local ID or the Facebook post ID after syncing
+  postId?: string; // The definitive Facebook Post ID
   text: string;
   imageUrl?: string;
   imageFile?: File; // For reminder re-publishing
@@ -34,6 +35,7 @@ export interface ScheduledPost {
       type: 'page' | 'instagram';
   }
   publishedAt?: string; // ISO string for when it was actually published
+  isSynced?: boolean; // To indicate it's synced with Facebook's scheduler
 }
 
 export interface Draft {
