@@ -90,6 +90,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [publishingReminderId, setPublishingReminderId] = useState<string | null>(null);
   const [isReplying, setIsReplying] = useState(false);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [publishingPostId, setPublishingPostId] = useState<string | null>(null);
   
   // Data state, managed per target
   const [pageProfile, setPageProfile] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
@@ -852,6 +853,65 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   }, [aiClient, contentPlan, managedTarget.id, showNotification]);
 
+  const handlePublishNow = async (postId: string) => {
+        const postToPublish = scheduledPosts.find(p => p.id === postId);
+        if (!postToPublish) {
+            showNotification('error', 'لم يتم العثور على المنشور المجدول.');
+            return;
+        }
+        if (postToPublish.isReminder) {
+            showNotification('error', 'لا يمكن نشر تذكيرات انستجرام مباشرة.');
+            return;
+        }
+
+        // This is a check due to localStorage limitations where File objects are lost
+        if (postToPublish.imageUrl && !postToPublish.imageFile) {
+            showNotification('error', 'لا يمكن نشر منشور الصورة هذا الآن لأنه تم تحميله في جلسة سابقة. يرجى إعادة إنشائه.');
+            return;
+        }
+
+        setPublishingPostId(postId);
+        try {
+            const postData: any = { access_token: managedTarget.access_token };
+            if (postToPublish.text) {
+                postData.message = postToPublish.text;
+            }
+
+            let response: any;
+            if (postToPublish.imageFile) {
+                postData.source = postToPublish.imageFile;
+                response = await new Promise(resolve => window.FB.api(`/${managedTarget.id}/photos`, 'POST', postData, (res: any) => resolve(res)));
+            } else {
+                response = await new Promise(resolve => window.FB.api(`/${managedTarget.id}/feed`, 'POST', postData, (res: any) => resolve(res)));
+            }
+
+            if (response.error) {
+                throw new Error(response.error.message);
+            }
+
+            const newPublishedPost: PublishedPost = {
+                id: response.post_id || response.id,
+                pageId: managedTarget.id,
+                pageName: managedTarget.name,
+                pageAvatarUrl: managedTarget.picture.data.url,
+                text: postToPublish.text,
+                imagePreview: postToPublish.imageUrl || null,
+                publishedAt: new Date(),
+                analytics: { likes: 0, comments: 0, shares: 0, reach: 0, loading: false, lastUpdated: new Date(), isGeneratingInsights: false }
+            };
+
+            setPublishedPosts(prev => [newPublishedPost, ...prev]);
+            setScheduledPosts(prev => prev.filter(p => p.id !== postId));
+            showNotification('success', 'تم نشر المنشور بنجاح!');
+
+        } catch (e: any) {
+            console.error("Error publishing now:", e);
+            showNotification('error', `فشل النشر: ${e.message}`);
+        } finally {
+            setPublishingPostId(null);
+        }
+    };
+    
   const handlePublish = async () => {
     setIsPublishing(true);
     setComposerError('');
@@ -1442,7 +1502,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         </div>
                     </div>
                 )}
-                <ContentCalendar posts={scheduledPosts} onDelete={handleDeleteScheduledPost} />
+                <ContentCalendar 
+                    posts={scheduledPosts}
+                    onDelete={handleDeleteScheduledPost}
+                    onPublishNow={handlePublishNow}
+                    publishingPostId={publishingPostId}
+                />
             </div>
         );
       case 'analytics':
