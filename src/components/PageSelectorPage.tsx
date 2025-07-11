@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Target, Business } from '../types';
 import Button from './ui/Button';
 import FacebookIcon from './icons/FacebookIcon';
@@ -8,6 +8,9 @@ import SearchIcon from './icons/SearchIcon';
 import ChevronDownIcon from './icons/ChevronDownIcon';
 import SunIcon from './icons/SunIcon';
 import MoonIcon from './icons/MoonIcon';
+import StarIcon from './icons/StarIcon';
+import Squares2x2Icon from './icons/Squares2x2Icon';
+import ListBulletIcon from './icons/ListBulletIcon';
 
 interface PageSelectorPageProps {
   targets: Target[];
@@ -22,16 +25,28 @@ interface PageSelectorPageProps {
   onSettingsClick: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
+  favoriteTargetIds: Set<string>;
+  onToggleFavorite: (targetId: string) => void;
 }
 
-const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void; }> = ({ target, linkedInstagram, onSelect }) => {
+const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void; isFavorite: boolean; onToggleFavorite: (e: React.MouseEvent) => void; }> = ({ target, linkedInstagram, onSelect, isFavorite, onToggleFavorite }) => {
     const typeText = 'صفحة فيسبوك';
 
     return (
         <button
             onClick={onSelect}
-            className="w-full bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 flex flex-col h-full text-right hover:-translate-y-1"
+            className="relative w-full bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 flex flex-col h-full text-right hover:-translate-y-1"
         >
+            <div className="absolute top-2 right-2 z-10">
+                <button
+                    onClick={onToggleFavorite}
+                    className={`p-1.5 rounded-full transition-colors duration-200 ${isFavorite ? 'text-yellow-400 hover:text-yellow-500' : 'text-gray-400 hover:text-gray-500'}`}
+                    aria-label={isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
+                    title={isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
+                >
+                    <StarIcon className="w-6 h-6" />
+                </button>
+            </div>
             <div className="p-5 flex-grow">
                 <div className="flex items-center gap-4">
                     <img src={target.picture.data.url} alt={target.name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
@@ -52,6 +67,32 @@ const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onS
     );
 };
 
+const TargetListItem: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void; isFavorite: boolean; onToggleFavorite: (e: React.MouseEvent) => void; }> = ({ target, linkedInstagram, onSelect, isFavorite, onToggleFavorite }) => {
+    return (
+        <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-all duration-300 flex items-center p-3 text-right">
+            <button onClick={onSelect} className="flex-grow flex items-center gap-4">
+                <img src={target.picture.data.url} alt={target.name} className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                <div className="flex-grow">
+                    <p className="font-bold text-gray-900 dark:text-white line-clamp-2">{target.name}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                        <FacebookIcon className="w-4 h-4 text-blue-600" />
+                        {linkedInstagram && <InstagramIcon className="w-4 h-4" />}
+                    </div>
+                </div>
+            </button>
+            <div className="flex-shrink-0 ml-4">
+                <button
+                    onClick={onToggleFavorite}
+                    className={`p-1.5 rounded-full transition-colors duration-200 ${isFavorite ? 'text-yellow-400 hover:text-yellow-500' : 'text-gray-400 hover:text-gray-500'}`}
+                    aria-label={isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
+                    title={isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
+                >
+                    <StarIcon className="w-6 h-6" />
+                </button>
+            </div>
+        </div>
+    );
+};
 
 const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
   targets,
@@ -65,10 +106,13 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
   onLogout,
   onSettingsClick,
   theme,
-  onToggleTheme
+  onToggleTheme,
+  favoriteTargetIds,
+  onToggleFavorite
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isPortfolioDropdownOpen, setIsPortfolioDropdownOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const portfolioRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -96,11 +140,21 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
 
     const primaryTargets = targets.filter(t => t.type === 'page');
 
-    const filteredTargets = primaryTargets.filter(target =>
-        target.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const sortedAndFilteredTargets = useMemo(() => {
+        const filtered = primaryTargets.filter(target =>
+            target.name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+        return filtered.sort((a, b) => {
+            const aIsFav = favoriteTargetIds.has(a.id);
+            const bIsFav = favoriteTargetIds.has(b.id);
+            if (aIsFav && !bIsFav) return -1;
+            if (!aIsFav && bIsFav) return 1;
+            return a.name.localeCompare(b.name, 'ar');
+        });
+    }, [primaryTargets, searchQuery, favoriteTargetIds]);
 
-    if (targets.length > 0 && filteredTargets.length === 0) {
+
+    if (targets.length > 0 && sortedAndFilteredTargets.length === 0) {
         return <div className="text-center text-gray-500 dark:text-gray-400 py-10">لا توجد نتائج بحث تطابق "{searchQuery}".</div>;
     }
     
@@ -124,19 +178,45 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
     
     return (
         <div className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredTargets.map(target => {
-                    const linkedInstagram = target.type === 'page' ? instagramAccountsByParentId.get(target.id) : null;
-                    return (
-                        <TargetCard
-                            key={target.id}
-                            target={target}
-                            linkedInstagram={linkedInstagram || null}
-                            onSelect={() => onSelectTarget(target)}
-                        />
-                    );
-                })}
-            </div>
+            {viewMode === 'grid' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {sortedAndFilteredTargets.map(target => {
+                        const linkedInstagram = target.type === 'page' ? instagramAccountsByParentId.get(target.id) : null;
+                        return (
+                            <TargetCard
+                                key={target.id}
+                                target={target}
+                                linkedInstagram={linkedInstagram || null}
+                                onSelect={() => onSelectTarget(target)}
+                                isFavorite={favoriteTargetIds.has(target.id)}
+                                onToggleFavorite={(e) => {
+                                    e.stopPropagation();
+                                    onToggleFavorite(target.id);
+                                }}
+                            />
+                        );
+                    })}
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {sortedAndFilteredTargets.map(target => {
+                        const linkedInstagram = target.type === 'page' ? instagramAccountsByParentId.get(target.id) : null;
+                        return (
+                            <TargetListItem
+                                key={target.id}
+                                target={target}
+                                linkedInstagram={linkedInstagram || null}
+                                onSelect={() => onSelectTarget(target)}
+                                isFavorite={favoriteTargetIds.has(target.id)}
+                                onToggleFavorite={(e) => {
+                                    e.stopPropagation();
+                                    onToggleFavorite(target.id);
+                                }}
+                            />
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
   };
@@ -159,17 +239,27 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
             <div className="max-w-7xl mx-auto">
               <div className="md:flex justify-between items-center mb-6 gap-4">
                 <h1 className="text-3xl font-bold mb-4 md:mb-0 text-gray-900 dark:text-white whitespace-nowrap">اختر وجهة لإدارتها</h1>
-                <div className="relative w-full md:w-1/3">
-                    <input
-                      type="search"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="ابحث عن صفحة..."
-                      className="w-full p-3 pl-10 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"
-                      aria-label="البحث عن صفحة"
-                    />
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <SearchIcon className="w-5 h-5 text-gray-400" />
+                 <div className="flex items-center gap-2 w-full md:w-auto mt-4 md:mt-0">
+                    <div className="relative w-full md:w-72">
+                        <input
+                          type="search"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="ابحث عن صفحة..."
+                          className="w-full p-3 pl-10 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"
+                          aria-label="البحث عن صفحة"
+                        />
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <SearchIcon className="w-5 h-5 text-gray-400" />
+                        </div>
+                    </div>
+                     <div className="flex items-center bg-gray-100 dark:bg-gray-700 p-1 rounded-lg flex-shrink-0">
+                        <button onClick={() => setViewMode('grid')} className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-gray-900 text-blue-600 shadow' : 'text-gray-500'}`} title="عرض شبكي">
+                            <Squares2x2Icon className="w-5 h-5"/>
+                        </button>
+                        <button onClick={() => setViewMode('list')} className={`p-2 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-gray-900 text-blue-600 shadow' : 'text-gray-500'}`} title="عرض قائمة">
+                            <ListBulletIcon className="w-5 h-5"/>
+                        </button>
                     </div>
                 </div>
               </div>

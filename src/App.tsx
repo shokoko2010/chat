@@ -33,6 +33,7 @@ const App: React.FC = () => {
   const [targetsLoading, setTargetsLoading] = useState(true);
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
+  const [favoriteTargetIds, setFavoriteTargetIds] = useState<Set<string>>(new Set());
   
   const [loadingBusinessId, setLoadingBusinessId] = useState<string | null>(null);
   const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set());
@@ -54,6 +55,26 @@ const App: React.FC = () => {
         localStorage.setItem('theme', 'light');
     }
   }, [theme]);
+  
+  useEffect(() => {
+    const savedFavorites = localStorage.getItem('zex-pages-favorites');
+    if (savedFavorites) {
+        setFavoriteTargetIds(new Set(JSON.parse(savedFavorites)));
+    }
+  }, []);
+
+  const handleToggleFavorite = (targetId: string) => {
+    setFavoriteTargetIds(prev => {
+        const newFavorites = new Set(prev);
+        if (newFavorites.has(targetId)) {
+            newFavorites.delete(targetId);
+        } else {
+            newFavorites.add(targetId);
+        }
+        localStorage.setItem('zex-pages-favorites', JSON.stringify(Array.from(newFavorites)));
+        return newFavorites;
+    });
+  };
 
   const handleToggleTheme = () => {
     setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
@@ -550,6 +571,8 @@ const App: React.FC = () => {
           onSettingsClick={() => setIsSettingsModalOpen(true)}
           theme={theme}
           onToggleTheme={handleToggleTheme}
+          favoriteTargetIds={favoriteTargetIds}
+          onToggleFavorite={handleToggleFavorite}
         />
       );
   };
