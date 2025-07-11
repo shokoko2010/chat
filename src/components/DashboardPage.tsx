@@ -1353,6 +1353,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
             }
 
+            // Fetch Instagram Messages
+            if (linkedIgTarget && pageAccessToken) {
+                try {
+                    const igConvosPath = `/${pageTarget.id}/conversations?platform=instagram&fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
+                    const recentIgConvosData = await fetchWithPagination(igConvosPath, pageAccessToken);
+                    const recentIgMessages: InboxItem[] = recentIgConvosData.map((convo: any) => {
+                        const participant = convo.participants.data.find((p: any) => p.id !== linkedIgTarget.id);
+                        const participantId = participant?.id;
+                        const lastMessage = convo.messages?.data?.[0];
+                        const pageSentLastMessage = lastMessage?.from?.id === linkedIgTarget.id;
+                        return {
+                            id: convo.id, platform: 'instagram', type: 'message', text: convo.snippet,
+                            authorName: participant?.name || 'مستخدم انستجرام',
+                            authorId: participantId || 'Unknown',
+                            authorPictureUrl: defaultPicture,
+                            timestamp: new Date(convo.updated_time).toISOString(),
+                            conversationId: convo.id, isReplied: pageSentLastMessage
+                        };
+                    });
+                    newInboxItems.push(...recentIgMessages);
+                } catch (error) {
+                    console.warn("Auto-sync failed for Instagram Messages:", error);
+                }
+            }
+            
             // --- 2. Fetch Facebook Comments ---
             if (pageAccessToken) {
                 try {

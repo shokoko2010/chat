@@ -397,6 +397,29 @@ const App: React.FC = () => {
             });
             const igCommentBatches = await Promise.all(igCommentPromises);
             igCommentBatches.forEach(batch => combinedInboxItems.push(...batch));
+            
+            // Fetch Instagram Messages
+            const igConvosPath = `/${pageTarget.id}/conversations?platform=instagram&fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=100`;
+            const allIgConvosData = await fetchWithPagination(igConvosPath, pageAccessToken);
+            const allIgMessages: InboxItem[] = allIgConvosData.map((convo: any) => {
+                const participant = convo.participants.data.find((p: any) => p.id !== linkedIgTarget.id);
+                const participantId = participant?.id;
+                const lastMessage = convo.messages?.data?.[0];
+                const pageSentLastMessage = lastMessage?.from?.id === linkedIgTarget.id;
+                return {
+                    id: convo.id,
+                    platform: 'instagram',
+                    type: 'message',
+                    text: convo.snippet,
+                    authorName: participant?.name || 'مستخدم انستجرام',
+                    authorId: participantId || 'Unknown',
+                    authorPictureUrl: defaultPicture,
+                    timestamp: new Date(convo.updated_time).toISOString(),
+                    conversationId: convo.id,
+                    isReplied: pageSentLastMessage
+                };
+            });
+            combinedInboxItems.push(...allIgMessages);
         }
 
         // --- 3. Save Data ---
