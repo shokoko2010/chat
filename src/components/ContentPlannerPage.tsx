@@ -166,10 +166,10 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
         escapeCSV(item.headline),
         escapeCSV(item.body),
         escapeCSV(item.imageIdea)
-      ].join(',')
+      ].join(';')
     );
 
-    const csvContent = [csvHeaders.join(','), ...rows].join('\n');
+    const csvContent = [csvHeaders.join(';'), ...rows].join('\n');
     
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     
