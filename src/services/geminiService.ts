@@ -44,6 +44,21 @@ const createPageContext = (pageProfile?: PageProfile): string => {
   if (!pageProfile || Object.values(pageProfile).every(val => !val)) {
     return '';
   }
+
+  let languageInstruction = '';
+  if (pageProfile.contentGenerationLanguages && pageProfile.contentGenerationLanguages.length > 0) {
+      const languages = pageProfile.contentGenerationLanguages.map(lang => {
+          if (lang === 'ar') return 'العربية';
+          if (lang === 'en') return 'English';
+          return '';
+      }).filter(Boolean).join(' و ');
+
+      languageInstruction = `مهم: يجب أن يكون كل المحتوى الذي تنشئه باللغة (أو اللغات) التالية: ${languages}. إذا تم تحديد لغتين، قم بتوفير المحتوى بكلتا اللغتين إن أمكن (مثال: منشور مزدوج اللغة).`;
+  }
+  
+  const pageLangText = pageProfile.language === 'ar' ? 'العربية' : pageProfile.language === 'en' ? 'English' : 'مختلطة (عربي/إنجليزي)';
+
+
   return `
     ---
     سياق الصفحة/العمل (استخدم هذه المعلومات في ردك):
@@ -54,6 +69,8 @@ const createPageContext = (pageProfile?: PageProfile): string => {
     - معلومات الاتصال: ${pageProfile.contactInfo || 'غير محدد'}
     - الموقع الإلكتروني: ${pageProfile.website || 'غير محدد'}
     - العروض الحالية: ${pageProfile.currentOffers || 'غير محدد'}
+    - لغة الصفحة الأساسية للجمهور: ${pageLangText}
+    ${languageInstruction ? `- ${languageInstruction}` : ''}
     ---
   `;
 };
@@ -114,7 +131,7 @@ export const enhanceProfileFromFacebookData = async (
     
     const enhancedProfile = cleanAndParseJson(text);
     if (enhancedProfile && typeof enhancedProfile.description === 'string') {
-        return enhancedProfile;
+        return enhancedProfile as PageProfile;
     }
     throw new Error("فشل الذكاء الاصطناعي في إنشاء ملف شخصي بالتنسيق المطلوب.");
     
@@ -144,7 +161,6 @@ export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string, pag
     أنت خبير في التسويق عبر وسائل التواصل الاجتماعي.
     مهمتك هي كتابة منشور جذاب لصفحة فيسبوك حول الموضوع التالي: "${topic}".
     يجب أن يكون المنشور:
-    - باللغة العربية.
     - متوافقًا مع سياق الصفحة والعمل الموضح أعلاه.
     - ودود ومحفز للنقاش.
     - يحتوي على سؤال أو دعوة للتفاعل (call to action).
@@ -160,6 +176,56 @@ export const generatePostSuggestion = async (ai: GoogleGenAI, topic: string, pag
     return response.text ?? '';
   } catch (error: any) {
     throw handleGeminiError(error, "إنشاء اقتراح منشور");
+  }
+};
+
+export const generateHashtags = async (ai: GoogleGenAI, postText: string, pageProfile?: PageProfile, imageFile?: File): Promise<string[]> => {
+  try {
+    const pageContext = createPageContext(pageProfile);
+    const contentParts: any[] = [];
+
+    if (imageFile) {
+        const imagePart = await fileToGenerativePart(imageFile);
+        contentParts.push(imagePart);
+    }
+    
+    const textPrompt = `
+      ${pageContext}
+      أنت خبير في التسويق عبر وسائل التواصل الاجتماعي. بناءً على النص والصورة المرفقة (إن وجدت)، قم بإنشاء قائمة من الهاشتاجات الفعالة لمنشور على فيسبوك وانستغرام.
+      
+      النص: "${postText}"
+      
+      المطلوب:
+      - قائمة من 10-15 هاشتاج.
+      - نوّع بين الهاشتاجات العامة، المتخصصة (niche)، والمتعلقة بالعلامة التجارية (استنبطها من سياق الصفحة).
+      - أرجع الرد بتنسيق JSON فقط، على شكل مصفوفة من السلاسل النصية التي تبدأ بعلامة #.
+      - مثال: ["#تسويق_رقمي", "#marketing_tips", "#اسم_العلامة_التجارية"]
+    `;
+    contentParts.push({ text: textPrompt });
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts: contentParts },
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+      },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("لم يتمكن الذكاء الاصطناعي من اقتراح هاشتاجات (استجابة فارغة).");
+    
+    const hashtags = cleanAndParseJson(text);
+    if (Array.isArray(hashtags) && hashtags.length > 0) {
+      return hashtags;
+    }
+    throw new Error("فشل الذكاء الاصطناعي في إنشاء هاشتاجات بالتنسيق المطلوب.");
+
+  } catch (error: any) {
+    throw handleGeminiError(error, "إنشاء هاشتاجات");
   }
 };
 
@@ -245,7 +311,6 @@ export const generateDescriptionForImage = async (ai: GoogleGenAI, imageFile: Fi
       مهمتك هي كتابة وصف جذاب ومقنع كمنشور لفيسبوك بناءً على الصورة المرفقة وسياق الصفحة/العمل المقدم.
       
       يجب أن يكون الوصف:
-      - باللغة العربية الفصيحة والجذابة.
       - متوافقًا تمامًا مع هوية العلامة التجارية الموضحة في سياق الصفحة.
       - محفزًا للتفاعل، ويجب أن ينتهي دائمًا بسؤال أو دعوة واضحة للعمل (Call to Action).
       

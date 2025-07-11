@@ -1,5 +1,3 @@
-
-
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -40,6 +38,26 @@ const App: React.FC = () => {
   const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set());
   const [syncingTargetId, setSyncingTargetId] = useState<string | null>(null);
 
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        return 'dark';
+    }
+    return 'light';
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+    } else {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('theme', 'light');
+    }
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
+  };
 
   useEffect(() => {
     if (apiKey) {
@@ -513,6 +531,8 @@ const App: React.FC = () => {
             fetchWithPagination={fetchWithPagination}
             onSyncHistory={handleFullHistorySync}
             syncingTargetId={syncingTargetId}
+            theme={theme}
+            onToggleTheme={handleToggleTheme}
           />
         );
       }
@@ -528,6 +548,8 @@ const App: React.FC = () => {
           onSelectTarget={handleSelectTarget}
           onLogout={handleLogout}
           onSettingsClick={() => setIsSettingsModalOpen(true)}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
         />
       );
   };

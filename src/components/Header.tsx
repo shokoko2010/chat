@@ -1,7 +1,8 @@
-
 import React from 'react';
 import Button from './ui/Button';
 import SettingsIcon from './icons/SettingsIcon';
+import SunIcon from './icons/SunIcon';
+import MoonIcon from './icons/MoonIcon';
 
 interface HeaderProps {
   onLogout: () => void;
@@ -9,9 +10,11 @@ interface HeaderProps {
   pageName?: string;
   onChangePage?: () => void;
   onSettingsClick?: () => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onLogout, isSimulationMode, pageName, onChangePage, onSettingsClick }) => {
+const Header: React.FC<HeaderProps> = ({ onLogout, isSimulationMode, pageName, onChangePage, onSettingsClick, theme, onToggleTheme }) => {
   return (
     <header className="bg-white dark:bg-gray-800 shadow-md p-4 flex justify-between items-center relative">
       <div className="flex items-center gap-4">
@@ -43,6 +46,9 @@ const Header: React.FC<HeaderProps> = ({ onLogout, isSimulationMode, pageName, o
             <SettingsIcon className="w-5 h-5"/>
           </Button>
         )}
+        <Button onClick={onToggleTheme} variant="secondary" className="!p-2" aria-label="تغيير المظهر">
+            {theme === 'light' ? <MoonIcon className="w-5 h-5" /> : <SunIcon className="w-5 h-5" />}
+        </Button>
         <Button onClick={onLogout} variant="secondary">
           تسجيل الخروج
         </Button>

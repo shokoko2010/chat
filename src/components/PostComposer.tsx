@@ -3,10 +3,11 @@ import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import WandSparklesIcon from './icons/WandSparklesIcon';
-import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime } from '../services/geminiService';
+import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime, generateHashtags } from '../services/geminiService';
 import { GoogleGenAI } from '@google/genai';
 import { Target, PageProfile } from '../types';
 import InstagramIcon from './icons/InstagramIcon';
+import HashtagIcon from './icons/HashtagIcon';
 
 
 interface PostComposerProps {
@@ -19,6 +20,7 @@ interface PostComposerProps {
   onImageGenerated: (file: File) => void;
   onImageRemove: () => void;
   imagePreview: string | null;
+  selectedImage: File | null;
   isScheduled: boolean;
   onIsScheduledChange: (checked: boolean) => void;
   scheduleDate: string;
@@ -64,6 +66,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   onImageGenerated,
   onImageRemove,
   imagePreview,
+  selectedImage,
   isScheduled,
   onIsScheduledChange,
   scheduleDate,
@@ -84,6 +87,8 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const [aiImageError, setAiImageError] = useState('');
   const [isSuggestingTime, setIsSuggestingTime] = useState(false);
   const [aiTimeError, setAiTimeError] = useState('');
+  const [isGeneratingHashtags, setIsGeneratingHashtags] = useState(false);
+  const [aiHashtagError, setAiHashtagError] = useState('');
   
   const handleGenerateTextWithAI = async () => {
       if (!aiClient) return;
@@ -140,6 +145,25 @@ const PostComposer: React.FC<PostComposerProps> = ({
         setIsSuggestingTime(false);
     }
   };
+
+  const handleGenerateHashtags = async () => {
+    if (!aiClient) return;
+    if (!postText.trim() && !selectedImage) {
+        setAiHashtagError('اكتب نصًا أو أضف صورة أولاً لاقتراح هاشتاجات.');
+        return;
+    }
+    setAiHashtagError('');
+    setIsGeneratingHashtags(true);
+    try {
+        const hashtags = await generateHashtags(aiClient, postText, pageProfile, selectedImage ?? undefined);
+        const hashtagString = hashtags.join(' ');
+        onPostTextChange(postText ? `${postText}\n\n${hashtagString}` : hashtagString);
+    } catch (e: any) {
+        setAiHashtagError(e.message || 'حدث خطأ غير متوقع.');
+    } finally {
+        setIsGeneratingHashtags(false);
+    }
+  };
   
   const aiHelperText = !aiClient ? (
     <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">
@@ -172,6 +196,22 @@ const PostComposer: React.FC<PostComposerProps> = ({
       </div>
 
       <textarea value={postText} onChange={(e) => onPostTextChange(e.target.value)} placeholder="بماذا تفكر؟ اكتب منشورك هنا..." className="w-full h-48 p-3 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition" />
+        
+        {/* New Hashtag Generator */}
+        <div className="flex flex-col sm:flex-row gap-2">
+            <Button 
+                onClick={handleGenerateHashtags} 
+                isLoading={isGeneratingHashtags} 
+                disabled={!aiClient || (!postText.trim() && !selectedImage)}
+                variant="secondary"
+                className="w-full sm:w-auto"
+            >
+                <HashtagIcon className="w-5 h-5 ml-2"/>
+                {isGeneratingHashtags ? 'جاري...' : 'اقترح هاشتاجات'}
+            </Button>
+        </div>
+        {aiHashtagError && <p className="text-red-500 text-sm">{aiHashtagError}</p>}
+
 
       {imagePreview && (
         <div className="relative w-40">

@@ -112,6 +112,8 @@ export interface PageProfile {
   currentOffers: string;
   address: string;
   country: string;
+  language: 'ar' | 'en' | 'mixed';
+  contentGenerationLanguages: ('ar' | 'en')[];
 }
 
 //--- Types for AI Content Planner ---

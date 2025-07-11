@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { PageProfile } from '../types';
 import Button from './ui/Button';
@@ -17,6 +16,25 @@ const PageProfilePage: React.FC<PageProfilePageProps> = ({ profile, onProfileCha
       [e.target.name]: e.target.value,
     });
   };
+
+  const handleLanguageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      onProfileChange({ ...profile, language: e.target.value as PageProfile['language'] });
+  };
+  
+  const handleContentLanguageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const { value, checked } = e.target;
+      const lang = value as 'ar' | 'en';
+      let currentLangs = profile.contentGenerationLanguages || [];
+      if (checked) {
+          if (!currentLangs.includes(lang)) {
+              currentLangs.push(lang);
+          }
+      } else {
+          currentLangs = currentLangs.filter(l => l !== lang);
+      }
+      onProfileChange({ ...profile, contentGenerationLanguages: currentLangs });
+  };
+
 
   return (
     <div className="max-w-4xl mx-auto bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg fade-in">
@@ -123,6 +141,31 @@ const PageProfilePage: React.FC<PageProfilePageProps> = ({ profile, onProfileCha
             className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"
             placeholder="مثال: خصم 20%، شحن مجاني، #حملة_الصيف"
           />
+        </div>
+        
+        <div className="border-t dark:border-gray-700 pt-6 mt-6">
+            <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-4">إعدادات اللغة والمحتوى</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        لغة الصفحة الأساسية
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <div className="flex items-center"><input type="radio" id="lang-ar" name="language" value="ar" checked={profile.language === 'ar'} onChange={handleLanguageChange} className="w-4 h-4 text-blue-600" /><label htmlFor="lang-ar" className="mr-2 text-sm">العربية</label></div>
+                        <div className="flex items-center"><input type="radio" id="lang-en" name="language" value="en" checked={profile.language === 'en'} onChange={handleLanguageChange} className="w-4 h-4 text-blue-600" /><label htmlFor="lang-en" className="mr-2 text-sm">الإنجليزية</label></div>
+                        <div className="flex items-center"><input type="radio" id="lang-mixed" name="language" value="mixed" checked={profile.language === 'mixed'} onChange={handleLanguageChange} className="w-4 h-4 text-blue-600" /><label htmlFor="lang-mixed" className="mr-2 text-sm">مختلطة</label></div>
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        لغات توليد المحتوى
+                    </label>
+                    <div className="flex gap-4">
+                        <div className="flex items-center"><input type="checkbox" id="gen-lang-ar" value="ar" checked={(profile.contentGenerationLanguages || []).includes('ar')} onChange={handleContentLanguageChange} className="w-4 h-4 text-blue-600" /><label htmlFor="gen-lang-ar" className="mr-2 text-sm">العربية</label></div>
+                        <div className="flex items-center"><input type="checkbox" id="gen-lang-en" value="en" checked={(profile.contentGenerationLanguages || []).includes('en')} onChange={handleContentLanguageChange} className="w-4 h-4 text-blue-600" /><label htmlFor="gen-lang-en" className="mr-2 text-sm">الإنجليزية</label></div>
+                    </div>
+                </div>
+            </div>
         </div>
       </div>
     </div>

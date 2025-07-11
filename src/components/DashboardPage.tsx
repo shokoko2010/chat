@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule, AutoResponderAction } from '../types';
 import Header from './Header';
@@ -41,6 +39,8 @@ interface DashboardPageProps {
   fetchWithPagination: (path: string, accessToken?: string) => Promise<any[]>;
   onSyncHistory: (target: Target) => Promise<void>;
   syncingTargetId: string | null;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
 }
 
 const NavItem: React.FC<{
@@ -76,8 +76,20 @@ const initialAutoResponderSettings: AutoResponderSettings = {
   },
 };
 
+const initialPageProfile: PageProfile = {
+    description: '',
+    services: '',
+    contactInfo: '',
+    website: '',
+    currentOffers: '',
+    address: '',
+    country: '',
+    language: 'ar',
+    contentGenerationLanguages: ['ar'],
+};
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId }) => {
+
+const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId, theme, onToggleTheme }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'inbox' | 'profile'>('composer');
   
   // Composer state
@@ -98,7 +110,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Data state, managed per target
-  const [pageProfile, setPageProfile] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
+  const [pageProfile, setPageProfile] = useState<PageProfile>(initialPageProfile);
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   
@@ -174,6 +186,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const handleFetchProfile = useCallback(async () => {
     if (isSimulationMode) {
       setPageProfile({
+        ...initialPageProfile,
         description: 'متجر تجريبي يقدم أفضل المنتجات الوهمية.',
         services: 'منتجات, استشارات, تطوير',
         contactInfo: '123-456-7890, sim@example.com',
@@ -209,17 +222,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             if (aiClient) {
                 showNotification('success', 'تم استرداد البيانات من فيسبوك، جاري تحسينها بالذكاء الاصطناعي...');
                 const enhancedProfile = await enhanceProfileFromFacebookData(aiClient, rawProfileData);
-                setPageProfile(prev => ({ ...enhancedProfile, currentOffers: prev.currentOffers })); 
+                setPageProfile(prev => ({ ...prev, ...enhancedProfile, currentOffers: prev.currentOffers })); 
                 showNotification('success', 'تم استرداد وتحسين بيانات الصفحة بنجاح!');
             } else {
                 setPageProfile(prev => ({
+                    ...prev,
                     description: rawProfileData.about,
                     services: rawProfileData.category,
                     contactInfo: rawProfileData.contact,
                     website: rawProfileData.website,
                     address: rawProfileData.address,
                     country: rawProfileData.country,
-                    currentOffers: prev.currentOffers,
                 }));
                 showNotification('success', 'تم استرداد بيانات الصفحة بنجاح من فيسبوك.');
             }
@@ -413,7 +426,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setAutoResponderSettings(finalSettings);
     // --- End of Data Migration ---
 
-    setPageProfile(savedData.pageProfile || { description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
+    const loadedProfile = savedData.pageProfile || {};
+    setPageProfile({ ...initialPageProfile, ...loadedProfile });
+
     setDrafts(savedData.drafts?.map((d: any) => ({...d, imageFile: null})) || []);
     setScheduledPosts(savedData.scheduledPosts?.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt), imageFile: null })) || []);
     setContentPlan(savedData.contentPlan || null);
@@ -1506,6 +1521,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     includeInstagram={includeInstagram}
                     onIncludeInstagramChange={setIncludeInstagram}
                     pageProfile={pageProfile}
+                    selectedImage={selectedImage}
                 />
                 <PostPreview
                   type={includeInstagram ? 'instagram' : 'facebook'}
@@ -1648,6 +1664,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         pageName={managedTarget.name}
         onChangePage={onChangePage}
         onSettingsClick={onSettingsClick}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
       />
       <div className="relative">
          {notification && (

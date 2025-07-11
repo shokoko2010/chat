@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Target, Business } from '../types';
 import Button from './ui/Button';
@@ -7,6 +6,8 @@ import InstagramIcon from './icons/InstagramIcon';
 import SettingsIcon from './icons/SettingsIcon';
 import SearchIcon from './icons/SearchIcon';
 import ChevronDownIcon from './icons/ChevronDownIcon';
+import SunIcon from './icons/SunIcon';
+import MoonIcon from './icons/MoonIcon';
 
 interface PageSelectorPageProps {
   targets: Target[];
@@ -19,6 +20,8 @@ interface PageSelectorPageProps {
   onSelectTarget: (target: Target) => void;
   onLogout: () => void;
   onSettingsClick: () => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
 }
 
 const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onSelect: () => void; }> = ({ target, linkedInstagram, onSelect }) => {
@@ -60,7 +63,9 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
   error,
   onSelectTarget,
   onLogout,
-  onSettingsClick
+  onSettingsClick,
+  theme,
+  onToggleTheme
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isPortfolioDropdownOpen, setIsPortfolioDropdownOpen] = useState(false);
@@ -143,6 +148,9 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
             <div className="flex items-center gap-2">
                 <Button onClick={onSettingsClick} variant="secondary" className="!p-2" aria-label="الإعدادات">
                     <SettingsIcon className="w-5 h-5"/>
+                </Button>
+                 <Button onClick={onToggleTheme} variant="secondary" className="!p-2" aria-label="تغيير المظهر">
+                    {theme === 'light' ? <MoonIcon className="w-5 h-5" /> : <SunIcon className="w-5 h-5" />}
                 </Button>
                 <Button onClick={onLogout} variant="secondary">تسجيل الخروج</Button>
             </div>
