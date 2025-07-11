@@ -1,4 +1,4 @@
-declare module '@canva/button' {
+declare module '@canva/design-button' {
     import React from 'react';
 
     export type CanvaPublishResult =
