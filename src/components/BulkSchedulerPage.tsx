@@ -4,7 +4,7 @@ import Button from './ui/Button';
 import BulkPostItemCard from './BulkPostItemCard';
 import BulkSchedulingOptions from './BulkSchedulingOptions';
 import { GoogleGenAI } from '@google/genai';
-import { CanvaButton } from '@canva/design-button';
+import { CanvaButton } from '@canva/button';
 import CanvaIcon from './icons/CanvaIcon';
 
 interface BulkSchedulerPageProps {
