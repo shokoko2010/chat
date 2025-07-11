@@ -263,7 +263,11 @@ export const translateText = async (ai: GoogleGenAI, text: string, targetLang: s
             model: 'gemini-2.5-flash',
             contents: prompt,
         });
-        return response.text.trim();
+        const translatedText = response.text;
+        if (!translatedText) {
+          throw new Error('فشل الترجمة (استجابة فارغة).');
+        }
+        return translatedText.trim();
     } catch(error) {
         throw handleGeminiError(error, `الترجمة إلى ${targetLang}`);
     }
