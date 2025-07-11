@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback } from 'react';
 import { ContentPlanItem, StrategyRequest, PageProfile, StrategyHistoryItem } from '../types';
 import Button from './ui/Button';
@@ -154,17 +155,17 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
   const handleDownloadExcel = () => {
     if (!plan || plan.length === 0) return;
 
-    const escapeCSV = (field: string) => `"${field.replace(/"/g, '""')}"`;
+    const escapeCSV = (field: string) => `"${(field || '').replace(/"/g, '""')}"`;
 
-    const csvHeaders = ['اليوم', 'الموضوع', 'اقتراح المنشور', 'نوع المحتوى', 'دعوة للعمل'];
+    const csvHeaders = ['اليوم', 'الهوك', 'العنوان', 'النص التسويقي', 'فكرة التصميم'];
     
     const rows = plan.map(item =>
       [
         escapeCSV(item.day),
-        escapeCSV(item.theme),
-        escapeCSV(item.postSuggestion),
-        escapeCSV(item.contentType),
-        escapeCSV(item.cta)
+        escapeCSV(item.hook),
+        escapeCSV(item.headline),
+        escapeCSV(item.body),
+        escapeCSV(item.imageIdea)
       ].join(',')
     );
 

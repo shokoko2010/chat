@@ -71,7 +71,7 @@ const createPageContext = (pageProfile?: PageProfile): string => {
     - المنتجات/الخدمات: ${pageProfile.services || 'غير محدد'}
     - العنوان: ${pageProfile.address || 'غير محدد'}
     - البلد: ${pageProfile.country || 'غير محدد'}
-    - معلومات الاتصال: ${pageProfile.contactInfo || 'غير محدد'}
+    - معلومات الاتصال (الهاتف/واتساب): ${pageProfile.contactInfo || 'غير محدد'}
     - الموقع الإلكتروني: ${pageProfile.website || 'غير محدد'}
     - العروض الحالية: ${pageProfile.currentOffers || 'غير محدد'}
     - لغة الصفحة الأساسية للجمهور: ${pageLangText}
@@ -426,6 +426,7 @@ export const generateDescriptionForImage = async (ai: GoogleGenAI, imageFile: Fi
 export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequest, pageProfile?: PageProfile, images?: File[]): Promise<ContentPlanItem[]> => {
   try {
     const pageContext = createPageContext(pageProfile);
+    const countryContext = pageProfile?.country ? `أنت تكتب لجمهور في ${pageProfile.country}. استخدم اللهجة المحلية المتحضرة وأسلوب التواصل المناسب لهذا البلد.` : '';
     let contentParts: any[] = [];
     
     let durationText: string;
@@ -435,7 +436,7 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
     switch(request.duration) {
       case 'weekly': durationText = 'أسبوع واحد (7 أيام)'; postCountText = '7 أفكار منشورات فريدة'; break;
       case 'monthly': durationText = 'شهر واحد (4 أسابيع)'; postCountText = `${request.postCount || 12} فكرة منشور فريدة`; break;
-      case 'annual': durationText = 'سنة كاملة (12 شهرًا)'; postCountText = '12 موضوعًا شهريًا'; break;
+      case 'annual': durationText = 'سنة كاملة (12 شهرًا)'; postCountText = '12 فكرة منشور فريدة (واحدة لكل شهر)'; break;
     }
 
     switch(request.type) {
@@ -447,10 +448,12 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
         break;
       case 'occasion':
         strategyDetailsPrompt = `- نوع الاستراتيجية: حملة مبنية على مناسبة.\n- المناسبة: "${request.occasion}"\n- المطلوب: قم بإنشاء حملة تسويقية قصيرة ومتكاملة (3-5 أيام) حول هذه المناسبة.`;
+        durationText = `حملة لـ ${request.occasion}`;
         postCountText = '4 أفكار منشورات فريدة';
         break;
       case 'pillar':
         strategyDetailsPrompt = `- نوع الاستراتيجية: المحتوى المحوري (Pillar Content).\n- الموضوع المحوري الرئيسي: "${request.pillarTopic}"\n- المطلوب: قم بإنشاء فكرة منشور محوري واحد (طويل ومفصل)، ثم أنشئ 5-6 أفكار منشورات عنقودية (أصغر ومترابطة) تدعم الموضوع الرئيسي.`;
+        durationText = `محتوى محوري عن ${request.pillarTopic}`;
         postCountText = '7 أفكار منشورات فريدة';
         break;
       case 'images':
@@ -465,28 +468,44 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
         break;
     }
     
-    let mainPrompt: string;
+    const mainPrompt = `${pageContext}\n
+      أنت خبير استراتيجي محترف في إنشاء المحتوى. مهمتك هي إنشاء خطة محتوى إبداعية ومتنوعة بناءً على الطلب التالي.
+      ${countryContext}
+
+      تفاصيل الطلب:
+      ${strategyDetailsPrompt}
+      - مدة الخطة: ${durationText}.
+      - الجمهور المستهدف: ${request.audience}
+      - الأهداف: ${request.goals}
+      - النبرة المطلوبة: ${request.tone}
+
+      المطلوب:
+      أنشئ خطة محتوى تحتوي على ${postCountText}. لكل فكرة منشور، قم بإنشاء كائن JSON بالهيكل التالي:
+      1.  "day": (string) اليوم أو الفترة الزمنية للفكرة (مثال: "الأسبوع 1 - اليوم 1" أو "يناير").
+      2.  "hook": (string) خطاف نصي: جملة واحدة قصيرة ومثيرة للاهتمام لجذب انتباه القارئ في أول ثانية.
+      3.  "headline": (string) عنوان جذاب: عنوان رئيسي واضح وجذاب للمنشور يلخص الفكرة الرئيسية.
+      4.  "body": (string) النص التسويقي: النص الكامل للمنشور. **مهم جداً:** يجب أن يتضمن هذا النص بشكل طبيعي معلومات الاتصال من سياق الصفحة (الهاتف، العنوان، واتساب إن وجد، والموقع الإلكتروني) وأن ينتهي بمجموعة من 3 إلى 5 هاشتاجات مناسبة وفعالة.
+      5.  "imageIdea": (string) فكرة التصميم: وصف مفصل ومبدع لمصمم جرافيك لإنشاء صورة المنشور. يجب أن يصف العناصر المرئية، الألوان، الأجواء العامة، وأي نص مقترح لوضعه على الصورة.
+
+      تأكد من أن الرد هو مصفوفة JSON صالحة تحتوي على الكائنات المطلوبة فقط.
+    `;
+    
+    contentParts.push({ text: mainPrompt });
+
     const responseSchema = {
         type: Type.ARRAY,
         items: {
             type: Type.OBJECT,
             properties: {
-                day: { type: Type.STRING },
-                theme: { type: Type.STRING },
-                postSuggestion: { type: Type.STRING },
-                contentType: { type: Type.STRING },
-                cta: { type: Type.STRING },
-            }
+                day: { type: Type.STRING, description: "اليوم أو الفترة الزمنية للفكرة" },
+                hook: { type: Type.STRING, description: "خطاف نصي: جملة واحدة قصيرة ومثيرة للاهتمام لجذب الانتباه." },
+                headline: { type: Type.STRING, description: "عنوان جذاب: عنوان رئيسي للمنشور." },
+                body: { type: Type.STRING, description: "النص التسويقي: النص الكامل للمنشور. يجب أن يتضمن هذا النص بشكل طبيعي معلومات الاتصال من سياق الصفحة (الهاتف، العنوان، واتساب، الموقع) وينتهي بعدة هاشتاجات مناسبة." },
+                imageIdea: { type: Type.STRING, description: "فكرة التصميم: وصف مفصل لمصمم جرافيك لإنشاء صورة المنشور، بما في ذلك العناصر المرئية والنص المقترح على الصورة." },
+            },
+            required: ['day', 'hook', 'headline', 'body', 'imageIdea']
         }
     };
-
-    if (request.duration === 'annual') {
-       mainPrompt = `${pageContext}\nأنت خبير استراتيجي محترف للمحتوى. مهمتك هي إنشاء خطة محتوى سنوية عالية المستوى.\nتفاصيل الطلب:\n${strategyDetailsPrompt}\n- مدة الخطة: ${durationText}.\n- الجمهور المستهدف: ${request.audience}\n- الأهداف السنوية: ${request.goals}\n- النبرة المطلوبة: ${request.tone}\nالمطلوب:\nاقترح 12 موضوعًا رئيسيًا (Theme)، واحد لكل شهر. لكل موضوع، قدم شرحًا موجزًا.`;
-    } else {
-      mainPrompt = `${pageContext}\nأنت خبير استراتيجي محترف للمحتوى. مهمتك هي إنشاء خطة محتوى إبداعية ومتنوعة.\nتفاصيل الطلب:\n${strategyDetailsPrompt}\n- مدة الخطة: ${durationText}.\n- الجمهور المستهدف: ${request.audience}\n- الأهداف: ${request.goals}\n- النبرة المطلوبة: ${request.tone}\nالمطلوب:\nأنشئ خطة محتوى تحتوي على ${postCountText}.`;
-    }
-    
-    contentParts.push({ text: mainPrompt });
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -501,7 +520,7 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
     if (!text) throw new Error("لم يتمكن الذكاء الاصطناعي من إنشاء خطة (استجابة فارغة).");
 
     const plan = cleanAndParseJson(text);
-    if (Array.isArray(plan) && plan.length > 0 && plan[0].day && plan[0].postSuggestion) {
+    if (Array.isArray(plan) && plan.length > 0 && plan[0].day && plan[0].hook) {
       return plan;
     }
     throw new Error("فشل الذكاء الاصطناعي في إنشاء خطة بالتنسيق المطلوب.");
@@ -513,12 +532,14 @@ export const generateContentPlan = async (ai: GoogleGenAI, request: StrategyRequ
 
 
 export const generateOptimalSchedule = async (ai: GoogleGenAI, plan: ContentPlanItem[]): Promise<{ postSuggestion: string, scheduledAt: string }[]> => {
-  const planText = plan.map((item, i) => `${i + 1}. ${item.postSuggestion}`).join('\n');
+  const planText = plan.map((item, i) => `${i + 1}. ${item.headline}`).join('\n');
   const prompt = `
-    أنت خبير استراتيجي لجدولة المحتوى. مهمتك هي أخذ قائمة من منشورات المحتوى واقتراح أفضل تاريخ ووقت لنشر كل منها خلال الشهر القادم.
+    أنت خبير استراتيجي لجدولة المحتوى. مهمتك هي أخذ قائمة من عناوين منشورات المحتوى واقتراح أفضل تاريخ ووقت لنشر كل منها خلال الشهر القادم.
     تاريخ اليوم هو: ${new Date().toISOString()}. يجب أن تكون جميع الأوقات المقترحة في المستقبل. وزّع المنشورات بذكاء.
-    قائمة المنشورات:
+    قائمة عناوين المنشورات:
     ${planText}
+
+    يجب أن يكون الرد مصفوفة JSON. كل عنصر في المصفوفة يجب أن يكون كائنًا يحتوي على مفتاحين: "postSuggestion" (استخدم عنوان المنشور كما هو من القائمة) و "scheduledAt" (سلسلة نصية للتاريخ بتنسيق ISO 8601).
   `;
     try {
         const response = await ai.models.generateContent({
@@ -543,7 +564,11 @@ export const generateOptimalSchedule = async (ai: GoogleGenAI, plan: ContentPlan
         
         const schedule = cleanAndParseJson(text);
         if (Array.isArray(schedule) && schedule.length > 0 && schedule[0].scheduledAt) {
-          return schedule;
+            // Match the suggestions back to the original full plan items
+            return plan.map((originalItem, index) => ({
+                postSuggestion: originalItem.body, // Use the full body for the new post
+                scheduledAt: schedule[index]?.scheduledAt || new Date(Date.now() + (index + 1) * 24 * 60 * 60 * 1000).toISOString() // Fallback schedule
+            }));
         }
         throw new Error("فشل الذكاء الاصطناعي في إنشاء جدول زمني بالتنسيق المطلوب.");
     } catch (error: any) {

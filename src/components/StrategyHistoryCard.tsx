@@ -23,8 +23,8 @@ const StrategyHistoryCard: React.FC<StrategyHistoryCardProps> = ({ item, onLoad,
         <div className="space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">
           {item.plan.slice(0, 2).map((planItem, index) => (
             <div key={index} className="text-xs p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
-              <p className="font-semibold text-gray-800 dark:text-gray-200 truncate">{planItem.day}</p>
-              <p className="text-gray-600 dark:text-gray-400 truncate">{planItem.postSuggestion}</p>
+              <p className="font-semibold text-gray-800 dark:text-gray-200 truncate" title={planItem.headline}>{planItem.headline}</p>
+              <p className="text-gray-600 dark:text-gray-400 truncate" title={planItem.body}>{planItem.body}</p>
             </div>
           ))}
           {item.plan.length > 2 && <p className="text-xs text-center text-gray-400">...</p>}

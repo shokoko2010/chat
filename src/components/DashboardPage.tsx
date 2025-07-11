@@ -808,7 +808,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   };
 
   const handleStartPostFromPlan = useCallback((item: ContentPlanItem) => {
-    setPostText(item.postSuggestion);
+    const fullText = `${item.hook}\n\n${item.headline}\n\n${item.body}`;
+    setPostText(fullText);
     setView('composer');
     showNotification('success', 'تم نسخ اقتراح المنشور إلى أداة الإنشاء. يمكنك الآن تعديله ونشره.');
   }, [showNotification]);

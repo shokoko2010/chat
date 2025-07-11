@@ -160,11 +160,11 @@ export type StrategyRequest = StandardContentRequest | CampaignRequest | PillarC
 
 
 export interface ContentPlanItem {
-  day: string; // e.g., "الأسبوع 1 - الاثنين" or "يناير"
-  theme: string; // e.g., "موضوع شهر يناير" or "نصيحة الأسبوع"
-  postSuggestion: string; // The full suggested post text or theme description
-  contentType: string; // e.g., "صورة عالية الجودة", "استطلاع رأي"
-  cta: string; // e.g., "ما رأيكم؟ شاركونا في التعليقات!"
+  day: string;
+  hook: string;
+  headline: string;
+  body: string;
+  imageIdea: string;
 }
 
 export interface StrategyHistoryItem {
