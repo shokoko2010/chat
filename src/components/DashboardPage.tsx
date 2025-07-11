@@ -531,6 +531,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }, [summaryData, aiClient, pageProfile, analyticsPeriod]);
   
   const fetchMessageHistory = useCallback(async (conversationId: string) => {
+    if (!conversationId) return;
     const response: any = await new Promise(resolve => window.FB.api(`/${conversationId}/messages`, { fields: 'id,message,from,created_time', access_token: managedTarget.access_token }, (res: any) => resolve(res)));
     if (response && response.data) {
         setInboxItems(prev => prev.map(item => item.conversationId === conversationId ? { ...item, messages: response.data.reverse() } : item));
@@ -540,10 +541,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   }, [managedTarget.access_token, showNotification]);
 
-  const handleSendMessage = useCallback(async (recipientId: string, message: string, conversationId: string): Promise<boolean> => {
+  const handleSendMessage = useCallback(async (recipientId: string, message: string, conversationId?: string): Promise<boolean> => {
     return new Promise(resolve => {
         if(isSimulationMode) { 
-            fetchMessageHistory(conversationId);
+            if (conversationId) fetchMessageHistory(conversationId);
             resolve(true); 
             return; 
         }
@@ -557,11 +558,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
         window.FB.api(`/${managedTarget.id}/messages`, 'POST', requestBody, (response: any) => {
             if(response && !response.error) {
-                fetchMessageHistory(conversationId);
+                if (conversationId) fetchMessageHistory(conversationId);
                 resolve(true);
             } else {
                 const errorMsg = response?.error?.message || 'فشل إرسال الرسالة';
-                console.error(`Failed to send message to recipient ${recipientId} in conversation ${conversationId}:`, response?.error);
+                console.error(`Failed to send message to recipient ${recipientId} in conversation ${conversationId || 'new'}:`, response?.error);
                 showNotification('error', `فشل إرسال الرسالة: ${errorMsg}`);
                 resolve(false); 
             }
@@ -583,45 +584,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             }
         });
     });
-  }, [isSimulationMode, managedTarget.access_token, showNotification]);
-
-  const handlePrivateReplyToComment = useCallback(async (commentId: string, message: string): Promise<boolean> => {
-    if (isSimulationMode) {
-      return true;
-    }
-
-    // --- PRE-FLIGHT CHECK ---
-    try {
-        const checkResponse: any = await new Promise(resolve => {
-            window.FB.api(`/${commentId}?fields=can_reply_privately`, { access_token: managedTarget.access_token }, (res: any) => resolve(res));
-        });
-
-        if (checkResponse.error || !checkResponse.can_reply_privately) {
-            const error = checkResponse.error || { message: "التعليق غير مؤهل للرد الخاص حاليًا (ربما بسبب إعدادات المستخدم أو قيود أخرى)." };
-            console.error(`Pre-flight check failed for private reply to ${commentId}:`, error);
-            showNotification('error', `فشل إرسال الرد الخاص. السبب: ${error.message}`);
-            return false;
-        }
-    } catch (e: any) {
-        console.error(`Pre-flight check threw an exception for ${commentId}:`, e);
-        showNotification('error', `خطأ أثناء التحقق من صلاحية الرد الخاص: ${e.message}`);
-        return false;
-    }
-
-    // --- SEND THE REPLY ---
-    const sendResponse: any = await new Promise(resolve => {
-        window.FB.api(`/${commentId}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (res: any) => resolve(res));
-    });
-
-    if (sendResponse && sendResponse.id && !sendResponse.error) {
-        return true;
-    } else {
-        const error = sendResponse?.error;
-        const errorMsg = error?.message || 'فشل إرسال الرد الخاص بعد اجتياز التحقق.';
-        console.error(`Failed to send private reply to ${commentId}:`, error || sendResponse);
-        showNotification('error', `فشل الرد الخاص: ${errorMsg}`);
-        return false;
-    }
   }, [isSimulationMode, managedTarget.access_token, showNotification]);
 
   const processAutoReplies = useCallback(async () => {
@@ -696,15 +658,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             }
                         }
 
-                        if (privateAction && item.can_reply_privately && !item.parentId && isRecentEnoughForPrivateReply) {
+                        if (privateAction && isRecentEnoughForPrivateReply) {
                             if (publicReplySuccess) {
                                 await new Promise(resolve => setTimeout(resolve, 5000));
                             }
                             const message = privateAction.messageVariations[Math.floor(Math.random() * privateAction.messageVariations.length)];
-                            const success = await handlePrivateReplyToComment(item.id, message.replace('{user_name}', item.authorName));
+                            const success = await handleSendMessage(item.authorId, message.replace('{user_name}', item.authorName));
                             if (success) {
                                 ruleMatchedAndActed = true;
-                                showNotification('success', 'تم إرسال الرد الخاص بنجاح.');
+                                showNotification('success', 'تم إرسال الرسالة الخاصة بنجاح.');
                             }
                         }
                     } else if (item.type === 'message') {
@@ -762,7 +724,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     } finally {
         isProcessingReplies.current = false;
     }
-  }, [inboxItems, autoResponderSettings, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handlePrivateReplyToComment, handleSendMessage, managedTarget.id, linkedInstagramTarget]);
+  }, [inboxItems, autoResponderSettings, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handleSendMessage, managedTarget.id, linkedInstagramTarget]);
 
 
   
