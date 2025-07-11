@@ -4,8 +4,6 @@ import Button from './ui/Button';
 import BulkPostItemCard from './BulkPostItemCard';
 import BulkSchedulingOptions from './BulkSchedulingOptions';
 import { GoogleGenAI } from '@google/genai';
-import { CanvaButton } from '@canva/design-button';
-import CanvaIcon from './icons/CanvaIcon';
 
 interface BulkSchedulerPageProps {
   bulkPosts: BulkPostItem[];
@@ -23,8 +21,6 @@ interface BulkSchedulerPageProps {
   weeklyScheduleSettings: WeeklyScheduleSettings;
   onWeeklyScheduleSettingsChange: (settings: WeeklyScheduleSettings) => void;
   onReschedule: () => void;
-  canvaApiKey: string | null;
-  onAddCanvaDesigns: (files: File[]) => void;
 }
 
 const BulkSchedulerPage: React.FC<BulkSchedulerPageProps> = ({
@@ -43,46 +39,13 @@ const BulkSchedulerPage: React.FC<BulkSchedulerPageProps> = ({
   weeklyScheduleSettings,
   onWeeklyScheduleSettingsChange,
   onReschedule,
-  canvaApiKey,
-  onAddCanvaDesigns,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [isImportingFromCanva, setIsImportingFromCanva] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       onAddPosts(e.target.files);
       e.target.value = ''; // Reset file input
-    }
-  };
-
-  const handleCanvaBulkPublish = async (result: any) => {
-    let designs: { exportUrl: string }[] = [];
-
-    if ('designs' in result && Array.isArray(result.designs)) {
-      designs = result.designs;
-    } else if ('exportUrl' in result && typeof result.exportUrl === 'string') {
-      designs = [{ exportUrl: result.exportUrl }]; // Handle single design case
-    }
-    
-    if (designs.length === 0) return;
-    
-    setIsImportingFromCanva(true);
-    try {
-        const files = await Promise.all(
-            designs.map(async (design, index) => {
-                const response = await fetch(design.exportUrl);
-                if (!response.ok) throw new Error(`فشل جلب التصميم رقم ${index + 1}`);
-                const blob = await response.blob();
-                return new File([blob], `canva-design-${Date.now()}-${index}.jpeg`, { type: 'image/jpeg' });
-            })
-        );
-        onAddCanvaDesigns(files);
-    } catch (error) {
-        console.error("Error importing from Canva:", error);
-        alert(`حدث خطأ أثناء استيراد التصاميم من Canva: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-        setIsImportingFromCanva(false);
     }
   };
 
@@ -120,7 +83,7 @@ const BulkSchedulerPage: React.FC<BulkSchedulerPageProps> = ({
       >
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">الجدولة المجمعة للمنشورات</h2>
         <p className="text-gray-600 dark:text-gray-400 mb-6">
-          اسحب وأفلت صورًا متعددة هنا، أو اخترها يدويًا. يمكنك أيضًا استيراد مجموعة من التصاميم مباشرة من Canva.
+          اسحب وأفلت صورًا متعددة هنا، أو اخترها يدويًا.
         </p>
         <input
           type="file"
@@ -134,35 +97,9 @@ const BulkSchedulerPage: React.FC<BulkSchedulerPageProps> = ({
             <Button
               size="lg"
               onClick={() => document.getElementById('bulkImageUpload')?.click()}
-              disabled={isImportingFromCanva}
             >
               اختر صورًا للجدولة
             </Button>
-            {canvaApiKey ? (
-              <CanvaButton
-                apiKey={canvaApiKey}
-                designType={'SocialMedia'}
-                onPublish={handleCanvaBulkPublish}
-              >
-                {({ launch, isLoading: isCanvaLoading }) => (
-                    <Button
-                        size="lg"
-                        variant="secondary"
-                        onClick={launch}
-                        isLoading={isCanvaLoading || isImportingFromCanva}
-                        className="bg-[#00c4cc] hover:bg-[#00a2aa] text-white"
-                    >
-                        <CanvaIcon className="w-5 h-5 ml-2" />
-                        استيراد مجموعة من Canva
-                    </Button>
-                )}
-              </CanvaButton>
-            ) : (
-                <Button size="lg" variant="secondary" disabled title="أضف مفتاح Canva API في الإعدادات" className="bg-[#00c4cc] hover:bg-[#00a2aa] text-white">
-                    <CanvaIcon className="w-5 h-5 ml-2" />
-                    استيراد مجموعة من Canva
-                </Button>
-            )}
         </div>
       </div>
 

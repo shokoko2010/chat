@@ -36,7 +36,6 @@ interface DashboardPageProps {
   isSimulationMode: boolean;
   aiClient: GoogleGenAI | null;
   stabilityApiKey: string | null;
-  canvaApiKey: string | null;
   onSettingsClick: () => void;
   fetchWithPagination: (path: string, accessToken?: string) => Promise<any[]>;
   onSyncHistory: (target: Target) => Promise<void>;
@@ -91,7 +90,7 @@ const initialPageProfile: PageProfile = {
 };
 
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, stabilityApiKey, canvaApiKey, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId, theme, onToggleTheme }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, stabilityApiKey, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId, theme, onToggleTheme }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'inbox' | 'profile'>('composer');
   
   // Composer state
@@ -1191,22 +1190,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         showNotification('success', `تمت إضافة ${files.length} صورة بنجاح وجدولتها مبدئيًا.`);
     };
 
-    const handleBulkAddFromCanva = (files: File[]) => {
-      const newItems: BulkPostItem[] = files.map((file, index) => ({
-        id: `canva_${Date.now()}_${index}`,
-        imageFile: file,
-        imagePreview: URL.createObjectURL(file),
-        text: '',
-        scheduleDate: '',
-        targetIds: bulkSchedulerTargets.map(t => t.id),
-      }));
-      
-      const combinedPosts = [...bulkPosts, ...newItems];
-      const rescheduled = rescheduleBulkPosts(combinedPosts, schedulingStrategy, weeklyScheduleSettings);
-      setBulkPosts(rescheduled);
-      showNotification('success', `تمت إضافة ${files.length} تصميم من Canva بنجاح وجدولتها مبدئيًا.`);
-    };
-
     const onBulkUpdate = (id: string, updates: Partial<BulkPostItem>) => {
         setBulkPosts(prev => prev.map(p => p.id === id ? { ...p, ...updates, error: undefined } : p));
     };
@@ -1610,7 +1593,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     error={composerError}
                     aiClient={aiClient}
                     stabilityApiKey={stabilityApiKey}
-                    canvaApiKey={canvaApiKey}
                     managedTarget={managedTarget}
                     linkedInstagramTarget={linkedInstagramTarget}
                     includeInstagram={includeInstagram}
@@ -1692,8 +1674,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     weeklyScheduleSettings={weeklyScheduleSettings}
                     onWeeklyScheduleSettingsChange={setWeeklyScheduleSettings}
                     onReschedule={handleReschedule}
-                    canvaApiKey={canvaApiKey}
-                    onAddCanvaDesigns={handleBulkAddFromCanva}
                 />;
       case 'planner':
         return <ContentPlannerPage 
