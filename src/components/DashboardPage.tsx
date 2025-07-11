@@ -11,7 +11,7 @@ import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import InboxPage from './InboxPage';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData, generateSmartReplies, generateAutoReply } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData, generateSmartReplies, generateAutoReply, generatePostSuggestion } from '../services/geminiService';
 import PageProfilePage from './PageProfilePage';
 import Button from './ui/Button';
 
@@ -1212,6 +1212,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         }
     };
     
+    const handleGenerateBulkPostFromText = async (id: string) => {
+        const item = bulkPosts.find(p => p.id === id);
+        if (!item || !item.text.trim() || !aiClient) return;
+        
+        onBulkUpdate(id, { isGeneratingDescription: true });
+        try {
+            const suggestion = await generatePostSuggestion(aiClient, item.text, pageProfile);
+            onBulkUpdate(id, { text: suggestion });
+        } catch(e: any) {
+            showNotification('error', `فشل توليد المنشور: ${e.message}`);
+        } finally {
+            onBulkUpdate(id, { isGeneratingDescription: false });
+        }
+    };
+
     const onBulkScheduleAll = async () => {
         let hasError = false;
         const postsToSchedule: ScheduledPost[] = [];
@@ -1652,6 +1667,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     targets={bulkSchedulerTargets}
                     aiClient={aiClient}
                     onGenerateDescription={handleGenerateBulkDescription}
+                    onGeneratePostFromText={handleGenerateBulkPostFromText}
                     schedulingStrategy={schedulingStrategy}
                     onSchedulingStrategyChange={setSchedulingStrategy}
                     weeklyScheduleSettings={weeklyScheduleSettings}

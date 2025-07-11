@@ -15,6 +15,7 @@ interface BulkPostItemCardProps {
   targets: Target[];
   aiClient: GoogleGenAI | null;
   onGenerateDescription: (id: string) => void;
+  onGeneratePostFromText: (id: string) => void;
 }
 
 const BulkPostItemCard: React.FC<BulkPostItemCardProps> = ({
@@ -23,21 +24,23 @@ const BulkPostItemCard: React.FC<BulkPostItemCardProps> = ({
   onRemove,
   targets,
   aiClient,
-  onGenerateDescription
+  onGenerateDescription,
+  onGeneratePostFromText,
 }) => {
-
   const handleTargetToggle = (toggledId: string) => {
     const newTargetIds = item.targetIds.includes(toggledId)
-      ? item.targetIds.filter(id => id !== toggledId)
+      ? item.targetIds.filter((id) => id !== toggledId)
       : [...item.targetIds, toggledId];
     onUpdate(item.id, { targetIds: newTargetIds });
   };
+
+  const hasImage = !!item.imagePreview;
 
   return (
     <div className={`p-5 bg-white dark:bg-gray-800 rounded-lg shadow-lg border-l-4 ${item.error ? 'border-red-500' : 'border-transparent'}`}>
       <div className="flex flex-col md:flex-row gap-6">
         <div className="md:w-1/4 flex-shrink-0">
-          {item.imagePreview ? (
+          {hasImage ? (
             <img src={item.imagePreview} alt="Post preview" className="rounded-lg w-full h-auto object-cover aspect-square" />
           ) : (
             <div className="aspect-square bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center border border-dashed dark:border-gray-600">
@@ -51,26 +54,30 @@ const BulkPostItemCard: React.FC<BulkPostItemCardProps> = ({
         <div className="flex-grow space-y-4">
           <div>
             <label htmlFor={`text-${item.id}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              وصف المنشور
+              {hasImage ? 'وصف الصورة' : 'محتوى المنشور'}
             </label>
             <textarea
               id={`text-${item.id}`}
               value={item.text}
               onChange={(e) => onUpdate(item.id, { text: e.target.value })}
-              placeholder="اكتب وصفًا للصورة هنا..."
+              placeholder={hasImage ? 'اكتب وصفًا للصورة هنا...' : 'اكتب فكرة أو موضوعًا هنا ليقوم الذكاء الاصطناعي بكتابة المنشور...'}
               className="w-full h-24 p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700"
             />
             <Button
-                variant="secondary"
-                size="sm"
-                className="mt-1"
-                onClick={() => onGenerateDescription(item.id)}
-                isLoading={item.isGeneratingDescription}
-                disabled={!aiClient || item.isGeneratingDescription || !item.imageFile}
-                title={!item.imageFile ? "يجب وجود صورة لتوليد وصف" : ""}
+              variant="secondary"
+              size="sm"
+              className="mt-1"
+              onClick={() => (hasImage ? onGenerateDescription(item.id) : onGeneratePostFromText(item.id))}
+              isLoading={item.isGeneratingDescription}
+              disabled={!aiClient || item.isGeneratingDescription || (hasImage ? !item.imageFile : !item.text.trim())}
+              title={hasImage ? (item.imageFile ? '' : 'يجب وجود صورة لتوليد وصف') : !item.text.trim() ? 'اكتب فكرة أولاً لتوليد منشور' : ''}
             >
-                <SparklesIcon className="w-4 h-4 ml-2" />
-                {item.isGeneratingDescription ? 'جاري التفكير...' : '✨ ولّد وصفاً'}
+              <SparklesIcon className="w-4 h-4 ml-2" />
+              {item.isGeneratingDescription
+                ? 'جاري التفكير...'
+                : hasImage
+                ? '✨ ولّد وصفاً للصورة'
+                : '📝 ولّد منشورًا من النص'}
             </Button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

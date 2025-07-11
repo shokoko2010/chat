@@ -15,6 +15,7 @@ interface BulkSchedulerPageProps {
   targets: Target[];
   aiClient: GoogleGenAI | null;
   onGenerateDescription: (id: string) => void;
+  onGeneratePostFromText: (id: string) => void;
   schedulingStrategy: 'even' | 'weekly';
   onSchedulingStrategyChange: (strategy: 'even' | 'weekly') => void;
   weeklyScheduleSettings: WeeklyScheduleSettings;
@@ -32,6 +33,7 @@ const BulkSchedulerPage: React.FC<BulkSchedulerPageProps> = ({
   targets,
   aiClient,
   onGenerateDescription,
+  onGeneratePostFromText,
   schedulingStrategy,
   onSchedulingStrategyChange,
   weeklyScheduleSettings,
@@ -111,6 +113,7 @@ const BulkSchedulerPage: React.FC<BulkSchedulerPageProps> = ({
                 targets={targets}
                 aiClient={aiClient}
                 onGenerateDescription={onGenerateDescription}
+                onGeneratePostFromText={onGeneratePostFromText}
               />
             ))}
           </div>
