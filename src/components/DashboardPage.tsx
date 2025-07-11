@@ -25,6 +25,7 @@ import BrainCircuitIcon from './icons/BrainCircuitIcon';
 import InboxArrowDownIcon from './icons/InboxArrowDownIcon';
 import UserCircleIcon from './icons/UserCircleIcon';
 import TrashIcon from './icons/TrashIcon';
+import ArrowPathIcon from './icons/ArrowPathIcon';
 
 
 interface DashboardPageProps {
@@ -46,7 +47,8 @@ const NavItem: React.FC<{
     active: boolean;
     onClick: () => void;
     notificationCount?: number;
-}> = ({ icon, label, active, onClick, notificationCount }) => (
+    isPolling?: boolean;
+}> = ({ icon, label, active, onClick, notificationCount, isPolling }) => (
     <button
         onClick={onClick}
         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition-colors text-right ${
@@ -57,6 +59,7 @@ const NavItem: React.FC<{
     >
         {icon}
         <span className="flex-grow">{label}</span>
+        {isPolling && <ArrowPathIcon className="w-4 h-4 text-gray-400 animate-spin mr-1" />}
         {notificationCount && notificationCount > 0 ? (
             <span className="bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full">{notificationCount}</span>
         ) : null}
@@ -132,6 +135,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const lastSyncTimestamp = useRef<number>(Math.floor(Date.now() / 1000));
   const pollingIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isProcessingReplies = useRef(false);
+  const [isPolling, setIsPolling] = useState(false);
 
 
   const linkedInstagramTarget = useMemo(() => {
@@ -558,27 +562,42 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }, [isSimulationMode, managedTarget.access_token, showNotification]);
 
   const handlePrivateReplyToComment = useCallback(async (commentId: string, message: string): Promise<boolean> => {
-    return new Promise(resolve => {
-        if (isSimulationMode) { resolve(true); return; }
-        window.FB.api(`/${commentId}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
-            if (response && response.id && !response.error) {
-                resolve(true);
-            } else {
-                const error = response?.error;
-                let errorMsg = error?.message || 'فشل إرسال الرد الخاص';
-                if (error && error.code === 100) {
-                    errorMsg = `لا يمكن إرسال رد خاص. الأسباب المحتملة: 
-1) مر أكثر من 7 أيام على التعليق.
-2) هذا التعليق هو رد على تعليق آخر.
-3) المستخدم لا يسمح بالرسائل من الصفحة.
-4) قد تكون صلاحيات الصفحة غير كافية (تحقق من صلاحية pages_messaging).`;
-                }
-                console.error(`Failed to send private reply to ${commentId}:`, error || response);
-                showNotification('error', `فشل الرد الخاص: ${errorMsg}`);
-                resolve(false);
-            }
+    if (isSimulationMode) {
+      return true;
+    }
+
+    // --- PRE-FLIGHT CHECK ---
+    try {
+        const checkResponse: any = await new Promise(resolve => {
+            window.FB.api(`/${commentId}?fields=can_reply_privately`, { access_token: managedTarget.access_token }, (res: any) => resolve(res));
         });
+
+        if (checkResponse.error || !checkResponse.can_reply_privately) {
+            const error = checkResponse.error || { message: "التعليق غير مؤهل للرد الخاص حاليًا (ربما بسبب إعدادات المستخدم أو قيود أخرى)." };
+            console.error(`Pre-flight check failed for private reply to ${commentId}:`, error);
+            showNotification('error', `فشل إرسال الرد الخاص. السبب: ${error.message}`);
+            return false;
+        }
+    } catch (e: any) {
+        console.error(`Pre-flight check threw an exception for ${commentId}:`, e);
+        showNotification('error', `خطأ أثناء التحقق من صلاحية الرد الخاص: ${e.message}`);
+        return false;
+    }
+
+    // --- SEND THE REPLY ---
+    const sendResponse: any = await new Promise(resolve => {
+        window.FB.api(`/${commentId}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (res: any) => resolve(res));
     });
+
+    if (sendResponse && sendResponse.id && !sendResponse.error) {
+        return true;
+    } else {
+        const error = sendResponse?.error;
+        const errorMsg = error?.message || 'فشل إرسال الرد الخاص بعد اجتياز التحقق.';
+        console.error(`Failed to send private reply to ${commentId}:`, error || sendResponse);
+        showNotification('error', `فشل الرد الخاص: ${errorMsg}`);
+        return false;
+    }
   }, [isSimulationMode, managedTarget.access_token, showNotification]);
 
   const processAutoReplies = useCallback(async () => {
@@ -1286,124 +1305,129 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     const handleQuickRefresh = useCallback(async () => {
         if (isSimulationMode || !managedTarget.access_token) return;
 
-        const sinceTimestamp = lastSyncTimestamp.current;
-        const pageTarget = managedTarget;
-        const linkedIgTarget = allTargets.find(t => t.type === 'instagram' && t.parentPageId === pageTarget.id);
+        setIsPolling(true);
+        try {
+            const sinceTimestamp = lastSyncTimestamp.current;
+            const pageTarget = managedTarget;
+            const linkedIgTarget = allTargets.find(t => t.type === 'instagram' && t.parentPageId === pageTarget.id);
 
-        let newInboxItems: InboxItem[] = [];
-        const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
-        const pageAccessToken = pageTarget.access_token;
-        
-        // --- 1. Fetch Facebook Messages ---
-        if (pageAccessToken) {
-            try {
-                const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
-                const recentConvosData = await fetchWithPagination(convosPath, pageAccessToken);
-                const recentMessages: InboxItem[] = recentConvosData.map((convo: any) => {
-                    const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
-                    const participantId = participant?.id;
-                    const lastMessage = convo.messages?.data?.[0];
-                    const pageSentLastMessage = lastMessage?.from?.id === pageTarget.id;
-                    return {
-                        id: convo.id, platform: 'facebook', type: 'message', text: convo.snippet,
-                        authorName: participant?.name || 'مستخدم غير معروف',
-                        authorId: participantId || 'Unknown',
-                        authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture,
-                        timestamp: new Date(convo.updated_time).toISOString(),
-                        conversationId: convo.id, isReplied: pageSentLastMessage
-                    };
-                });
-                newInboxItems.push(...recentMessages);
-            } catch (error) {
-                console.warn("Auto-sync failed for Facebook Messages:", error);
+            let newInboxItems: InboxItem[] = [];
+            const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
+            const pageAccessToken = pageTarget.access_token;
+            
+            // --- 1. Fetch Facebook Messages ---
+            if (pageAccessToken) {
+                try {
+                    const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
+                    const recentConvosData = await fetchWithPagination(convosPath, pageAccessToken);
+                    const recentMessages: InboxItem[] = recentConvosData.map((convo: any) => {
+                        const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
+                        const participantId = participant?.id;
+                        const lastMessage = convo.messages?.data?.[0];
+                        const pageSentLastMessage = lastMessage?.from?.id === pageTarget.id;
+                        return {
+                            id: convo.id, platform: 'facebook', type: 'message', text: convo.snippet,
+                            authorName: participant?.name || 'مستخدم غير معروف',
+                            authorId: participantId || 'Unknown',
+                            authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture,
+                            timestamp: new Date(convo.updated_time).toISOString(),
+                            conversationId: convo.id, isReplied: pageSentLastMessage
+                        };
+                    });
+                    newInboxItems.push(...recentMessages);
+                } catch (error) {
+                    console.warn("Auto-sync failed for Facebook Messages:", error);
+                }
             }
-        }
 
-        // --- 2. Fetch Facebook Comments ---
-        if (pageAccessToken) {
-            try {
-                // Fetch comments on the last 5 posts to catch recent activity
-                const feedPath = `/${pageTarget.id}/published_posts?fields=id,message,full_picture,created_time,comments.summary(true)&limit=5`;
-                const recentFeedData = await fetchWithPagination(feedPath, pageAccessToken);
-                const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}},can_reply_privately';
-                const fbCommentPromises = recentFeedData.map(async (post) => {
-                    if (post.comments?.summary?.total_count > 0) {
-                        const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=100&since=${sinceTimestamp}`, pageAccessToken);
-                        return postComments.map((comment: any): InboxItem => {
-                            const authorId = comment.from?.id;
-                            const authorPictureUrl = comment.from?.picture?.data?.url || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
-                            const pageHasReplied = !!comment.comments?.data?.some((c: any) => c.from.id === pageTarget.id);
-                            return {
-                                id: comment.id, platform: 'facebook', type: 'comment', text: comment.message || '',
-                                authorName: comment.from?.name || 'مستخدم فيسبوك',
-                                authorId: authorId || 'Unknown',
-                                authorPictureUrl: authorPictureUrl,
-                                timestamp: new Date(comment.created_time).toISOString(),
-                                post: { id: post.id, message: post.message, picture: post.full_picture },
-                                parentId: comment.parent?.id,
-                                isReplied: pageHasReplied, can_reply_privately: comment.can_reply_privately,
-                            };
-                        });
-                    }
-                    return [];
-                });
-                const fbCommentBatches = await Promise.all(fbCommentPromises);
-                fbCommentBatches.forEach(batch => newInboxItems.push(...batch));
-            } catch (error) {
-                 console.warn("Auto-sync failed for Facebook Comments:", error);
+            // --- 2. Fetch Facebook Comments ---
+            if (pageAccessToken) {
+                try {
+                    // Fetch comments on the last 5 posts to catch recent activity
+                    const feedPath = `/${pageTarget.id}/published_posts?fields=id,message,full_picture,created_time,comments.summary(true)&limit=5`;
+                    const recentFeedData = await fetchWithPagination(feedPath, pageAccessToken);
+                    const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}},can_reply_privately';
+                    const fbCommentPromises = recentFeedData.map(async (post) => {
+                        if (post.comments?.summary?.total_count > 0) {
+                            const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=100&since=${sinceTimestamp}`, pageAccessToken);
+                            return postComments.map((comment: any): InboxItem => {
+                                const authorId = comment.from?.id;
+                                const authorPictureUrl = comment.from?.picture?.data?.url || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
+                                const pageHasReplied = !!comment.comments?.data?.some((c: any) => c.from.id === pageTarget.id);
+                                return {
+                                    id: comment.id, platform: 'facebook', type: 'comment', text: comment.message || '',
+                                    authorName: comment.from?.name || 'مستخدم فيسبوك',
+                                    authorId: authorId || 'Unknown',
+                                    authorPictureUrl: authorPictureUrl,
+                                    timestamp: new Date(comment.created_time).toISOString(),
+                                    post: { id: post.id, message: post.message, picture: post.full_picture },
+                                    parentId: comment.parent?.id,
+                                    isReplied: pageHasReplied, can_reply_privately: comment.can_reply_privately,
+                                };
+                            });
+                        }
+                        return [];
+                    });
+                    const fbCommentBatches = await Promise.all(fbCommentPromises);
+                    fbCommentBatches.forEach(batch => newInboxItems.push(...batch));
+                } catch (error) {
+                     console.warn("Auto-sync failed for Facebook Comments:", error);
+                }
             }
-        }
-        
-        // --- 3. Fetch Instagram Comments ---
-        if (linkedIgTarget) {
-            try {
-                const igAccessToken = linkedIgTarget.access_token;
-                // Fetch comments on last 5 IG media items
-                const igPostFields = 'id,caption,media_url,timestamp,comments_count';
-                const igPostsPath = `/${linkedIgTarget.id}/media?fields=${igPostFields}&limit=5`;
-                const igRecentPostsData = await fetchWithPagination(igPostsPath, igAccessToken);
+            
+            // --- 3. Fetch Instagram Comments ---
+            if (linkedIgTarget) {
+                try {
+                    const igAccessToken = linkedIgTarget.access_token;
+                    // Fetch comments on last 5 IG media items
+                    const igPostFields = 'id,caption,media_url,timestamp,comments_count';
+                    const igPostsPath = `/${linkedIgTarget.id}/media?fields=${igPostFields}&limit=5`;
+                    const igRecentPostsData = await fetchWithPagination(igPostsPath, igAccessToken);
 
-                const igCommentFields = 'id,from{id,username},text,timestamp,replies{from{id}}';
-                const igCommentPromises = igRecentPostsData.map(async (post) => {
-                    if (post.comments_count > 0) {
-                        const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100&since=${sinceTimestamp}`, igAccessToken);
-                        return postComments.map((comment: any): InboxItem => {
-                            const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === linkedIgTarget.id);
-                            return {
-                                id: comment.id, platform: 'instagram', type: 'comment', text: comment.text || '',
-                                authorName: comment.from?.username || 'مستخدم انستجرام',
-                                authorId: comment.from?.id || 'Unknown',
-                                authorPictureUrl: defaultPicture,
-                                timestamp: new Date(comment.timestamp).toISOString(),
-                                post: { id: post.id, message: post.caption, picture: post.media_url },
-                                parentId: comment.parent?.id, isReplied: pageHasReplied
-                            };
-                        });
-                    }
-                    return [];
-                });
-                const igCommentBatches = await Promise.all(igCommentPromises);
-                igCommentBatches.forEach(batch => newInboxItems.push(...batch));
-            } catch (error) {
-                console.warn("Auto-sync failed for Instagram Comments:", error);
+                    const igCommentFields = 'id,from{id,username},text,timestamp,replies{from{id}}';
+                    const igCommentPromises = igRecentPostsData.map(async (post) => {
+                        if (post.comments_count > 0) {
+                            const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100&since=${sinceTimestamp}`, igAccessToken);
+                            return postComments.map((comment: any): InboxItem => {
+                                const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === linkedIgTarget.id);
+                                return {
+                                    id: comment.id, platform: 'instagram', type: 'comment', text: comment.text || '',
+                                    authorName: comment.from?.username || 'مستخدم انستجرام',
+                                    authorId: comment.from?.id || 'Unknown',
+                                    authorPictureUrl: defaultPicture,
+                                    timestamp: new Date(comment.timestamp).toISOString(),
+                                    post: { id: post.id, message: post.caption, picture: post.media_url },
+                                    parentId: comment.parent?.id, isReplied: pageHasReplied
+                                };
+                            });
+                        }
+                        return [];
+                    });
+                    const igCommentBatches = await Promise.all(igCommentPromises);
+                    igCommentBatches.forEach(batch => newInboxItems.push(...batch));
+                } catch (error) {
+                    console.warn("Auto-sync failed for Instagram Comments:", error);
+                }
             }
-        }
 
-        // --- 4. Combine and Update State ---
-        if (newInboxItems.length > 0) {
-            setInboxItems(prevItems => {
-                const existingIds = new Set(prevItems.map(i => i.id));
-                const uniqueNewItems = newInboxItems.filter(i => !existingIds.has(i.id));
-                if (uniqueNewItems.length === 0) return prevItems;
-                
-                const combined = [...uniqueNewItems, ...prevItems];
-                combined.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                showNotification('success', `تم جلب ${uniqueNewItems.length} عنصر جديد.`);
-                return combined;
-            });
+            // --- 4. Combine and Update State ---
+            if (newInboxItems.length > 0) {
+                setInboxItems(prevItems => {
+                    const existingIds = new Set(prevItems.map(i => i.id));
+                    const uniqueNewItems = newInboxItems.filter(i => !existingIds.has(i.id));
+                    if (uniqueNewItems.length === 0) return prevItems;
+                    
+                    const combined = [...uniqueNewItems, ...prevItems];
+                    combined.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                    showNotification('success', `تم جلب ${uniqueNewItems.length} عنصر جديد.`);
+                    return combined;
+                });
+            }
+            
+            lastSyncTimestamp.current = Math.floor(Date.now() / 1000);
+        } finally {
+            setIsPolling(false);
         }
-        
-        lastSyncTimestamp.current = Math.floor(Date.now() / 1000);
     }, [managedTarget, allTargets, isSimulationMode, fetchWithPagination, showNotification]);
 
     useEffect(() => {
@@ -1599,7 +1623,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                   autoResponderSettings={autoResponderSettings}
                   onAutoResponderSettingsChange={setAutoResponderSettings}
                   onSync={handleQuickRefresh}
-                  isSyncing={!!syncingTargetId}
+                  isSyncing={!!syncingTargetId || isPolling}
                   aiClient={aiClient}
                />;
       case 'profile':
@@ -1650,7 +1674,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             <NavItem icon={<ArchiveBoxIcon className="w-5 h-5"/>} label="المسودات" active={view === 'drafts'} onClick={() => setView('drafts')} />
             <NavItem icon={<QueueListIcon className="w-5 h-5"/>} label="الجدولة المجمعة" active={view === 'bulk'} onClick={() => setView('bulk')} />
             <NavItem icon={<ChartBarIcon className="w-5 h-5"/>} label="التحليلات" active={view === 'analytics'} onClick={() => setView('analytics')} />
-            <NavItem icon={<InboxArrowDownIcon className="w-5 h-5"/>} label="البريد الوارد" active={view === 'inbox'} onClick={() => setView('inbox')} notificationCount={unreadCount} />
+            <NavItem icon={<InboxArrowDownIcon className="w-5 h-5"/>} label="البريد الوارد" active={view === 'inbox'} onClick={() => setView('inbox')} notificationCount={unreadCount} isPolling={isPolling}/>
             <div className="pt-2 mt-2 border-t dark:border-gray-700">
                 <h4 className="text-xs font-bold uppercase text-gray-400 mb-2 px-3">ميزات الذكاء الاصطناعي</h4>
                  <NavItem icon={<BrainCircuitIcon className="w-5 h-5"/>} label="مخطط المحتوى" active={view === 'planner'} onClick={() => setView('planner')} />
