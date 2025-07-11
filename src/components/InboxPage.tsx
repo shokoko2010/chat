@@ -161,8 +161,16 @@ const InboxPage: React.FC<InboxPageProps> = ({
                 const Icon = item.type === 'message' ? ChatBubbleLeftEllipsisIcon : ChatBubbleOvalLeftEllipsisIcon;
                 return (
                     <button key={item.id} onClick={() => handleItemSelect(item)} className={`w-full text-right p-3 border-b dark:border-gray-700 flex items-start gap-3 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors ${selectedItem?.id === item.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-white dark:bg-gray-800'}`}>
-                        {!item.isReplied && <span className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" title="غير مقروء"></span>}
-                        <div className={`relative flex-shrink-0 ${item.isReplied ? 'ml-[10px]' : ''}`}>
+                        <div className="flex-shrink-0 w-5 h-10 flex items-center justify-center">
+                            {item.isReplied ? (
+                                <span title="تم الرد">
+                                    <CheckBadgeIcon className="w-5 h-5 text-green-500"/>
+                                </span>
+                            ) : (
+                                <span className="w-2 h-2 bg-blue-500 rounded-full" title="غير مقروء"></span>
+                            )}
+                        </div>
+                        <div className={`relative flex-shrink-0`}>
                             <img src={item.authorPictureUrl} alt={item.authorName} className="w-10 h-10 rounded-full" />
                             <Icon className={`absolute -bottom-1 -right-1 w-5 h-5 bg-white dark:bg-gray-700 rounded-full p-0.5 ${item.type === 'message' ? 'text-blue-500' : 'text-gray-500'}`} />
                         </div>
