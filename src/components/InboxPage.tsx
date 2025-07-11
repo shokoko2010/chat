@@ -66,6 +66,8 @@ const InboxPage: React.FC<InboxPageProps> = ({
   const [viewFilter, setViewFilter] = useState<'all' | 'messages' | 'comments'>('all');
   const [visibleCount, setVisibleCount] = useState(30);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [replyDisabledReason, setReplyDisabledReason] = useState<string | null>(null);
+
 
   const filteredItems = useMemo(() => {
     if (viewFilter === 'all') return items;
@@ -98,20 +100,42 @@ const InboxPage: React.FC<InboxPageProps> = ({
     if (!currentSelectionIsValid) {
       const newSelectedItem = filteredItems.length > 0 ? filteredItems[0] : null;
       setSelectedItem(newSelectedItem);
-      if (newSelectedItem?.type === 'message' && !newSelectedItem.messages && newSelectedItem.conversationId) {
-        onFetchMessageHistory(newSelectedItem.conversationId);
-      }
     }
-  }, [filteredItems, onFetchMessageHistory, selectedItem]);
+  }, [filteredItems, selectedItem]);
+  
+  useEffect(() => {
+    if (selectedItem?.type === 'message' && !selectedItem.messages && selectedItem.conversationId) {
+        onFetchMessageHistory(selectedItem.conversationId);
+    }
+
+    if (!selectedItem) {
+        setReplyDisabledReason(null);
+        return;
+    }
+
+    const now = new Date().getTime();
+    const itemTime = new Date(selectedItem.timestamp).getTime();
+    const ageInHours = (now - itemTime) / (1000 * 60 * 60);
+
+    if (selectedItem.isReplied) {
+        setReplyDisabledReason('لقد تم الرد على هذه المحادثة بالفعل.');
+    } else if (selectedItem.type === 'message' && ageInHours > 24) {
+        setReplyDisabledReason('لا يمكن الرد على الرسائل التي مر عليها أكثر من 24 ساعة.');
+    } else if (selectedItem.type === 'comment' && ageInHours > (7 * 24)) {
+        setReplyDisabledReason('لا يمكن الرد على التعليقات التي مر عليها أكثر من 7 أيام.');
+    } else if (selectedItem.type === 'comment' && selectedItem.can_reply_privately === false) {
+        setReplyDisabledReason('لا يمكن إرسال رد خاص لهذا التعليق بسبب إعدادات الخصوصية للمستخدم.');
+    }
+     else {
+        setReplyDisabledReason(null);
+    }
+  }, [selectedItem, onFetchMessageHistory]);
 
 
   const handleItemSelect = (item: InboxItem) => {
     setSelectedItem(item);
     setReplyText('');
     setSmartReplies([]);
-    if (item.type === 'message' && !item.messages && item.conversationId) {
-      onFetchMessageHistory(item.conversationId);
-    }
   };
 
   const handleReplySubmit = async () => {
@@ -204,7 +228,12 @@ const InboxPage: React.FC<InboxPageProps> = ({
 
     const renderReplyArea = () => (
       <div className="mt-auto pt-4 border-t dark:border-gray-700 space-y-3 bg-white dark:bg-gray-800 p-4">
-          {smartReplies.length > 0 && (
+          {replyDisabledReason && (
+            <div className="text-center text-sm p-2 bg-yellow-100 text-yellow-800 rounded-md dark:bg-yellow-900/50 dark:text-yellow-200">
+                {replyDisabledReason}
+            </div>
+          )}
+          {smartReplies.length > 0 && !replyDisabledReason && (
             <div className="flex flex-wrap gap-2">
                 {smartReplies.map((reply, i) => (
                     <button 
@@ -217,19 +246,19 @@ const InboxPage: React.FC<InboxPageProps> = ({
                 ))}
             </div>
            )}
-          <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="اكتب ردك هنا..." className="w-full h-24 p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-gray-50 dark:bg-gray-700"/>
+          <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="اكتب ردك هنا..." className="w-full h-24 p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-gray-50 dark:bg-gray-700" disabled={!!replyDisabledReason}/>
           <div className="flex justify-between items-center flex-wrap gap-2">
               <div className="flex items-center gap-2">
-                  <Button onClick={handleSmartReplyClick} isLoading={isGeneratingReplies} variant="secondary" disabled={!aiClient || isGeneratingReplies}>
+                  <Button onClick={handleSmartReplyClick} isLoading={isGeneratingReplies} variant="secondary" disabled={!aiClient || isGeneratingReplies || !!replyDisabledReason}>
                       <SparklesIcon className="w-5 h-5 ml-2" /> اقتراح ردود
                   </Button>
                   {!selectedItem.isReplied &&
-                    <Button onClick={handleMarkAsDoneClick} variant="secondary">
+                    <Button onClick={handleMarkAsDoneClick} variant="secondary" disabled={!!replyDisabledReason}>
                         <CheckBadgeIcon className="w-5 h-5 ml-2" /> تمييز كمكتمل
                     </Button>
                   }
               </div>
-              <Button onClick={handleReplySubmit} isLoading={isReplying} disabled={!replyText.trim()}>{isReplying ? 'جاري الإرسال...' : 'إرسال الرد'}</Button>
+              <Button onClick={handleReplySubmit} isLoading={isReplying} disabled={!replyText.trim() || !!replyDisabledReason}>{isReplying ? 'جاري الإرسال...' : 'إرسال الرد'}</Button>
           </div>
       </div>
     );

@@ -175,9 +175,7 @@ const App: React.FC = () => {
                 }
             });
         } else if (igResponses && igResponses.error) {
-            console.error("Error in batch request for IG accounts:", igResponses.error);
-            // Throwing an error here to be caught by the calling function
-            throw new Error(`فشل طلب حزمة حسابات انستجرام: ${igResponses.error.message}`);
+            console.warn(`A batch request for Instagram accounts failed and was skipped. Error:`, igResponses.error);
         }
     });
     return igAccounts;

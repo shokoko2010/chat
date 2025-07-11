@@ -629,7 +629,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         for (const item of itemsToProcess) {
             let itemHandled = false;
             const lowerCaseText = item.text.toLowerCase();
-            const isRecentEnough = new Date(item.timestamp) > sevenDaysAgo;
+            const isRecentEnoughForPrivateReply = new Date(item.timestamp) > sevenDaysAgo;
 
             for (const rule of rules) {
                 if (!rule.enabled || rule.trigger.source !== item.type) continue;
@@ -672,7 +672,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             }
                         }
 
-                        if (privateAction && item.can_reply_privately && !item.parentId && isRecentEnough) {
+                        if (privateAction && item.can_reply_privately && !item.parentId && isRecentEnoughForPrivateReply) {
                             if (publicReplySuccess) {
                                 await new Promise(resolve => setTimeout(resolve, 5000));
                             }
