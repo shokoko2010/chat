@@ -528,22 +528,44 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   }, [summaryData, aiClient, pageProfile, analyticsPeriod]);
   
-  const handleSendMessage = useCallback(async (conversationId: string, message: string): Promise<boolean> => {
+  const fetchMessageHistory = useCallback(async (conversationId: string) => {
+    const response: any = await new Promise(resolve => window.FB.api(`/${conversationId}/messages`, { fields: 'id,message,from,created_time', access_token: managedTarget.access_token }, (res: any) => resolve(res)));
+    if (response && response.data) {
+        setInboxItems(prev => prev.map(item => item.conversationId === conversationId ? { ...item, messages: response.data.reverse() } : item));
+    } else {
+        console.error("Failed to fetch message history:", response?.error);
+        showNotification('error', `فشل تحميل سجل الرسائل: ${response?.error?.message}`);
+    }
+  }, [managedTarget.access_token, showNotification]);
+
+  const handleSendMessage = useCallback(async (recipientId: string, message: string, conversationId: string): Promise<boolean> => {
     return new Promise(resolve => {
-        if(isSimulationMode) { resolve(true); return; }
-        window.FB.api(`/${conversationId}/messages`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
+        if(isSimulationMode) { 
+            fetchMessageHistory(conversationId);
+            resolve(true); 
+            return; 
+        }
+
+        const requestBody = {
+            recipient: { id: recipientId },
+            message: { text: message },
+            messaging_type: 'RESPONSE',
+            access_token: managedTarget.access_token
+        };
+
+        window.FB.api(`/${managedTarget.id}/messages`, 'POST', requestBody, (response: any) => {
             if(response && !response.error) {
                 fetchMessageHistory(conversationId);
                 resolve(true);
             } else {
                 const errorMsg = response?.error?.message || 'فشل إرسال الرسالة';
-                console.error(`Failed to send message to ${conversationId}:`, response?.error);
+                console.error(`Failed to send message to recipient ${recipientId} in conversation ${conversationId}:`, response?.error);
                 showNotification('error', `فشل إرسال الرسالة: ${errorMsg}`);
                 resolve(false); 
             }
         });
     });
-  }, [isSimulationMode, managedTarget.access_token, showNotification]);
+  }, [isSimulationMode, managedTarget.id, managedTarget.access_token, showNotification, fetchMessageHistory]);
 
   const handleReplyToComment = useCallback(async (commentId: string, message: string): Promise<boolean> => {
     return new Promise(resolve => {
@@ -687,7 +709,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         const messageAction = rule.actions.find(a => a.type === 'direct_message' && a.enabled && a.messageVariations?.[0]);
                         if (messageAction) {
                             const message = messageAction.messageVariations[Math.floor(Math.random() * messageAction.messageVariations.length)];
-                            const success = await handleSendMessage(item.conversationId || item.id, message.replace('{user_name}', item.authorName));
+                            const success = await handleSendMessage(item.authorId, message.replace('{user_name}', item.authorName), item.conversationId || item.id);
                             if (success) {
                                 ruleMatchedAndActed = true;
                                 showNotification('success', 'تم إرسال الرسالة الخاصة بنجاح.');
@@ -719,7 +741,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     } catch (e) { console.error("AI fallback failed:", e); }
                 }
                 if (fallbackMessage) {
-                    const success = await handleSendMessage(item.conversationId || item.id, fallbackMessage.replace('{user_name}', item.authorName));
+                    const success = await handleSendMessage(item.authorId, fallbackMessage.replace('{user_name}', item.authorName), item.conversationId || item.id);
                     if (success) {
                        itemHandled = true;
                        newlyRepliedItemIds.add(item.id);
@@ -741,21 +763,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   }, [inboxItems, autoResponderSettings, repliedUsersPerPost, aiClient, pageProfile, showNotification, handleReplyToComment, handlePrivateReplyToComment, handleSendMessage, managedTarget.id, linkedInstagramTarget]);
 
 
-  const fetchMessageHistory = async (conversationId: string) => {
-    const response: any = await new Promise(resolve => window.FB.api(`/${conversationId}/messages`, { fields: 'id,message,from,created_time', access_token: managedTarget.access_token }, (res: any) => resolve(res)));
-    if (response && response.data) {
-        setInboxItems(prev => prev.map(item => item.conversationId === conversationId ? { ...item, messages: response.data.reverse() } : item));
-    } else {
-        console.error("Failed to fetch message history:", response?.error);
-        showNotification('error', `فشل تحميل سجل الرسائل: ${response?.error?.message}`);
-    }
-  };
   
-   const handleSmartReply = async (item: InboxItem, message: string): Promise<boolean> => {
+  const handleSmartReply = async (item: InboxItem, message: string): Promise<boolean> => {
     setIsReplying(true);
     const success = await (item.type === 'comment'
       ? handleReplyToComment(item.id, message)
-      : handleSendMessage(item.conversationId!, message));
+      : handleSendMessage(item.authorId, message, item.conversationId!));
 
     if (success) {
       showNotification('success', 'تم إرسال الرد بنجاح.');
