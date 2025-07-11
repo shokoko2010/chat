@@ -862,7 +862,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
     if (postToDelete.isSynced && postToDelete.postId) {
         try {
-            const response: any = await new Promise(resolve => window.FB.api(`/${postToDelete.postId}`, 'DELETE', { access_token: managedTarget.access_token }, res => resolve(res)));
+            const response: any = await new Promise(resolve => window.FB.api(`/${postToDelete.postId}`, 'DELETE', { access_token: managedTarget.access_token }, (res: any) => resolve(res)));
             if (!response || response.error) {
                 throw new Error(response?.error?.message || 'فشل حذف المنشور من فيسبوك.');
             }
@@ -1756,21 +1756,18 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             <NavItem icon={<ArchiveBoxIcon className="w-5 h-5"/>} label="المسودات" active={view === 'drafts'} onClick={() => setView('drafts')} />
             <NavItem icon={<QueueListIcon className="w-5 h-5"/>} label="الجدولة المجمعة" active={view === 'bulk'} onClick={() => setView('bulk')} />
             <NavItem icon={<ChartBarIcon className="w-5 h-5"/>} label="التحليلات" active={view === 'analytics'} onClick={() => setView('analytics')} />
+            <NavItem icon={<BrainCircuitIcon className="w-5 h-5"/>} label="استراتيجيات المحتوى" active={view === 'planner'} onClick={() => setView('planner')} />
             <NavItem icon={<InboxArrowDownIcon className="w-5 h-5"/>} label="البريد الوارد" active={view === 'inbox'} onClick={() => setView('inbox')} notificationCount={unreadCount} isPolling={isPolling}/>
-            <div className="pt-2 mt-2 border-t dark:border-gray-700">
-                <h4 className="text-xs font-bold uppercase text-gray-400 mb-2 px-3">ميزات الذكاء الاصطناعي</h4>
-                 <NavItem icon={<BrainCircuitIcon className="w-5 h-5"/>} label="مخطط المحتوى" active={view === 'planner'} onClick={() => setView('planner')} />
-                 <NavItem icon={<UserCircleIcon className="w-5 h-5"/>} label="ملف الصفحة" active={view === 'profile'} onClick={() => setView('profile')} />
-            </div>
-             <div className="pt-2 mt-2 border-t dark:border-gray-700">
-                <Button onClick={() => onSyncHistory(managedTarget)} isLoading={!!syncingTargetId} disabled={!!syncingTargetId} className="w-full" variant="secondary">
-                  🔄 {syncingTargetId ? 'جاري المزامنة...' : 'مزامنة السجل الكامل'}
+            <NavItem icon={<UserCircleIcon className="w-5 h-5"/>} label="ملف الصفحة" active={view === 'profile'} onClick={() => setView('profile')} />
+            <div className="pt-4 border-t dark:border-gray-700">
+                <Button variant="secondary" onClick={() => onSyncHistory(managedTarget)} isLoading={!!syncingTargetId} className="w-full">
+                    {syncingTargetId === managedTarget.id ? <TrashIcon className="w-5 h-5 ml-2"/> : <ArrowPathIcon className="w-5 h-5 ml-2"/>}
+                    {syncingTargetId === managedTarget.id ? 'جاري المزامنة...' : 'مزامنة السجل الكامل'}
                 </Button>
             </div>
           </nav>
         </aside>
-
-        <div className="flex-grow p-4 sm:p-6 lg:p-8 bg-gray-50 dark:bg-gray-900">
+        <div className="flex-grow p-4 sm:p-8 bg-gray-50 dark:bg-gray-900 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 64px)' }}>
             {renderView()}
         </div>
       </main>
