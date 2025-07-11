@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback } from 'react';
 import { ContentPlanItem, StrategyRequest, PageProfile, StrategyHistoryItem } from '../types';
 import Button from './ui/Button';
@@ -12,6 +11,7 @@ import CalendarPlusIcon from './icons/CalendarPlusIcon';
 import StrategyHistoryModal from './StrategyHistoryModal';
 import ClockHistoryIcon from './icons/ClockHistoryIcon';
 import InformationCircleIcon from './icons/InformationCircleIcon';
+import ArrowDownTrayIcon from './icons/ArrowDownTrayIcon';
 
 interface ContentPlannerPageProps {
   aiClient: GoogleGenAI | null;
@@ -150,6 +150,37 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
       onLoadFromHistory(plan);
       setIsHistoryModalOpen(false);
   };
+
+  const handleDownloadExcel = () => {
+    if (!plan || plan.length === 0) return;
+
+    const escapeCSV = (field: string) => `"${field.replace(/"/g, '""')}"`;
+
+    const csvHeaders = ['اليوم', 'الموضوع', 'اقتراح المنشور', 'نوع المحتوى', 'دعوة للعمل'];
+    
+    const rows = plan.map(item =>
+      [
+        escapeCSV(item.day),
+        escapeCSV(item.theme),
+        escapeCSV(item.postSuggestion),
+        escapeCSV(item.contentType),
+        escapeCSV(item.cta)
+      ].join(',')
+    );
+
+    const csvContent = [csvHeaders.join(','), ...rows].join('\n');
+    
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'content-strategy.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   
   return (
     <>
@@ -239,7 +270,7 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
             <h3 className="text-2xl font-bold text-gray-800 dark:text-white">خطتك جاهزة!</h3>
             <p className="text-gray-600 dark:text-gray-400">يمكنك البدء بإنشاء المنشورات، أو تحويل الاستراتيجية الكاملة إلى جدول مجمع للمراجعة النهائية.</p>
           </div>
-           <div className="text-center">
+           <div className="flex justify-center flex-wrap gap-4">
                 <Button
                     size="lg"
                     onClick={onScheduleStrategy}
@@ -249,6 +280,15 @@ const ContentPlannerPage: React.FC<ContentPlannerPageProps> = ({
                 >
                     <CalendarPlusIcon className="w-6 h-6 ml-2" />
                     {isSchedulingStrategy ? 'جاري العمل...' : 'تحويل الخطة إلى جدول مجمع'}
+                </Button>
+                <Button
+                  size="lg"
+                  onClick={handleDownloadExcel}
+                  variant="secondary"
+                  disabled={!plan || plan.length === 0}
+                >
+                  <ArrowDownTrayIcon className="w-6 h-6 ml-2" />
+                  تحميل كملف Excel
                 </Button>
            </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

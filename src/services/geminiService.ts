@@ -308,32 +308,34 @@ export const generateImageWithStabilityAI = async (apiKey: string, prompt: strin
     );
 
     if (!response.ok) {
-        // Try to parse error response as JSON
+        const errorText = await response.text();
+        console.error("Stability AI Error Response Text:", errorText);
         try {
-            const errorBody = await response.json();
-            const errorMessage = errorBody.errors ? errorBody.errors.join(', ') : `خطأ HTTP: ${response.status} - ${response.statusText}`;
+            const errorBody = JSON.parse(errorText);
+            const errorMessage = errorBody.errors ? errorBody.errors.join(', ') : `خطأ HTTP: ${response.status}`;
             throw new Error(`خطأ Stability AI: ${errorMessage}`);
         } catch (e) {
-             throw new Error(`خطأ Stability AI: خطأ HTTP ${response.status} - ${response.statusText}`);
+             throw new Error(`خطأ Stability AI: ${response.statusText} (${response.status})`);
         }
     }
 
     const responseJSON = await response.json();
 
-    if (!responseJSON.artifacts || responseJSON.artifacts.length === 0) {
-        throw new Error("فشل إنشاء الصورة. لم يتم العثور على بيانات الصورة في الاستجابة من Stability AI.");
+    if (responseJSON.artifacts && responseJSON.artifacts.length > 0) {
+        const artifact = responseJSON.artifacts[0];
+        if (artifact.finishReason === 'SUCCESS' && artifact.base64) {
+            return artifact.base64;
+        }
+        if (artifact.finishReason === 'CONTENT_FILTERED') {
+            throw new Error("خطأ Stability AI: تم حظر الموجه لأسباب تتعلق بالسلامة. حاول تغيير وصف الصورة.");
+        }
+        // Handle other finishReasons like ERROR, etc.
+        throw new Error(`فشل إنشاء الصورة. السبب من Stability AI: ${artifact.finishReason}`);
     }
 
-    const artifact = responseJSON.artifacts[0];
-    if (artifact.finishReason === 'CONTENT_FILTERED') {
-        throw new Error("خطأ Stability AI: تم حظر الموجه لأسباب تتعلق بالسلامة. حاول تغيير وصف الصورة.");
-    }
-
-    if (artifact.base64) {
-        return artifact.base64;
-    }
-
-    throw new Error("فشل إنشاء الصورة. استجابة غير متوقعة من Stability AI.");
+    // If we get here, something is wrong with the successful response
+    console.error("Unexpected successful response from Stability AI:", responseJSON);
+    throw new Error("فشل إنشاء الصورة. لم يتم العثور على بيانات الصورة في الاستجابة من Stability AI.");
 }
 
 
