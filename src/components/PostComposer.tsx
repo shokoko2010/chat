@@ -8,6 +8,8 @@ import { GoogleGenAI } from '@google/genai';
 import { Target, PageProfile } from '../types';
 import InstagramIcon from './icons/InstagramIcon';
 import HashtagIcon from './icons/HashtagIcon';
+import { CanvaButton } from '@canva/button';
+import CanvaIcon from './icons/CanvaIcon';
 
 
 interface PostComposerProps {
@@ -28,6 +30,7 @@ interface PostComposerProps {
   error: string;
   aiClient: GoogleGenAI | null;
   stabilityApiKey: string | null;
+  canvaApiKey: string | null;
   managedTarget: Target;
   linkedInstagramTarget: Target | null;
   includeInstagram: boolean;
@@ -75,6 +78,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   error,
   aiClient,
   stabilityApiKey,
+  canvaApiKey,
   managedTarget,
   linkedInstagramTarget,
   includeInstagram,
@@ -177,6 +181,24 @@ const PostComposer: React.FC<PostComposerProps> = ({
     }
   };
   
+  const handleCanvaPublish = async (result: { exportUrl: string }) => {
+    setIsGeneratingImage(true); // Reuse loading state for user feedback
+    setAiImageError('');
+    try {
+        const response = await fetch(result.exportUrl);
+        if (!response.ok) {
+            throw new Error(`فشل جلب الصورة من Canva. الحالة: ${response.status}`);
+        }
+        const blob = await response.blob();
+        const file = new File([blob], "canva-design.jpeg", { type: "image/jpeg" });
+        onImageGenerated(file);
+    } catch (e: any) {
+        setAiImageError(`خطأ في معالجة تصميم Canva: ${e.message}`);
+    } finally {
+        setIsGeneratingImage(false);
+    }
+  };
+
   const aiHelperText = !aiClient ? (
     <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">
       ميزات الذكاء الاصطناعي معطلة. يرجى إدخال مفتاح Gemini API في الإعدادات لتفعيلها.
@@ -293,9 +315,34 @@ const PostComposer: React.FC<PostComposerProps> = ({
       </div>
 
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 flex-wrap">
             <input type="file" id="imageUpload" className="hidden" accept="image/*" onChange={onImageChange}/>
-            <Button variant="secondary" onClick={() => document.getElementById('imageUpload')?.click()}><PhotoIcon className="w-5 h-5 ml-2" />أضف صورة يدوياً</Button>
+            <Button variant="secondary" onClick={() => document.getElementById('imageUpload')?.click()}><PhotoIcon className="w-5 h-5 ml-2" />أضف صورة</Button>
+            
+            {canvaApiKey ? (
+                <CanvaButton
+                    apiKey={canvaApiKey}
+                    designType={'SocialMedia'}
+                    onPublish={handleCanvaPublish}
+                >
+                    {({ launch, isLoading: isCanvaLoading }) => (
+                        <Button
+                            variant="secondary"
+                            onClick={launch}
+                            isLoading={isCanvaLoading || isGeneratingImage}
+                            className="bg-[#00c4cc] hover:bg-[#00a2aa] text-white"
+                        >
+                            <CanvaIcon className="w-5 h-5 ml-2" />
+                            صمم بـ Canva
+                        </Button>
+                    )}
+                </CanvaButton>
+            ) : (
+                <Button variant="secondary" disabled title="أضف مفتاح Canva API في الإعدادات" className="bg-[#00c4cc] hover:bg-[#00a2aa] text-white">
+                    <CanvaIcon className="w-5 h-5 ml-2" />
+                    صمم بـ Canva
+                </Button>
+            )}
         </div>
         <div className="flex items-center gap-2">
              <Button variant="secondary" onClick={onSaveDraft} disabled={isPublishing || (!postText.trim() && !imagePreview)}>حفظ كمسودة</Button>

@@ -4,28 +4,31 @@ import Button from './ui/Button';
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (keys: { gemini: string; stability: string }) => void;
+  onSave: (keys: { gemini: string; stability: string; canva: string }) => void;
   currentApiKey: string | null;
   currentStabilityApiKey: string | null;
+  currentCanvaApiKey: string | null;
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, currentApiKey, currentStabilityApiKey }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, currentApiKey, currentStabilityApiKey, currentCanvaApiKey }) => {
   const [geminiKey, setGeminiKey] = useState('');
   const [stabilityKey, setStabilityKey] = useState('');
+  const [canvaKey, setCanvaKey] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       setGeminiKey(currentApiKey || '');
       setStabilityKey(currentStabilityApiKey || '');
+      setCanvaKey(currentCanvaApiKey || '');
     }
-  }, [currentApiKey, currentStabilityApiKey, isOpen]);
+  }, [currentApiKey, currentStabilityApiKey, currentCanvaApiKey, isOpen]);
 
   if (!isOpen) {
     return null;
   }
 
   const handleSave = () => {
-    onSave({ gemini: geminiKey, stability: stabilityKey });
+    onSave({ gemini: geminiKey, stability: stabilityKey, canva: canvaKey });
     onClose();
   };
 
@@ -68,6 +71,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
               onChange={(e) => setStabilityKey(e.target.value)}
               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"
               placeholder="أدخل مفتاح Stability AI API هنا"
+            />
+          </div>
+           <div>
+            <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">Canva API</h3>
+            <p className="mb-2 text-sm text-gray-600 dark:text-gray-300">
+              لتفعيل خيار التصميم باستخدام Canva.
+            </p>
+            <label htmlFor="canva-api-key" className="sr-only">مفتاح Canva API</label>
+            <input
+              id="canva-api-key"
+              type="password"
+              value={canvaKey}
+              onChange={(e) => setCanvaKey(e.target.value)}
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="أدخل مفتاح Canva API هنا"
             />
           </div>
         </div>
