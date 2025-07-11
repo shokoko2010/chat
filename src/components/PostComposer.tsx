@@ -181,11 +181,24 @@ const PostComposer: React.FC<PostComposerProps> = ({
     }
   };
   
-  const handleCanvaPublish = async (result: { exportUrl: string }) => {
+  const handleCanvaPublish = async (result: any) => {
+    let exportUrl: string | null = null;
+
+    if ('exportUrl' in result && typeof result.exportUrl === 'string') {
+        exportUrl = result.exportUrl;
+    } else if ('designs' in result && Array.isArray(result.designs) && result.designs.length > 0) {
+        exportUrl = result.designs[0].exportUrl; // Take the first one for single composer
+    }
+
+    if (!exportUrl) {
+        setAiImageError(`خطأ في معالجة تصميم Canva: لم يتم العثور على رابط للتصميم.`);
+        return;
+    }
+
     setIsGeneratingImage(true); // Reuse loading state for user feedback
     setAiImageError('');
     try {
-        const response = await fetch(result.exportUrl);
+        const response = await fetch(exportUrl);
         if (!response.ok) {
             throw new Error(`فشل جلب الصورة من Canva. الحالة: ${response.status}`);
         }

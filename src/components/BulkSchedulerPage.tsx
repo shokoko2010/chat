@@ -56,12 +56,21 @@ const BulkSchedulerPage: React.FC<BulkSchedulerPageProps> = ({
     }
   };
 
-  const handleCanvaBulkPublish = async (result: { designs: { exportUrl: string }[] }) => {
-    if (!result.designs || result.designs.length === 0) return;
+  const handleCanvaBulkPublish = async (result: any) => {
+    let designs: { exportUrl: string }[] = [];
+
+    if ('designs' in result && Array.isArray(result.designs)) {
+      designs = result.designs;
+    } else if ('exportUrl' in result && typeof result.exportUrl === 'string') {
+      designs = [{ exportUrl: result.exportUrl }]; // Handle single design case
+    }
+    
+    if (designs.length === 0) return;
+    
     setIsImportingFromCanva(true);
     try {
         const files = await Promise.all(
-            result.designs.map(async (design, index) => {
+            designs.map(async (design, index) => {
                 const response = await fetch(design.exportUrl);
                 if (!response.ok) throw new Error(`فشل جلب التصميم رقم ${index + 1}`);
                 const blob = await response.blob();
