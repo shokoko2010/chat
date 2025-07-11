@@ -8,7 +8,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Target, PageProfile } from '../types';
 import InstagramIcon from './icons/InstagramIcon';
 import HashtagIcon from './icons/HashtagIcon';
-import { CanvaButton } from '@canva/button';
+import { CanvaButton } from '@canva/design-button';
 import CanvaIcon from './icons/CanvaIcon';
 
 
