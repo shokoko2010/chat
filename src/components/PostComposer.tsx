@@ -125,7 +125,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
       let base64Bytes: string;
       if (imageService === 'stability') {
         if (!stabilityApiKey) throw new Error("مفتاح Stability AI API غير مكوّن. يرجى إضافته في الإعدادات.");
-        base64Bytes = await generateImageWithStabilityAI(stabilityApiKey, aiImagePrompt);
+        base64Bytes = await generateImageWithStabilityAI(stabilityApiKey, aiImagePrompt, aiClient);
       } else { // 'gemini'
         if (!aiClient) throw new Error("مفتاح Gemini API غير مكوّن. يرجى إضافته في الإعدادات.");
         base64Bytes = await generateImageFromPrompt(aiClient, aiImagePrompt);
@@ -250,10 +250,20 @@ const PostComposer: React.FC<PostComposerProps> = ({
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <input id="ai-image-prompt" type="text" value={aiImagePrompt} onChange={(e) => setAiImagePrompt(e.target.value)} placeholder="وصف الصورة، مثلاً: رائد فضاء يقرأ على المريخ" className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-purple-500 focus:border-purple-500" disabled={isGeneratingImage || (!aiClient && !stabilityApiKey)}/>
-            <Button onClick={handleGenerateImageWithAI} isLoading={isGeneratingImage} className="bg-purple-600 hover:bg-purple-700 focus:ring-purple-500" disabled={isGeneratingImage || (imageService === 'gemini' && !aiClient) || (imageService === 'stability' && !stabilityApiKey)}><PhotoIcon className="w-5 h-5 ml-2"/>{isGeneratingImage ? 'جاري الإنشاء...' : 'إنشاء صورة'}</Button>
+            <Button
+              onClick={handleGenerateImageWithAI}
+              isLoading={isGeneratingImage}
+              className="bg-purple-600 hover:bg-purple-700 focus:ring-purple-500"
+              disabled={isGeneratingImage || (imageService === 'gemini' && !aiClient) || (imageService === 'stability' && (!stabilityApiKey || !aiClient))}
+              title={imageService === 'stability' && !aiClient ? "يتطلب مفتاح Stability AI ومفتاح Gemini للترجمة" : ""}
+            >
+                <PhotoIcon className="w-5 h-5 ml-2"/>{isGeneratingImage ? 'جاري الإنشاء...' : 'إنشاء صورة'}
+            </Button>
           </div>
           {aiImageError && <p className="text-red-500 text-sm mt-2">{aiImageError}</p>}
-          {!aiClient && !stabilityApiKey && <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">يرجى إضافة مفتاح Gemini أو Stability AI في الإعدادات.</p>}
+          {(imageService === 'gemini' && !aiClient) && <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">يرجى إضافة مفتاح Gemini API في الإعدادات.</p>}
+          {(imageService === 'stability' && !stabilityApiKey) && <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">يرجى إضافة مفتاح Stability AI API في الإعدادات.</p>}
+          {(imageService === 'stability' && stabilityApiKey && !aiClient) && <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">تتطلب الترجمة التلقائية للغة العربية مفتاح Gemini API.</p>}
       </div>
       
       {error && <p className="text-red-500 text-sm mt-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-md">{error}</p>}

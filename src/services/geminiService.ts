@@ -30,8 +30,13 @@ const cleanAndParseJson = (rawText: string) => {
 
 const handleGeminiError = (error: any, context: string): Error => {
     console.error(`Error in ${context}:`, error);
-    if (error?.constructor?.name === 'ApiError' && (error?.status === 429 || error?.message?.includes('RESOURCE_EXHAUSTED'))) {
-        return new Error("لقد تجاوزت حصتك اليومية المجانية من استخدام واجهة Gemini API. يرجى المحاولة مرة أخرى غدًا أو الترقية.");
+    if (error?.constructor?.name === 'ApiError') {
+        if (error?.status === 429 || error?.message?.includes('RESOURCE_EXHAUSTED')) {
+            return new Error("لقد تجاوزت حصتك اليومية المجانية من استخدام واجهة Gemini API. يرجى المحاولة مرة أخرى غدًا أو الترقية.");
+        }
+        if (error?.message?.includes('Imagen API is only accessible to billed users')) {
+            return new Error('واجهة برمجة تطبيقات Imagen متاحة فقط للمستخدمين الذين لديهم فواتير نشطة. يرجى التحقق من إعدادات الفوترة في حساب Google Cloud الخاص بك.');
+        }
     }
     if (error instanceof Error) {
         return new Error(`حدث خطأ أثناء ${context}: ${error.message}`);
@@ -251,12 +256,39 @@ export const generateImageFromPrompt = async (ai: GoogleGenAI, prompt: string): 
   }
 };
 
-export const generateImageWithStabilityAI = async (apiKey: string, prompt: string): Promise<string> => {
+export const translateText = async (ai: GoogleGenAI, text: string, targetLang: string = 'en'): Promise<string> => {
+    const prompt = `Translate the following text to ${targetLang}:\n\n"${text}"\n\nReturn only the translated text, with no extra formatting or explanations.`;
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+        return response.text.trim();
+    } catch(error) {
+        throw handleGeminiError(error, `الترجمة إلى ${targetLang}`);
+    }
+}
+
+export const generateImageWithStabilityAI = async (apiKey: string, prompt: string, aiClient?: GoogleGenAI | null): Promise<string> => {
     if (!apiKey.trim()) {
         throw new Error("مفتاح Stability AI API غير متوفر. يرجى إضافته في الإعدادات.");
     }
+
+    let finalPrompt = prompt;
+    // Check if the prompt contains Arabic characters
+    if (/[\u0600-\u06FF]/.test(prompt)) {
+        if (!aiClient) {
+            throw new Error("الترجمة التلقائية تتطلب مفتاح Gemini API. يرجى إضافته في الإعدادات للمتابعة.");
+        }
+        try {
+            finalPrompt = await translateText(aiClient, prompt, 'en');
+        } catch(e) {
+            throw new Error(`فشل الترجمة قبل الإرسال إلى Stability AI: ${(e as Error).message}`);
+        }
+    }
+
     const formData = new FormData();
-    formData.append('prompt', `صورة فوتوغرافية سينمائية عالية الجودة لـ: ${prompt}`);
+    formData.append('prompt', `cinematic photo, high quality photography of: ${finalPrompt}`);
     formData.append('output_format', 'jpeg');
     
     const response = await fetch(
@@ -265,16 +297,21 @@ export const generateImageWithStabilityAI = async (apiKey: string, prompt: strin
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${apiKey}`,
-                Accept: 'application/json', // We want a JSON response for better error handling
+                Accept: 'application/json',
             },
             body: formData,
         }
     );
 
     if (!response.ok) {
-        const errorBody = await response.json();
-        const errorMessage = errorBody.errors ? errorBody.errors.join(', ') : `خطأ HTTP: ${response.status}`;
-        throw new Error(`خطأ Stability AI: ${errorMessage}`);
+        // Try to parse error response as JSON
+        try {
+            const errorBody = await response.json();
+            const errorMessage = errorBody.errors ? errorBody.errors.join(', ') : `خطأ HTTP: ${response.status} - ${response.statusText}`;
+            throw new Error(`خطأ Stability AI: ${errorMessage}`);
+        } catch (e) {
+             throw new Error(`خطأ Stability AI: خطأ HTTP ${response.status} - ${response.statusText}`);
+        }
     }
 
     const responseJSON = await response.json();
@@ -285,7 +322,7 @@ export const generateImageWithStabilityAI = async (apiKey: string, prompt: strin
 
     const artifact = responseJSON.artifacts[0];
     if (artifact.finishReason === 'CONTENT_FILTERED') {
-        throw new Error("خطأ Stability AI: تم حظر الموجه لأسباب تتعلق بالسلامة.");
+        throw new Error("خطأ Stability AI: تم حظر الموجه لأسباب تتعلق بالسلامة. حاول تغيير وصف الصورة.");
     }
 
     if (artifact.base64) {
