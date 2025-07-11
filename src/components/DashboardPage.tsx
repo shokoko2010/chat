@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule, AutoResponderAction } from '../types';
 import Header from './Header';
@@ -1332,7 +1333,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             // --- 1. Fetch Facebook Messages ---
             if (pageAccessToken) {
                 try {
-                    const convosPath = `/${pageTarget.id}/conversations?platform=messenger&fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
+                    const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
                     const recentConvosData = await fetchWithPagination(convosPath, pageAccessToken);
                     const recentMessages: InboxItem[] = recentConvosData.map((convo: any) => {
                         const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);

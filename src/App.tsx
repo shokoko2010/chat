@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
@@ -328,7 +329,7 @@ const App: React.FC = () => {
         const fbCommentBatches = await Promise.all(fbCommentPromises);
         fbCommentBatches.forEach(batch => combinedInboxItems.push(...batch));
 
-        const convosPath = `/${pageTarget.id}/conversations?platform=messenger&fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=100`;
+        const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=100`;
         const allConvosData = await fetchWithPagination(convosPath, pageAccessToken);
         const allMessages: InboxItem[] = allConvosData.map((convo: any) => {
             const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
