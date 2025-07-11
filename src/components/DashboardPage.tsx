@@ -560,7 +560,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     return new Promise(resolve => {
         if (isSimulationMode) { resolve(true); return; }
         window.FB.api(`/${commentId}/private_replies`, 'POST', { message, access_token: managedTarget.access_token }, (response: any) => {
-            if (response && response.success) {
+            if (response && response.id && !response.error) {
                 resolve(true);
             } else {
                 const error = response?.error;
