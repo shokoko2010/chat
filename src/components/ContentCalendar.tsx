@@ -2,8 +2,9 @@
 import React, { useState } from 'react';
 import { ScheduledPost } from '../types';
 import PhotoIcon from './icons/PhotoIcon';
-import BellIcon from './icons/BellIcon'; // Import the new icon
+import BellIcon from './icons/BellIcon';
 import TrashIcon from './icons/TrashIcon';
+import CheckCircleIcon from './icons/CheckCircleIcon';
 
 interface ContentCalendarProps {
     posts: ScheduledPost[];
@@ -41,11 +42,87 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts, onDelete }) =>
     };
 
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize today's date for accurate comparison
+
     const isToday = (day: number) => {
-        return currentDate.getFullYear() === today.getFullYear() &&
-               currentDate.getMonth() === today.getMonth() &&
-               day === today.getDate();
+        const checkDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+        checkDate.setHours(0,0,0,0);
+        return checkDate.getTime() === today.getTime();
     };
+
+    const renderCalendarGrid = () => (
+        <div className="grid grid-cols-7 gap-2">
+            {Array.from({ length: startDay }).map((_, i) => (
+                <div key={`empty-${i}`} className="border rounded-lg border-gray-200 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-800/20"></div>
+            ))}
+            {Array.from({ length: daysInMonth }).map((_, day) => {
+                const currentDay = day + 1;
+                const postsForDay = getPostsForDay(currentDay);
+                const dateForThisDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDay);
+                dateForThisDay.setHours(23, 59, 59, 999); // Set to end of day for past check
+                const isPastDay = dateForThisDay < new Date() && !isToday(currentDay);
+
+                return (
+                    <div
+                        key={currentDay}
+                        className={`p-2 border rounded-lg min-h-[120px] transition-colors duration-200 ${
+                            isToday(currentDay) ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' : 
+                            isPastDay ? 'bg-gray-100 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700/50' :
+                            'border-gray-200 dark:border-gray-700/50'
+                        } ${postsForDay.length > 0 && !isPastDay ? 'bg-gray-50 dark:bg-gray-900/20' : ''}`}
+                    >
+                        <div className={`font-bold ${
+                            isToday(currentDay) ? 'text-blue-600 dark:text-blue-400' : 
+                            isPastDay ? 'text-gray-400 dark:text-gray-500' :
+                            'text-gray-700 dark:text-gray-300'
+                        }`}>
+                            {currentDay}
+                        </div>
+                        <div className="mt-1 space-y-2">
+                            {postsForDay.map(post => {
+                                const postDate = new Date(post.scheduledAt);
+                                const hasBeenPublished = postDate < new Date();
+                                
+                                return (
+                                    <div key={post.id} className="group relative">
+                                       <div className={`p-2 rounded-md shadow-sm border-l-4 ${
+                                            hasBeenPublished 
+                                                ? 'border-green-500 bg-green-50 dark:bg-green-900/20 opacity-80' 
+                                                : post.isReminder 
+                                                    ? 'border-yellow-500 bg-white dark:bg-gray-700' 
+                                                    : 'border-blue-500 bg-white dark:bg-gray-700'
+                                        }`}>
+                                            <p className={`text-xs font-medium ${hasBeenPublished ? 'text-gray-600 dark:text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'} truncate pr-5`}>
+                                                {post.text || 'منشور بصورة'}
+                                            </p>
+                                            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                <span className="font-semibold">{postDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                <div className="flex items-center gap-1">
+                                                    {hasBeenPublished && <span title="تم النشر"><CheckCircleIcon className="w-4 h-4 text-green-500" /></span>}
+                                                    {post.isReminder && !hasBeenPublished && <span title="تذكير لنشر انستجرام"><BellIcon className="w-4 h-4 text-yellow-500" /></span>}
+                                                    {post.imageUrl && <PhotoIcon className="w-4 h-4" />}
+                                                    {post.targetInfo && <img className="inline-block h-5 w-5 rounded-full ring-2 ring-white dark:ring-gray-700" src={post.targetInfo.avatarUrl} alt={post.targetInfo.name}/>}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onDelete(post.id); }}
+                                            className="absolute top-1 left-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 z-10"
+                                            aria-label="حذف المنشور المجدول"
+                                            title="حذف المنشور المجدول"
+                                        >
+                                            <TrashIcon className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+
 
     return (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg fade-in">
@@ -67,54 +144,7 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts, onDelete }) =>
                 ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-2">
-                {Array.from({ length: startDay }).map((_, i) => (
-                    <div key={`empty-${i}`} className="border rounded-lg border-gray-200 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-800/20"></div>
-                ))}
-                {Array.from({ length: daysInMonth }).map((_, day) => {
-                    const currentDay = day + 1;
-                    const postsForDay = getPostsForDay(currentDay);
-                    return (
-                        <div
-                            key={currentDay}
-                            className={`p-2 border rounded-lg min-h-[120px] transition-colors duration-200 ${
-                                isToday(currentDay) ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'border-gray-200 dark:border-gray-700/50'
-                            } ${postsForDay.length > 0 ? 'bg-gray-50 dark:bg-gray-900/20' : ''}`}
-                        >
-                            <div className={`font-bold ${isToday(currentDay) ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>
-                                {currentDay}
-                            </div>
-                            <div className="mt-1 space-y-2">
-                                {postsForDay.map(post => (
-                                     <div key={post.id} className="group relative">
-                                        <div className={`p-2 rounded-md shadow-sm border-l-4 ${post.isReminder ? 'border-yellow-500' : 'border-blue-500'} bg-white dark:bg-gray-700`}>
-                                            <p className="text-xs font-medium text-gray-800 dark:text-gray-100 truncate pr-5">{post.text}</p>
-                                            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                                <span className="font-semibold">{new Date(post.scheduledAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
-                                                <div className="flex items-center gap-1">
-                                                    {post.isReminder && <span title="تذكير لنشر انستجرام"><BellIcon className="w-4 h-4 text-yellow-500" /></span>}
-                                                    {post.imageUrl && <PhotoIcon className="w-4 h-4" />}
-                                                    <div className="flex -space-x-2 overflow-hidden">
-                                                        {post.targetInfo && <img className="inline-block h-5 w-5 rounded-full ring-2 ring-white dark:ring-gray-700" src={post.targetInfo.avatarUrl} alt={post.targetInfo.name}/>}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onDelete(post.id); }}
-                                            className="absolute top-1 left-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 z-10"
-                                            aria-label="حذف المنشور المجدول"
-                                            title="حذف المنشور المجدول"
-                                        >
-                                            <TrashIcon className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
+            {renderCalendarGrid()}
         </div>
     );
 };

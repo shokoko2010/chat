@@ -89,7 +89,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'partial', message: string, onUndo?: () => void} | null>(null);
   const [publishingReminderId, setPublishingReminderId] = useState<string | null>(null);
   const [isReplying, setIsReplying] = useState(false);
-  const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Data state, managed per target
   const [pageProfile, setPageProfile] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
@@ -129,7 +129,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   
   // Real-time sync refs
   const lastSyncTimestamp = useRef<number>(Math.floor(Date.now() / 1000));
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isProcessingReplies = useRef(false);
 
 
@@ -608,7 +608,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             let itemHandled = false;
             const lowerCaseText = item.text.toLowerCase();
 
-            // Find the first matching, enabled rule
             for (const rule of rules) {
                 if (!rule.enabled || rule.trigger.source !== item.type) continue;
                 
@@ -630,59 +629,51 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     else if (matchType === 'all') matched = keywords.every(k => lowerCaseText.includes(k));
                     else if (matchType === 'exact') matched = keywords.some(k => lowerCaseText === k);
                 }
-
+                
                 if (matched) {
-                    itemHandled = true;
-                    let actionSucceeded = false;
+                    let ruleMatchedAndActed = false;
 
-                    // Handle comment actions sequentially
+                    // Handle Actions Sequentially
                     if (item.type === 'comment') {
-                        const publicReply = rule.actions.find(a => a.type === 'public_reply' && a.enabled && a.messageVariations?.[0]);
-                        if (publicReply) {
-                            const message = publicReply.messageVariations[Math.floor(Math.random() * publicReply.messageVariations.length)];
+                        const publicAction = rule.actions.find(a => a.type === 'public_reply' && a.enabled && a.messageVariations?.[0]);
+                        const privateAction = rule.actions.find(a => a.type === 'private_reply' && a.enabled && a.messageVariations?.[0]);
+                        
+                        let publicReplySuccess = false;
+                        if (publicAction) {
+                            const message = publicAction.messageVariations[Math.floor(Math.random() * publicAction.messageVariations.length)];
                             const success = await handleReplyToComment(item.id, message.replace('{user_name}', item.authorName));
                             if (success) {
-                                actionSucceeded = true;
+                                publicReplySuccess = true;
+                                ruleMatchedAndActed = true;
                                 showNotification('success', 'تم إرسال الرد العام بنجاح.');
-                                
-                                const privateReply = rule.actions.find(a => a.type === 'private_reply' && a.enabled && a.messageVariations?.[0]);
-                                if (privateReply && item.can_reply_privately) {
-                                    await new Promise(resolve => setTimeout(resolve, 5000));
-                                    const privateMessage = privateReply.messageVariations[Math.floor(Math.random() * privateReply.messageVariations.length)];
-                                    const privateSuccess = await handlePrivateReplyToComment(item.id, privateMessage.replace('{user_name}', item.authorName));
-                                    if (privateSuccess) {
-                                        showNotification('success', 'تم إرسال الرد الخاص بنجاح.');
-                                    }
-                                }
-                            }
-                        } else {
-                            // If no public reply, try private reply directly without delay
-                            const privateReply = rule.actions.find(a => a.type === 'private_reply' && a.enabled && a.messageVariations?.[0]);
-                            if (privateReply && item.can_reply_privately) {
-                                const privateMessage = privateReply.messageVariations[Math.floor(Math.random() * privateReply.messageVariations.length)];
-                                const success = await handlePrivateReplyToComment(item.id, privateMessage.replace('{user_name}', item.authorName));
-                                if (success) {
-                                    actionSucceeded = true;
-                                    showNotification('success', 'تم إرسال الرد الخاص بنجاح.');
-                                }
                             }
                         }
-                    }
 
-                    // Handle message actions
-                    if (item.type === 'message') {
-                        const directMessage = rule.actions.find(a => a.type === 'direct_message' && a.enabled && a.messageVariations?.[0]);
-                        if (directMessage) {
-                            const message = directMessage.messageVariations[Math.floor(Math.random() * directMessage.messageVariations.length)];
+                        if (privateAction && item.can_reply_privately) {
+                            if (publicReplySuccess) {
+                                await new Promise(resolve => setTimeout(resolve, 5000));
+                            }
+                            const message = privateAction.messageVariations[Math.floor(Math.random() * privateAction.messageVariations.length)];
+                            const success = await handlePrivateReplyToComment(item.id, message.replace('{user_name}', item.authorName));
+                            if (success) {
+                                ruleMatchedAndActed = true;
+                                showNotification('success', 'تم إرسال الرد الخاص بنجاح.');
+                            }
+                        }
+                    } else if (item.type === 'message') {
+                        const messageAction = rule.actions.find(a => a.type === 'direct_message' && a.enabled && a.messageVariations?.[0]);
+                        if (messageAction) {
+                            const message = messageAction.messageVariations[Math.floor(Math.random() * messageAction.messageVariations.length)];
                             const success = await handleSendMessage(item.conversationId || item.id, message.replace('{user_name}', item.authorName));
                             if (success) {
-                                actionSucceeded = true;
+                                ruleMatchedAndActed = true;
                                 showNotification('success', 'تم إرسال الرسالة الخاصة بنجاح.');
                             }
                         }
                     }
 
-                    if (actionSucceeded) {
+                    if (ruleMatchedAndActed) {
+                        itemHandled = true;
                         newlyRepliedItemIds.add(item.id);
                         if (item.type === 'comment' && rule.replyOncePerUser) {
                             if (!newRepliedUsers[postId]) newRepliedUsers[postId] = [];
@@ -691,8 +682,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             }
                         }
                         break; // Rule matched and acted, move to next item
-                    } else {
-                        itemHandled = false; // Reset since no action was successful
                     }
                 }
             }
@@ -868,27 +857,30 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     const isReminder = includeInstagram && isScheduled;
 
     if (!postText && !selectedImage) {
-      setComposerError('لا يمكن نشر منشور فارغ. أضف نصًا أو صورة.');
-      setIsPublishing(false);
-      return;
+        setComposerError('لا يمكن نشر منشور فارغ. أضف نصًا أو صورة.');
+        setIsPublishing(false);
+        return;
     }
-     if (includeInstagram && !selectedImage) {
-      setComposerError('منشورات انستجرام تتطلب وجود صورة.');
-      setIsPublishing(false);
-      return;
+    if (includeInstagram && !selectedImage) {
+        setComposerError('منشورات انستجرام تتطلب وجود صورة.');
+        setIsPublishing(false);
+        return;
     }
 
     try {
-        const postData: any = {};
+        const postData: any = { access_token: managedTarget.access_token };
         if (postText) postData.message = postText;
-        if (isScheduled && !isReminder) postData.scheduled_publish_time = Math.floor(new Date(scheduleDate).getTime() / 1000);
-        
+        if (isScheduled && !isReminder) {
+            postData.scheduled_publish_time = Math.floor(new Date(scheduleDate).getTime() / 1000);
+            postData.published = false; // Important for scheduled photo posts
+        }
+
         // Publish to Facebook
         if (selectedImage) {
             postData.source = selectedImage;
-            const endpoint = isScheduled && !isReminder ? `/${managedTarget.id}/photos` : `/${managedTarget.id}/photos`;
+            const endpoint = `/${managedTarget.id}/photos`;
             const response: any = await new Promise(resolve => window.FB.api(endpoint, 'POST', postData, (res: any) => resolve(res)));
-             if (response.error) {
+            if (response.error) {
                 console.error("Facebook post error:", response.error);
                 fbError = new Error(`(فيسبوك) ${response.error.message}`);
             } else {
@@ -905,32 +897,65 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             }
         }
 
-        // Publish to Instagram
-        if (includeInstagram && linkedInstagramTarget && selectedImage && !fbError) {
-             try {
+        // Publish to Instagram (if selected, image exists, and FB post was successful)
+        if (fbPostId && includeInstagram && linkedInstagramTarget && selectedImage && !isReminder && !fbError) {
+            try {
+                // We need the public URL of the image just posted to Facebook.
+                const postDetailsResponse: any = await new Promise(resolve => {
+                    window.FB.api(`/${fbPostId}?fields=full_picture`, { access_token: managedTarget.access_token }, (res: any) => resolve(res));
+                });
+
+                if (postDetailsResponse.error || !postDetailsResponse.full_picture) {
+                    throw new Error(`Failed to get image URL from Facebook post: ${postDetailsResponse.error?.message || 'URL not found'}`);
+                }
+
                 const igContainerParams: any = {
-                    image_url: `https://graph.facebook.com/${fbPostId}?fields=images`, // Requires page public content access
-                    caption: postText
+                    image_url: postDetailsResponse.full_picture,
+                    caption: postText,
+                    access_token: linkedInstagramTarget.access_token
                 };
+
                 const igContainerResponse: any = await new Promise(resolve => {
                     window.FB.api(`/${linkedInstagramTarget.id}/media`, 'POST', igContainerParams, (res: any) => resolve(res));
                 });
-                
+
                 if (igContainerResponse.error) {
                     throw new Error(igContainerResponse.error.message);
                 }
-                
-                const igPublishResponse: any = await new Promise(resolve => {
-                    window.FB.api(`/${linkedInstagramTarget.id}/media_publish`, 'POST', { creation_id: igContainerResponse.id }, (res: any) => resolve(res));
-                });
 
+                const creationId = igContainerResponse.id;
+                let igPublishResponse: any = {};
+                
+                // Poll for container readiness
+                let pollCount = 0;
+                while (pollCount < 15) { // Poll for up to 45 seconds
+                    const statusResponse: any = await new Promise(resolve => {
+                       window.FB.api(`/${creationId}?fields=status_code`, { access_token: linkedInstagramTarget.access_token }, (res: any) => resolve(res));
+                    });
+
+                    if (statusResponse.status_code === 'FINISHED') {
+                        igPublishResponse = await new Promise(resolve => {
+                            window.FB.api(`/${linkedInstagramTarget.id}/media_publish`, 'POST', { creation_id: creationId, access_token: linkedInstagramTarget.access_token }, (res: any) => resolve(res));
+                        });
+                        break;
+                    } else if (statusResponse.status_code === 'ERROR' || statusResponse.status_code === 'EXPIRED') {
+                        throw new Error(`Instagram media container failed with status: ${statusResponse.status_code}`);
+                    }
+                    
+                    pollCount++;
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                }
+
+                if (!igPublishResponse.id) {
+                     throw new Error('Instagram media publishing timed out or failed after container creation.');
+                }
                 if (igPublishResponse.error) {
                     throw new Error(igPublishResponse.error.message);
                 }
-             } catch(e: any) {
+            } catch (e: any) {
                 console.error("Instagram post error:", e);
                 igError = new Error(`(انستجرام) ${e.message}`);
-             }
+            }
         }
         
         const errorMessages: string[] = [];
@@ -939,15 +964,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
 
         if (errorMessages.length > 0) {
             const fullErrorMessage = errorMessages.join(' و ');
-             if ((fbError && igError) || (fbError && !includeInstagram) || (igError && !fbPostId)) {
-                showNotification('error', `فشل النشر بالكامل. الأسباب: ${fullErrorMessage}`);
+            if (fbError) {
+                showNotification('error', `فشل النشر. السبب الرئيسي: ${fullErrorMessage}`);
                 setComposerError(fullErrorMessage);
-             } else {
-                showNotification('partial', `نجاح جزئي: فشل النشر على أحد الحسابات. السبب: ${fullErrorMessage}`);
-             }
+            } else {
+                showNotification('partial', `تم النشر على فيسبوك بنجاح، لكن فشل على انستجرام: ${igError!.message}`);
+                clearComposer();
+            }
         } else { // Full success
-            if(isScheduled) {
-                 const newScheduledPost: ScheduledPost = {
+            if (isScheduled) {
+                const newScheduledPost: ScheduledPost = {
                     id: fbPostId || `local_${Date.now()}`,
                     text: postText,
                     imageUrl: imagePreview || undefined,
@@ -956,33 +982,33 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     isReminder: isReminder,
                     targetId: isReminder ? linkedInstagramTarget!.id : managedTarget.id,
                     targetInfo: {
-                      name: isReminder ? linkedInstagramTarget!.name : managedTarget.name,
-                      avatarUrl: isReminder ? linkedInstagramTarget!.picture.data.url : managedTarget.picture.data.url,
-                      type: isReminder ? 'instagram' : 'page'
+                        name: isReminder ? linkedInstagramTarget!.name : managedTarget.name,
+                        avatarUrl: isReminder ? linkedInstagramTarget!.picture.data.url : managedTarget.picture.data.url,
+                        type: isReminder ? 'instagram' : 'page'
                     }
                 };
-                if(isReminder) {
-                     setScheduledPosts(prev => [...prev, newScheduledPost]);
-                     showNotification('success', `تم جدولة المنشور على فيسبوك بنجاح، وتم إنشاء تذكير للنشر على انستجرام.`);
+                if (isReminder) {
+                    setScheduledPosts(prev => [...prev, newScheduledPost]);
+                    showNotification('success', `تم حفظ تذكير للنشر على انستجرام بنجاح.`);
                 } else {
-                     setScheduledPosts(prev => [...prev, newScheduledPost]);
-                     showNotification('success', 'تم جدولة المنشور بنجاح!');
+                    setScheduledPosts(prev => [...prev, newScheduledPost]);
+                    showNotification('success', 'تم جدولة المنشور بنجاح!');
                 }
             } else {
-                showNotification('success', 'تم النشر بنجاح!');
+                showNotification('success', 'تم النشر بنجاح على جميع المنصات!');
             }
             clearComposer();
         }
     } catch (e: any) {
-      console.error("Unhandled publishing error:", e);
-      const errorMessage = e.message || "حدث خطأ غير متوقع أثناء عملية النشر.";
-      setComposerError(errorMessage);
-      showNotification('error', `فشل النشر: ${errorMessage}`);
+        console.error("Unhandled publishing error:", e);
+        const errorMessage = e.message || "حدث خطأ غير متوقع أثناء عملية النشر.";
+        setComposerError(errorMessage);
+        showNotification('error', `فشل النشر: ${errorMessage}`);
     } finally {
-      setIsPublishing(false);
+        setIsPublishing(false);
     }
   };
-  
+    
     const handleSaveDraft = () => {
         if (!postText && !selectedImage) {
             setComposerError('لا يمكن حفظ مسودة فارغة.');
@@ -1048,69 +1074,88 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         let updatedBulkPosts = [...bulkPosts];
 
         for (const item of bulkPosts) {
-            if (!item.imageFile || item.targetIds.length === 0) {
-                updatedBulkPosts = updatedBulkPosts.map(p => p.id === item.id ? { ...p, error: 'الرجاء إضافة صورة واختيار وجهة واحدة على الأقل.'} : p);
+            if (!item.imageFile || item.targetIds.length === 0 || !item.scheduleDate) {
+                updatedBulkPosts = updatedBulkPosts.map(p => p.id === item.id ? { ...p, error: 'الرجاء إضافة صورة وتاريخ وجهة واحدة على الأقل.' } : p);
                 hasError = true;
                 continue;
             }
-             if (new Date(item.scheduleDate).getTime() < Date.now()) {
+            if (new Date(item.scheduleDate).getTime() < Date.now()) {
                 updatedBulkPosts = updatedBulkPosts.map(p => p.id === item.id ? { ...p, error: 'تاريخ الجدولة يجب أن يكون في المستقبل.' } : p);
                 hasError = true;
                 continue;
             }
         }
-        
+
         setBulkPosts(updatedBulkPosts);
 
         if (hasError) {
             showNotification('error', 'يرجى إصلاح الأخطاء في القائمة قبل المتابعة.');
             return;
         }
-        
+
         setIsSchedulingAll(true);
-        let successCount = 0;
-        
+        let scheduledItemsCount = 0;
+        let finalBulkPosts = [...bulkPosts];
+
         for (const item of bulkPosts) {
-            for (const targetId of item.targetIds) {
-                const target = bulkSchedulerTargets.find(t => t.id === targetId);
-                if (!target) continue;
+            const fbTarget = bulkSchedulerTargets.find(t => t.type === 'page' && item.targetIds.includes(t.id));
+            const igTarget = bulkSchedulerTargets.find(t => t.type === 'instagram' && item.targetIds.includes(t.id));
 
-                const postData: any = { message: item.text, source: item.imageFile };
-                const isReminder = target.type === 'instagram';
-                
-                if (!isReminder) { // Can only schedule on Facebook pages directly
-                    postData.scheduled_publish_time = Math.floor(new Date(item.scheduleDate).getTime() / 1000);
-                }
+            let itemError: string | null = null;
+            let itemSuccess = false;
 
-                const endpoint = `/${target.type === 'page' ? target.id : target.parentPageId}/photos`;
-                const response: any = await new Promise(resolve => window.FB.api(endpoint, 'POST', postData, (res: any) => resolve(res)));
+            // Schedule on Facebook if selected
+            if (fbTarget) {
+                const postData: any = {
+                    message: item.text,
+                    source: item.imageFile,
+                    scheduled_publish_time: Math.floor(new Date(item.scheduleDate).getTime() / 1000),
+                    published: false,
+                    access_token: fbTarget.access_token
+                };
+
+                const response: any = await new Promise(resolve => window.FB.api(`/${fbTarget.id}/photos`, 'POST', postData, (res: any) => resolve(res)));
 
                 if (response && !response.error) {
-                    const newScheduledPost: ScheduledPost = {
-                        id: response.id,
-                        text: item.text,
-                        imageUrl: item.imagePreview,
-                        imageFile: item.imageFile,
-                        scheduledAt: new Date(item.scheduleDate),
-                        isReminder: isReminder,
-                        targetId: target.id,
-                        targetInfo: { name: target.name, avatarUrl: target.picture.data.url, type: target.type }
-                    };
-                    postsToSchedule.push(newScheduledPost);
-                    successCount++;
+                    const fbPostId = response.id;
+                    postsToSchedule.push({
+                        id: fbPostId, text: item.text, imageUrl: item.imagePreview, imageFile: item.imageFile,
+                        scheduledAt: new Date(item.scheduleDate), isReminder: false, targetId: fbTarget.id,
+                        targetInfo: { name: fbTarget.name, avatarUrl: fbTarget.picture.data.url, type: 'page' }
+                    });
+                    itemSuccess = true;
                 } else {
-                     onBulkUpdate(item.id, { error: `فشل الجدولة: ${response.error.message}` });
-                     hasError = true;
+                    itemError = `(فيسبوك) ${response.error?.message || 'فشل غير معروف'}`;
+                    hasError = true;
                 }
             }
+
+            // Create reminder for Instagram if selected
+            if (igTarget) {
+                postsToSchedule.push({
+                    id: `reminder_ig_${item.id}`, text: item.text, imageUrl: item.imagePreview, imageFile: item.imageFile,
+                    scheduledAt: new Date(item.scheduleDate), isReminder: true, targetId: igTarget.id,
+                    targetInfo: { name: igTarget.name, avatarUrl: igTarget.picture.data.url, type: 'instagram' }
+                });
+                itemSuccess = true;
+            }
+
+            if (itemError) {
+                finalBulkPosts = finalBulkPosts.map(p => p.id === item.id ? { ...p, error: itemError } : p);
+            } else if (itemSuccess) {
+                scheduledItemsCount++;
+                finalBulkPosts = finalBulkPosts.filter(p => p.id !== item.id);
+            }
         }
-        
-        setScheduledPosts(prev => [...prev, ...postsToSchedule]);
+
+        setScheduledPosts(prev => [...prev, ...postsToSchedule].sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()));
+        setBulkPosts(finalBulkPosts);
         setIsSchedulingAll(false);
-        if(hasError) {
-            showNotification('partial', `تم جدولة ${successCount} منشورًا بنجاح، لكن بعضها فشل.`);
+
+        if (hasError) {
+            showNotification('partial', `تم جدولة ${scheduledItemsCount} منشورًا بنجاح، لكن بعضها فشل. يرجى مراجعة القائمة.`);
         } else {
-            showNotification('success', `تم جدولة جميع المنشورات (${successCount}) بنجاح!`);
+            showNotification('success', `تمت جدولة جميع المنشورات (${scheduledItemsCount}) بنجاح!`);
             setBulkPosts([]);
         }
     };
@@ -1136,7 +1181,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, loading: true } } : p));
         try {
             const fields = 'likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}';
-            const response: any = await new Promise(resolve => window.FB.api(`/${postId}?fields=${fields}`, (res: any) => resolve(res)));
+            const response: any = await new Promise(resolve => window.FB.api(`/${postId}?fields=${fields}`, { access_token: managedTarget.access_token }, (res: any) => resolve(res)));
             if(response && !response.error) {
                 setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: {
                     ...p.analytics,
