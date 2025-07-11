@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BulkPostItem, Target } from '../types';
 import Button from './ui/Button';
 import TrashIcon from './icons/TrashIcon';
@@ -27,6 +27,24 @@ const BulkPostItemCard: React.FC<BulkPostItemCardProps> = ({
   onGenerateDescription,
   onGeneratePostFromText,
 }) => {
+  const [generatingType, setGeneratingType] = useState<'image' | 'text' | null>(null);
+
+  useEffect(() => {
+    if (!item.isGeneratingDescription) {
+      setGeneratingType(null);
+    }
+  }, [item.isGeneratingDescription]);
+
+  const handleGenDesc = () => {
+    setGeneratingType('image');
+    onGenerateDescription(item.id);
+  };
+
+  const handleGenPost = () => {
+    setGeneratingType('text');
+    onGeneratePostFromText(item.id);
+  };
+  
   const handleTargetToggle = (toggledId: string) => {
     const newTargetIds = item.targetIds.includes(toggledId)
       ? item.targetIds.filter((id) => id !== toggledId)
@@ -54,31 +72,41 @@ const BulkPostItemCard: React.FC<BulkPostItemCardProps> = ({
         <div className="flex-grow space-y-4">
           <div>
             <label htmlFor={`text-${item.id}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              {hasImage ? 'وصف الصورة' : 'محتوى المنشور'}
+              محتوى المنشور
             </label>
             <textarea
               id={`text-${item.id}`}
               value={item.text}
               onChange={(e) => onUpdate(item.id, { text: e.target.value })}
-              placeholder={hasImage ? 'اكتب وصفًا للصورة هنا...' : 'اكتب فكرة أو موضوعًا هنا ليقوم الذكاء الاصطناعي بكتابة المنشور...'}
+              placeholder={hasImage ? 'اكتب وصفًا للصورة هنا، أو فكرة لتوليد منشور جديد...' : 'اكتب فكرة أو موضوعًا هنا ليقوم الذكاء الاصطناعي بكتابة المنشور...'}
               className="w-full h-24 p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700"
             />
-            <Button
-              variant="secondary"
-              size="sm"
-              className="mt-1"
-              onClick={() => (hasImage ? onGenerateDescription(item.id) : onGeneratePostFromText(item.id))}
-              isLoading={item.isGeneratingDescription}
-              disabled={!aiClient || item.isGeneratingDescription || (hasImage ? !item.imageFile : !item.text.trim())}
-              title={hasImage ? (item.imageFile ? '' : 'يجب وجود صورة لتوليد وصف') : !item.text.trim() ? 'اكتب فكرة أولاً لتوليد منشور' : ''}
-            >
-              <SparklesIcon className="w-4 h-4 ml-2" />
-              {item.isGeneratingDescription
-                ? 'جاري التفكير...'
-                : hasImage
-                ? '✨ ولّد وصفاً للصورة'
-                : '📝 ولّد منشورًا من النص'}
-            </Button>
+            <div className="flex flex-wrap gap-2 mt-2">
+               {hasImage && item.imageFile && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleGenDesc}
+                    isLoading={item.isGeneratingDescription && generatingType === 'image'}
+                    disabled={!aiClient || item.isGeneratingDescription}
+                    title="ولّد وصفاً للصورة"
+                  >
+                    <SparklesIcon className="w-4 h-4 ml-2" />
+                    ولّد وصفاً للصورة
+                  </Button>
+               )}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleGenPost}
+                isLoading={item.isGeneratingDescription && generatingType === 'text'}
+                disabled={!aiClient || !item.text.trim() || item.isGeneratingDescription}
+                title={!item.text.trim() ? 'اكتب فكرة أولاً' : 'ولّد منشورًا من النص'}
+              >
+                <SparklesIcon className="w-4 h-4 ml-2" />
+                ولّد منشورًا من النص
+              </Button>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

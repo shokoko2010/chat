@@ -63,6 +63,9 @@ const createPageContext = (pageProfile?: PageProfile): string => {
   
   const pageLangText = pageProfile.language === 'ar' ? 'العربية' : pageProfile.language === 'en' ? 'English' : 'مختلطة (عربي/إنجليزي)';
 
+  const additionalLinksText = (pageProfile.links && pageProfile.links.length > 0)
+    ? `\n- روابط إضافية:\n${pageProfile.links.filter(l => l.label && l.url).map(link => `  - ${link.label}: ${link.url}`).join('\n')}`
+    : '';
 
   return `
     ---
@@ -72,7 +75,7 @@ const createPageContext = (pageProfile?: PageProfile): string => {
     - العنوان: ${pageProfile.address || 'غير محدد'}
     - البلد: ${pageProfile.country || 'غير محدد'}
     - معلومات الاتصال (الهاتف/واتساب): ${pageProfile.contactInfo || 'غير محدد'}
-    - الموقع الإلكتروني: ${pageProfile.website || 'غير محدد'}
+    - الموقع الإلكتروني الرئيسي: ${pageProfile.website || 'غير محدد'}${additionalLinksText}
     - العروض الحالية: ${pageProfile.currentOffers || 'غير محدد'}
     - لغة الصفحة الأساسية للجمهور: ${pageLangText}
     ${languageInstruction ? `- ${languageInstruction}` : ''}

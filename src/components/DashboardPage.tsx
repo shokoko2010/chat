@@ -1570,13 +1570,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             const file = e.target.files[0];
                             setSelectedImage(file);
                             setImagePreview(URL.createObjectURL(file));
-                            if (aiClient) { // Auto-generate description
-                                onBulkUpdate('temp', { isGeneratingDescription: true });
-                                generateDescriptionForImage(aiClient, file, pageProfile)
-                                    .then(desc => setPostText(desc))
-                                    .catch(err => setComposerError(err.message))
-                                    .finally(() => onBulkUpdate('temp', { isGeneratingDescription: false }));
-                            }
                         }
                     }}
                     onImageGenerated={(file) => {

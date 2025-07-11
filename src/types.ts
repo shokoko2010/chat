@@ -106,11 +106,18 @@ export interface Business {
   name: string;
 }
 
+export interface Link {
+  id: string;
+  label: string;
+  url: string;
+}
+
 export interface PageProfile {
   description: string;
   services: string;
   contactInfo: string;
   website: string;
+  links?: Link[];
   currentOffers: string;
   address: string;
   country: string;

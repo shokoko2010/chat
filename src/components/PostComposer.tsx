@@ -3,7 +3,7 @@ import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import WandSparklesIcon from './icons/WandSparklesIcon';
-import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime, generateHashtags, generateImageWithStabilityAI } from '../services/geminiService';
+import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime, generateHashtags, generateImageWithStabilityAI, generateDescriptionForImage } from '../services/geminiService';
 import { GoogleGenAI } from '@google/genai';
 import { Target, PageProfile } from '../types';
 import InstagramIcon from './icons/InstagramIcon';
@@ -89,6 +89,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const [aiImagePrompt, setAiImagePrompt] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [aiImageError, setAiImageError] = useState('');
+  const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
 
   const [isSuggestingTime, setIsSuggestingTime] = useState(false);
   const [aiTimeError, setAiTimeError] = useState('');
@@ -111,6 +112,20 @@ const PostComposer: React.FC<PostComposerProps> = ({
       } finally {
         setIsGeneratingText(false);
       }
+  };
+
+  const handleGenerateImageDescription = async () => {
+    if (!aiClient || !selectedImage) return;
+    setIsGeneratingDesc(true);
+    setAiTextError('');
+    try {
+        const description = await generateDescriptionForImage(aiClient, selectedImage, pageProfile);
+        onPostTextChange(description);
+    } catch (e: any) {
+        setAiTextError(e.message || 'Failed to generate description.');
+    } finally {
+        setIsGeneratingDesc(false);
+    }
   };
 
   const handleGenerateImageWithAI = async () => {
@@ -226,9 +241,21 @@ const PostComposer: React.FC<PostComposerProps> = ({
 
 
       {imagePreview && (
-        <div className="relative w-40">
-          <img src={imagePreview} alt="Preview" className="rounded-lg w-full h-auto" />
-          <button onClick={onImageRemove} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 leading-none w-6 h-6 flex items-center justify-center text-lg" aria-label="Remove image">&times;</button>
+        <div className="space-y-2">
+          <div className="relative w-40">
+            <img src={imagePreview} alt="Preview" className="rounded-lg w-full h-auto" />
+            <button onClick={onImageRemove} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 leading-none w-6 h-6 flex items-center justify-center text-lg" aria-label="Remove image">&times;</button>
+          </div>
+          <Button
+              onClick={handleGenerateImageDescription}
+              isLoading={isGeneratingDesc}
+              disabled={!aiClient || !selectedImage || isGeneratingDesc}
+              variant="secondary"
+              size="sm"
+          >
+              <SparklesIcon className="w-4 h-4 ml-2" />
+              ولّد نصًا من الصورة
+          </Button>
         </div>
       )}
       

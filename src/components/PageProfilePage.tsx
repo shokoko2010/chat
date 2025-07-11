@@ -1,6 +1,7 @@
 import React from 'react';
-import { PageProfile } from '../types';
+import { PageProfile, Link } from '../types';
 import Button from './ui/Button';
+import TrashIcon from './icons/TrashIcon';
 
 interface PageProfilePageProps {
   profile: PageProfile;
@@ -35,6 +36,23 @@ const PageProfilePage: React.FC<PageProfilePageProps> = ({ profile, onProfileCha
       onProfileChange({ ...profile, contentGenerationLanguages: currentLangs });
   };
 
+  const handleLinkChange = (id: string, field: 'label' | 'url', value: string) => {
+    const newLinks = (profile.links || []).map(link => 
+        link.id === id ? { ...link, [field]: value } : link
+    );
+    onProfileChange({ ...profile, links: newLinks });
+  };
+
+  const handleAddLink = () => {
+    const newLink: Link = { id: `link_${Date.now()}`, label: '', url: '' };
+    const newLinks = [...(profile.links || []), newLink];
+    onProfileChange({ ...profile, links: newLinks });
+  };
+
+  const handleRemoveLink = (id: string) => {
+    const newLinks = (profile.links || []).filter(link => link.id !== id);
+    onProfileChange({ ...profile, links: newLinks });
+  };
 
   return (
     <div className="max-w-4xl mx-auto bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg fade-in">
@@ -88,6 +106,72 @@ const PageProfilePage: React.FC<PageProfilePageProps> = ({ profile, onProfileCha
           />
         </div>
 
+        <div>
+          <label htmlFor="website" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            الموقع الإلكتروني الرئيسي
+          </label>
+          <input
+            type="url"
+            id="website"
+            name="website"
+            value={profile.website}
+            onChange={handleChange}
+            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="https://example.com"
+          />
+        </div>
+
+        <div className="border-t dark:border-gray-700 pt-6">
+            <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2">روابط إضافية</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              أضف روابط مهمة أخرى مثل صفحات التواصل الاجتماعي، قائمة الطعام، صفحة الحجوزات، إلخ.
+            </p>
+            <div className="space-y-4">
+              {(profile.links || []).map((link) => (
+                <div key={link.id} className="flex flex-col sm:flex-row items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div className="w-full sm:w-1/3">
+                    <label htmlFor={`link-label-${link.id}`} className="sr-only">العنوان</label>
+                    <input
+                      type="text"
+                      id={`link-label-${link.id}`}
+                      placeholder="العنوان (مثال: قائمة الطعام)"
+                      value={link.label}
+                      onChange={(e) => handleLinkChange(link.id, 'label', e.target.value)}
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                    />
+                  </div>
+                  <div className="flex-grow w-full">
+                    <label htmlFor={`link-url-${link.id}`} className="sr-only">الرابط</label>
+                    <input
+                      type="url"
+                      dir="ltr"
+                      id={`link-url-${link.id}`}
+                      placeholder="https://example.com/menu"
+                      value={link.url}
+                      onChange={(e) => handleLinkChange(link.id, 'url', e.target.value)}
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-left"
+                    />
+                  </div>
+                  <div className="flex-shrink-0">
+                    <Button
+                      variant="danger"
+                      onClick={() => handleRemoveLink(link.id)}
+                      className="!p-2"
+                      aria-label="Remove link"
+                    >
+                      <TrashIcon className="w-5 h-5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4">
+              <Button variant="secondary" onClick={handleAddLink}>
+                + إضافة رابط آخر
+              </Button>
+            </div>
+        </div>
+        
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label htmlFor="contactInfo" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -103,21 +187,6 @@ const PageProfilePage: React.FC<PageProfilePageProps> = ({ profile, onProfileCha
                 placeholder="مثال: 966555123456+، info@example.com"
               />
             </div>
-
-            <div>
-              <label htmlFor="website" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                الموقع الإلكتروني
-              </label>
-              <input
-                type="url"
-                id="website"
-                name="website"
-                value={profile.website}
-                onChange={handleChange}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="https://example.com"
-              />
-            </div>
              <div>
               <label htmlFor="address" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">العنوان</label>
               <input type="text" id="address" name="address" value={profile.address} onChange={handleChange} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" placeholder="مثال: الرياض، طريق الملك فهد" />
@@ -126,21 +195,20 @@ const PageProfilePage: React.FC<PageProfilePageProps> = ({ profile, onProfileCha
               <label htmlFor="country" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">البلد</label>
               <input type="text" id="country" name="country" value={profile.country} onChange={handleChange} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" placeholder="مثال: المملكة العربية السعودية" />
             </div>
-        </div>
-
-        <div>
-          <label htmlFor="currentOffers" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            عروض خاصة أو كلمات مفتاحية حالية
-          </label>
-          <input
-            type="text"
-            id="currentOffers"
-            name="currentOffers"
-            value={profile.currentOffers}
-            onChange={handleChange}
-            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"
-            placeholder="مثال: خصم 20%، شحن مجاني، #حملة_الصيف"
-          />
+            <div>
+              <label htmlFor="currentOffers" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                عروض خاصة أو كلمات مفتاحية حالية
+              </label>
+              <input
+                type="text"
+                id="currentOffers"
+                name="currentOffers"
+                value={profile.currentOffers}
+                onChange={handleChange}
+                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="مثال: خصم 20%، شحن مجاني، #حملة_الصيف"
+              />
+            </div>
         </div>
         
         <div className="border-t dark:border-gray-700 pt-6 mt-6">
