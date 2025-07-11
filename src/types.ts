@@ -33,6 +33,7 @@ export interface ScheduledPost {
       avatarUrl: string;
       type: 'page' | 'instagram';
   }
+  publishedAt?: string; // ISO string for when it was actually published
 }
 
 export interface Draft {

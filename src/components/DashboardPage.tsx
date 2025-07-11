@@ -83,6 +83,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [scheduleDate, setScheduleDate] = useState('');
   const [composerError, setComposerError] = useState('');
   const [includeInstagram, setIncludeInstagram] = useState(false);
+  const [editingScheduledPostId, setEditingScheduledPostId] = useState<string | null>(null);
 
   // Publishing state
   const [isPublishing, setIsPublishing] = useState(false);
@@ -90,7 +91,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   const [publishingReminderId, setPublishingReminderId] = useState<string | null>(null);
   const [isReplying, setIsReplying] = useState(false);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [publishingPostId, setPublishingPostId] = useState<string | null>(null);
   
   // Data state, managed per target
   const [pageProfile, setPageProfile] = useState<PageProfile>({ description: '', services: '', contactInfo: '', website: '', currentOffers: '', address: '', country: '' });
@@ -152,6 +152,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setScheduleDate(''); setComposerError('');
     setIsScheduled(false);
     setIncludeInstagram(!!linkedInstagramTarget);
+    setEditingScheduledPostId(null);
   }, [linkedInstagramTarget]);
 
   const showNotification = useCallback((type: 'success' | 'error' | 'partial', message: string, onUndo?: () => void) => {
@@ -650,7 +651,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             }
                         }
 
-                        if (privateAction && item.can_reply_privately) {
+                        if (privateAction && item.can_reply_privately && !item.parentId) {
                             if (publicReplySuccess) {
                                 await new Promise(resolve => setTimeout(resolve, 5000));
                             }
@@ -853,63 +854,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     }
   }, [aiClient, contentPlan, managedTarget.id, showNotification]);
 
-  const handlePublishNow = async (postId: string) => {
-        const postToPublish = scheduledPosts.find(p => p.id === postId);
-        if (!postToPublish) {
+  const handleEditFromCalendar = (postId: string) => {
+        const postToLoad = scheduledPosts.find(p => p.id === postId);
+        if (!postToLoad) {
             showNotification('error', 'لم يتم العثور على المنشور المجدول.');
             return;
         }
-        if (postToPublish.isReminder) {
-            showNotification('error', 'لا يمكن نشر تذكيرات انستجرام مباشرة.');
+
+        if (postToLoad.imageUrl && !postToLoad.imageFile) {
+            showNotification('error', 'لا يمكن تعديل منشور الصورة هذا لأنه تم تحميله في جلسة سابقة. يرجى إعادة إنشائه.');
             return;
         }
 
-        // This is a check due to localStorage limitations where File objects are lost
-        if (postToPublish.imageUrl && !postToPublish.imageFile) {
-            showNotification('error', 'لا يمكن نشر منشور الصورة هذا الآن لأنه تم تحميله في جلسة سابقة. يرجى إعادة إنشائه.');
-            return;
-        }
-
-        setPublishingPostId(postId);
-        try {
-            const postData: any = { access_token: managedTarget.access_token };
-            if (postToPublish.text) {
-                postData.message = postToPublish.text;
-            }
-
-            let response: any;
-            if (postToPublish.imageFile) {
-                postData.source = postToPublish.imageFile;
-                response = await new Promise(resolve => window.FB.api(`/${managedTarget.id}/photos`, 'POST', postData, (res: any) => resolve(res)));
-            } else {
-                response = await new Promise(resolve => window.FB.api(`/${managedTarget.id}/feed`, 'POST', postData, (res: any) => resolve(res)));
-            }
-
-            if (response.error) {
-                throw new Error(response.error.message);
-            }
-
-            const newPublishedPost: PublishedPost = {
-                id: response.post_id || response.id,
-                pageId: managedTarget.id,
-                pageName: managedTarget.name,
-                pageAvatarUrl: managedTarget.picture.data.url,
-                text: postToPublish.text,
-                imagePreview: postToPublish.imageUrl || null,
-                publishedAt: new Date(),
-                analytics: { likes: 0, comments: 0, shares: 0, reach: 0, loading: false, lastUpdated: new Date(), isGeneratingInsights: false }
-            };
-
-            setPublishedPosts(prev => [newPublishedPost, ...prev]);
-            setScheduledPosts(prev => prev.filter(p => p.id !== postId));
-            showNotification('success', 'تم نشر المنشور بنجاح!');
-
-        } catch (e: any) {
-            console.error("Error publishing now:", e);
-            showNotification('error', `فشل النشر: ${e.message}`);
-        } finally {
-            setPublishingPostId(null);
-        }
+        setPostText(postToLoad.text);
+        setImagePreview(postToLoad.imageUrl || null);
+        setSelectedImage(postToLoad.imageFile || null);
+        
+        setIsScheduled(false);
+        setScheduleDate('');
+        
+        setIncludeInstagram(postToLoad.targetInfo.type === 'instagram');
+        
+        setEditingScheduledPostId(postToLoad.id);
+        
+        setView('composer');
+        showNotification('success', 'تم تحميل المنشور للتعديل. يمكنك نشره الآن.');
     };
     
   const handlePublish = async () => {
@@ -919,6 +888,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     let fbError: Error | null = null;
     let igError: Error | null = null;
     let fbPostId: string | null = null;
+    let igPostId: string | null = null;
     const isReminder = includeInstagram && isScheduled;
 
     if (!postText && !selectedImage) {
@@ -1016,6 +986,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 }
                 if (igPublishResponse.error) {
                     throw new Error(igPublishResponse.error.message);
+                } else {
+                    igPostId = igPublishResponse.id;
                 }
             } catch (e: any) {
                 console.error("Instagram post error:", e);
@@ -1060,7 +1032,43 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     showNotification('success', 'تم جدولة المنشور بنجاح!');
                 }
             } else {
-                showNotification('success', 'تم النشر بنجاح على جميع المنصات!');
+                if (editingScheduledPostId) {
+                    setScheduledPosts(prev => 
+                        prev.map(p => 
+                            p.id === editingScheduledPostId 
+                            ? { ...p, publishedAt: new Date().toISOString(), text: postText, imageUrl: imagePreview || undefined, imageFile: selectedImage || undefined } 
+                            : p
+                        )
+                    );
+
+                    if (fbPostId) {
+                        const newPublishedPost: PublishedPost = {
+                            id: fbPostId, pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url,
+                            text: postText, imagePreview: imagePreview, publishedAt: new Date(),
+                            analytics: { likes: 0, comments: 0, shares: 0, reach: 0, loading: false, lastUpdated: new Date(), isGeneratingInsights: false }
+                        };
+                        setPublishedPosts(prev => [newPublishedPost, ...prev]);
+                    }
+                    showNotification('success', 'تم نشر المنشور المجدول وتحديثه في التقويم.');
+                } else {
+                    if (fbPostId) {
+                        const newFbPost: PublishedPost = {
+                            id: fbPostId, pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url,
+                            text: postText, imagePreview: imagePreview, publishedAt: new Date(),
+                            analytics: { likes: 0, comments: 0, shares: 0, reach: 0, loading: false, lastUpdated: new Date(), isGeneratingInsights: false }
+                        };
+                        setPublishedPosts(prev => [newFbPost, ...prev]);
+                    }
+                    if (igPostId && linkedInstagramTarget) {
+                        const newIgPost: PublishedPost = {
+                            id: igPostId, pageId: linkedInstagramTarget.id, pageName: linkedInstagramTarget.name, pageAvatarUrl: linkedInstagramTarget.picture.data.url,
+                            text: postText, imagePreview: imagePreview, publishedAt: new Date(),
+                            analytics: { likes: 0, comments: 0, shares: 0, reach: 0, loading: false, lastUpdated: new Date(), isGeneratingInsights: false }
+                        };
+                        setPublishedPosts(prev => [newIgPost, ...prev]);
+                    }
+                    showNotification('success', 'تم النشر بنجاح على جميع المنصات!');
+                }
             }
             clearComposer();
         }
@@ -1505,8 +1513,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 <ContentCalendar 
                     posts={scheduledPosts}
                     onDelete={handleDeleteScheduledPost}
-                    onPublishNow={handlePublishNow}
-                    publishingPostId={publishingPostId}
+                    onEdit={handleEditFromCalendar}
                 />
             </div>
         );
