@@ -44,7 +44,7 @@ const TargetCard: React.FC<{ target: Target; linkedInstagram: Target | null; onS
                     aria-label={isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
                     title={isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
                 >
-                    <StarIcon className="w-6 h-6" />
+                    <StarIcon className={`w-6 h-6 ${isFavorite ? 'fill-current' : 'fill-none stroke-current'}`} />
                 </button>
             </div>
             <div className="p-5 flex-grow">
@@ -87,7 +87,7 @@ const TargetListItem: React.FC<{ target: Target; linkedInstagram: Target | null;
                     aria-label={isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
                     title={isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
                 >
-                    <StarIcon className="w-6 h-6" />
+                    <StarIcon className={`w-6 h-6 ${isFavorite ? 'fill-current' : 'fill-none stroke-current'}`} />
                 </button>
             </div>
         </div>
@@ -125,6 +125,29 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const instagramAccountsByParentId = useMemo(() => {
+    const map = new Map<string, Target>();
+    targets.filter(t => t.type === 'instagram' && t.parentPageId).forEach(ig => {
+      map.set(ig.parentPageId!, ig);
+    });
+    return map;
+  }, [targets]);
+
+  const sortedAndFilteredTargets = useMemo(() => {
+    const primaryTargets = targets.filter(t => t.type === 'page');
+    const filtered = primaryTargets.filter(target =>
+        target.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    return filtered.sort((a, b) => {
+        const aIsFav = favoriteTargetIds.has(a.id);
+        const bIsFav = favoriteTargetIds.has(b.id);
+        if (aIsFav && !bIsFav) return -1;
+        if (!aIsFav && bIsFav) return 1;
+        return a.name.localeCompare(b.name, 'ar');
+    });
+  }, [targets, searchQuery, favoriteTargetIds]);
+
+
   const renderContent = () => {
     if (isLoading && targets.length === 0) {
       return <div className="text-center text-gray-500 dark:text-gray-400 py-10">جاري تحميل وجهات النشر...</div>;
@@ -132,27 +155,6 @@ const PageSelectorPage: React.FC<PageSelectorPageProps> = ({
     if (error) {
       return <div className="text-center text-red-500 py-10">{error}</div>;
     }
-
-    const instagramAccountsByParentId = new Map<string, Target>();
-    targets.filter(t => t.type === 'instagram' && t.parentPageId).forEach(ig => {
-      instagramAccountsByParentId.set(ig.parentPageId!, ig);
-    });
-
-    const primaryTargets = targets.filter(t => t.type === 'page');
-
-    const sortedAndFilteredTargets = useMemo(() => {
-        const filtered = primaryTargets.filter(target =>
-            target.name.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-        return filtered.sort((a, b) => {
-            const aIsFav = favoriteTargetIds.has(a.id);
-            const bIsFav = favoriteTargetIds.has(b.id);
-            if (aIsFav && !bIsFav) return -1;
-            if (!aIsFav && bIsFav) return 1;
-            return a.name.localeCompare(b.name, 'ar');
-        });
-    }, [primaryTargets, searchQuery, favoriteTargetIds]);
-
 
     if (targets.length > 0 && sortedAndFilteredTargets.length === 0) {
         return <div className="text-center text-gray-500 dark:text-gray-400 py-10">لا توجد نتائج بحث تطابق "{searchQuery}".</div>;
