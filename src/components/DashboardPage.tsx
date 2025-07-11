@@ -603,12 +603,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             return;
         }
 
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         const newRepliedUsers = JSON.parse(JSON.stringify(repliedUsersPerPost));
         const newlyRepliedItemIds = new Set<string>();
         
         for (const item of itemsToProcess) {
             let itemHandled = false;
             const lowerCaseText = item.text.toLowerCase();
+            const isRecentEnough = new Date(item.timestamp) > sevenDaysAgo;
 
             for (const rule of rules) {
                 if (!rule.enabled || rule.trigger.source !== item.type) continue;
@@ -651,7 +653,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             }
                         }
 
-                        if (privateAction && item.can_reply_privately && !item.parentId) {
+                        if (privateAction && item.can_reply_privately && !item.parentId && isRecentEnough) {
                             if (publicReplySuccess) {
                                 await new Promise(resolve => setTimeout(resolve, 5000));
                             }
@@ -861,6 +863,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             return;
         }
 
+        if (postToLoad.publishedAt) {
+            showNotification('error', 'لا يمكن تعديل منشور تم نشره بالفعل.');
+            return;
+        }
+
         if (postToLoad.imageUrl && !postToLoad.imageFile) {
             showNotification('error', 'لا يمكن تعديل منشور الصورة هذا لأنه تم تحميله في جلسة سابقة. يرجى إعادة إنشائه.');
             return;
@@ -1032,17 +1039,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     showNotification('success', 'تم جدولة المنشور بنجاح!');
                 }
             } else {
-                if (editingScheduledPostId) {
+                 if (editingScheduledPostId) {
                     setScheduledPosts(prev => 
                         prev.map(p => 
                             p.id === editingScheduledPostId 
-                            ? { ...p, publishedAt: new Date().toISOString(), text: postText, imageUrl: imagePreview || undefined, imageFile: selectedImage || undefined } 
+                            ? { ...p, publishedAt: new Date().toISOString() } 
                             : p
                         )
                     );
-
-                    if (fbPostId) {
-                        const newPublishedPost: PublishedPost = {
+                    if(fbPostId) {
+                         const newPublishedPost: PublishedPost = {
                             id: fbPostId, pageId: managedTarget.id, pageName: managedTarget.name, pageAvatarUrl: managedTarget.picture.data.url,
                             text: postText, imagePreview: imagePreview, publishedAt: new Date(),
                             analytics: { likes: 0, comments: 0, shares: 0, reach: 0, loading: false, lastUpdated: new Date(), isGeneratingInsights: false }
@@ -1277,7 +1283,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     
     const unreadCount = useMemo(() => inboxItems.filter(item => !item.isReplied).length, [inboxItems]);
     
-    const fetchRecentUpdates = useCallback(async () => {
+    const handleQuickRefresh = useCallback(async () => {
         if (isSimulationMode || !managedTarget.access_token) return;
 
         const sinceTimestamp = lastSyncTimestamp.current;
@@ -1291,7 +1297,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         // --- 1. Fetch Facebook Messages ---
         if (pageAccessToken) {
             try {
-                const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&updated_since=${sinceTimestamp}`;
+                const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
                 const recentConvosData = await fetchWithPagination(convosPath, pageAccessToken);
                 const recentMessages: InboxItem[] = recentConvosData.map((convo: any) => {
                     const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
@@ -1316,7 +1322,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         // --- 2. Fetch Facebook Comments ---
         if (pageAccessToken) {
             try {
-                const feedPath = `/${pageTarget.id}/feed?fields=id,message,full_picture,created_time,comments.summary(true)&limit=10&since=${sinceTimestamp}`;
+                // Fetch comments on the last 5 posts to catch recent activity
+                const feedPath = `/${pageTarget.id}/published_posts?fields=id,message,full_picture,created_time,comments.summary(true)&limit=5`;
                 const recentFeedData = await fetchWithPagination(feedPath, pageAccessToken);
                 const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}},can_reply_privately';
                 const fbCommentPromises = recentFeedData.map(async (post) => {
@@ -1351,9 +1358,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         if (linkedIgTarget) {
             try {
                 const igAccessToken = linkedIgTarget.access_token;
-                const igMediaSince = Math.floor((Date.now() - 3 * 24 * 60 * 60 * 1000) / 1000);
+                // Fetch comments on last 5 IG media items
                 const igPostFields = 'id,caption,media_url,timestamp,comments_count';
-                const igPostsPath = `/${linkedIgTarget.id}/media?fields=${igPostFields}&limit=10&since=${igMediaSince}`;
+                const igPostsPath = `/${linkedIgTarget.id}/media?fields=${igPostFields}&limit=5`;
                 const igRecentPostsData = await fetchWithPagination(igPostsPath, igAccessToken);
 
                 const igCommentFields = 'id,from{id,username},text,timestamp,replies{from{id}}';
@@ -1391,26 +1398,27 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 
                 const combined = [...uniqueNewItems, ...prevItems];
                 combined.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                showNotification('success', `تم جلب ${uniqueNewItems.length} عنصر جديد.`);
                 return combined;
             });
         }
         
         lastSyncTimestamp.current = Math.floor(Date.now() / 1000);
-    }, [managedTarget, allTargets, isSimulationMode, fetchWithPagination]);
+    }, [managedTarget, allTargets, isSimulationMode, fetchWithPagination, showNotification]);
 
     useEffect(() => {
         if (isSimulationMode) return;
 
-        fetchRecentUpdates();
+        handleQuickRefresh(); // Initial fetch
         
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
 
-        pollingIntervalRef.current = setInterval(fetchRecentUpdates, 45000);
+        pollingIntervalRef.current = setInterval(handleQuickRefresh, 15000); // Poll every 15 seconds
 
         return () => {
             if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
         };
-    }, [isSimulationMode, fetchRecentUpdates]);
+    }, [isSimulationMode, handleQuickRefresh]);
 
 
     useEffect(() => {
@@ -1590,19 +1598,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                   onFetchMessageHistory={fetchMessageHistory}
                   autoResponderSettings={autoResponderSettings}
                   onAutoResponderSettingsChange={setAutoResponderSettings}
-                  onSync={async () => {
-                      await onSyncHistory(managedTarget);
-                      // Force a re-fetch of inbox items after sync
-                      const dataKey = `zex-pages-data-${managedTarget.id}`;
-                      const rawData = localStorage.getItem(dataKey);
-                      if (rawData) {
-                          const savedData = JSON.parse(rawData);
-                           setInboxItems(savedData.inboxItems?.map((i:any) => ({
-                                ...i, platform: i.platform || 'facebook',
-                                timestamp: new Date(i.timestamp).toISOString()
-                            })) || []);
-                      }
-                  }}
+                  onSync={handleQuickRefresh}
                   isSyncing={!!syncingTargetId}
                   aiClient={aiClient}
                />;
