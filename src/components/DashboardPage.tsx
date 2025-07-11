@@ -744,6 +744,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     return success;
   };
   
+  const handleMarkAsDone = (itemId: string) => {
+    setInboxItems(prev => prev.map(i => i.id === itemId ? { ...i, isReplied: true } : i));
+    showNotification('success', 'تم تحديد المحادثة كمكتملة.');
+  };
+
   const handleStartPostFromPlan = useCallback((item: ContentPlanItem) => {
     setPostText(item.postSuggestion);
     setView('composer');
@@ -1508,6 +1513,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                   items={inboxItems}
                   isLoading={isInboxLoading}
                   onReply={handleSmartReply}
+                  onMarkAsDone={handleMarkAsDone}
                   onGenerateSmartReplies={(text) => generateSmartReplies(aiClient!, text, pageProfile)}
                   onFetchMessageHistory={fetchMessageHistory}
                   autoResponderSettings={autoResponderSettings}
