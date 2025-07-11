@@ -3,7 +3,7 @@ import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import WandSparklesIcon from './icons/WandSparklesIcon';
-import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime, generateHashtags } from '../services/geminiService';
+import { generatePostSuggestion, generateImageFromPrompt, getBestPostingTime, generateHashtags, generateImageWithStabilityAI } from '../services/geminiService';
 import { GoogleGenAI } from '@google/genai';
 import { Target, PageProfile } from '../types';
 import InstagramIcon from './icons/InstagramIcon';
@@ -27,6 +27,7 @@ interface PostComposerProps {
   onScheduleDateChange: (date: string) => void;
   error: string;
   aiClient: GoogleGenAI | null;
+  stabilityApiKey: string | null;
   managedTarget: Target;
   linkedInstagramTarget: Target | null;
   includeInstagram: boolean;
@@ -73,6 +74,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   onScheduleDateChange,
   error,
   aiClient,
+  stabilityApiKey,
   managedTarget,
   linkedInstagramTarget,
   includeInstagram,
@@ -82,9 +84,12 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const [aiTopic, setAiTopic] = useState('');
   const [isGeneratingText, setIsGeneratingText] = useState(false);
   const [aiTextError, setAiTextError] = useState('');
+  
+  const [imageService, setImageService] = useState<'gemini' | 'stability'>('gemini');
   const [aiImagePrompt, setAiImagePrompt] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [aiImageError, setAiImageError] = useState('');
+
   const [isSuggestingTime, setIsSuggestingTime] = useState(false);
   const [aiTimeError, setAiTimeError] = useState('');
   const [isGeneratingHashtags, setIsGeneratingHashtags] = useState(false);
@@ -109,16 +114,23 @@ const PostComposer: React.FC<PostComposerProps> = ({
   };
 
   const handleGenerateImageWithAI = async () => {
-    if (!aiClient) return;
     if (!aiImagePrompt.trim()) {
-        setAiImageError('يرجى إدخال وصف لإنشاء الصورة.');
-        return;
+      setAiImageError('يرجى إدخال وصف لإنشاء الصورة.');
+      return;
     }
     setAiImageError('');
     setIsGeneratingImage(true);
+    
     try {
-      const base64Bytes = await generateImageFromPrompt(aiClient, aiImagePrompt);
-      const imageFile = base64ToFile(base64Bytes, `${aiImagePrompt.substring(0, 20)}.jpeg`);
+      let base64Bytes: string;
+      if (imageService === 'stability') {
+        if (!stabilityApiKey) throw new Error("مفتاح Stability AI API غير مكوّن. يرجى إضافته في الإعدادات.");
+        base64Bytes = await generateImageWithStabilityAI(stabilityApiKey, aiImagePrompt);
+      } else { // 'gemini'
+        if (!aiClient) throw new Error("مفتاح Gemini API غير مكوّن. يرجى إضافته في الإعدادات.");
+        base64Bytes = await generateImageFromPrompt(aiClient, aiImagePrompt);
+      }
+      const imageFile = base64ToFile(base64Bytes, `${aiImagePrompt.substring(0, 20).replace(/\s/g, '_')}.jpeg`);
       onImageGenerated(imageFile);
     } catch (e: any) {
       setAiImageError(e.message || 'حدث خطأ غير متوقع. يرجى التأكد من أن وصفك لا ينتهك سياسات المحتوى.');
@@ -226,14 +238,22 @@ const PostComposer: React.FC<PostComposerProps> = ({
         </div>
       )}
       
-      <div className="p-4 border border-purple-200 dark:border-purple-900 rounded-lg bg-purple-50 dark:bg-gray-700/50">
-          <label htmlFor="ai-image-prompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">مولّد الصور بالذكاء الاصطناعي 🤖</label>
+      <div className="p-4 border border-purple-200 dark:border-purple-900 rounded-lg bg-purple-50 dark:bg-gray-700/50 space-y-3">
+          <label htmlFor="ai-image-prompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300">مولّد الصور بالذكاء الاصطناعي 🤖</label>
+          <div className="flex bg-gray-200 dark:bg-gray-600 rounded-lg p-1 max-w-xs">
+              <button onClick={() => setImageService('gemini')} disabled={!aiClient} className={`w-1/2 p-2 rounded-md text-sm font-semibold transition-colors ${imageService === 'gemini' ? 'bg-white dark:bg-gray-900 shadow text-purple-600' : 'text-gray-600 dark:text-gray-300'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                  Gemini
+              </button>
+              <button onClick={() => setImageService('stability')} disabled={!stabilityApiKey} className={`w-1/2 p-2 rounded-md text-sm font-semibold transition-colors ${imageService === 'stability' ? 'bg-white dark:bg-gray-900 shadow text-purple-600' : 'text-gray-600 dark:text-gray-300'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                  Stability AI
+              </button>
+          </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <input id="ai-image-prompt" type="text" value={aiImagePrompt} onChange={(e) => setAiImagePrompt(e.target.value)} placeholder="وصف الصورة، مثلاً: رائد فضاء يقرأ على المريخ" className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-purple-500 focus:border-purple-500" disabled={isGeneratingImage || !aiClient}/>
-            <Button onClick={handleGenerateImageWithAI} isLoading={isGeneratingImage} className="bg-purple-600 hover:bg-purple-700 focus:ring-purple-500" disabled={!aiClient}><PhotoIcon className="w-5 h-5 ml-2"/>{isGeneratingImage ? 'جاري الإنشاء...' : 'إنشاء صورة'}</Button>
+            <input id="ai-image-prompt" type="text" value={aiImagePrompt} onChange={(e) => setAiImagePrompt(e.target.value)} placeholder="وصف الصورة، مثلاً: رائد فضاء يقرأ على المريخ" className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-purple-500 focus:border-purple-500" disabled={isGeneratingImage || (!aiClient && !stabilityApiKey)}/>
+            <Button onClick={handleGenerateImageWithAI} isLoading={isGeneratingImage} className="bg-purple-600 hover:bg-purple-700 focus:ring-purple-500" disabled={isGeneratingImage || (imageService === 'gemini' && !aiClient) || (imageService === 'stability' && !stabilityApiKey)}><PhotoIcon className="w-5 h-5 ml-2"/>{isGeneratingImage ? 'جاري الإنشاء...' : 'إنشاء صورة'}</Button>
           </div>
           {aiImageError && <p className="text-red-500 text-sm mt-2">{aiImageError}</p>}
-          {aiHelperText}
+          {!aiClient && !stabilityApiKey && <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">يرجى إضافة مفتاح Gemini أو Stability AI في الإعدادات.</p>}
       </div>
       
       {error && <p className="text-red-500 text-sm mt-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-md">{error}</p>}

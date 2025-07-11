@@ -25,6 +25,7 @@ const App: React.FC = () => {
   );
   
   const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('gemini-api-key'));
+  const [stabilityApiKey, setStabilityApiKey] = useState<string | null>(localStorage.getItem('stability-api-key'));
   const [aiClient, setAiClient] = useState<GoogleGenAI | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
@@ -88,9 +89,11 @@ const App: React.FC = () => {
     }
   }, [apiKey]);
 
-  const handleSaveApiKey = (newKey: string) => {
-    setApiKey(newKey);
-    localStorage.setItem('gemini-api-key', newKey);
+  const handleSaveKeys = (keys: { gemini: string; stability: string }) => {
+    setApiKey(keys.gemini);
+    localStorage.setItem('gemini-api-key', keys.gemini);
+    setStabilityApiKey(keys.stability);
+    localStorage.setItem('stability-api-key', keys.stability);
   };
 
   const isSimulationMode = isSimulation;
@@ -548,6 +551,7 @@ const App: React.FC = () => {
             onLogout={handleLogout}
             isSimulationMode={isSimulationMode}
             aiClient={aiClient}
+            stabilityApiKey={stabilityApiKey}
             onSettingsClick={() => setIsSettingsModalOpen(true)}
             fetchWithPagination={fetchWithPagination}
             onSyncHistory={handleFullHistorySync}
@@ -582,8 +586,9 @@ const App: React.FC = () => {
       <SettingsModal 
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
-        onSave={handleSaveApiKey}
+        onSave={handleSaveKeys}
         currentApiKey={apiKey}
+        currentStabilityApiKey={stabilityApiKey}
       />
       {renderContent()}
     </div>

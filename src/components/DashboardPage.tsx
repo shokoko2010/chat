@@ -35,6 +35,7 @@ interface DashboardPageProps {
   onLogout: () => void;
   isSimulationMode: boolean;
   aiClient: GoogleGenAI | null;
+  stabilityApiKey: string | null;
   onSettingsClick: () => void;
   fetchWithPagination: (path: string, accessToken?: string) => Promise<any[]>;
   onSyncHistory: (target: Target) => Promise<void>;
@@ -89,7 +90,7 @@ const initialPageProfile: PageProfile = {
 };
 
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId, theme, onToggleTheme }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, stabilityApiKey, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId, theme, onToggleTheme }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'inbox' | 'profile'>('composer');
   
   // Composer state
@@ -1510,18 +1511,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     }}
                     onImageRemove={() => { setSelectedImage(null); setImagePreview(null); }}
                     imagePreview={imagePreview}
+                    selectedImage={selectedImage}
                     isScheduled={isScheduled}
                     onIsScheduledChange={setIsScheduled}
                     scheduleDate={scheduleDate}
                     onScheduleDateChange={setScheduleDate}
                     error={composerError}
                     aiClient={aiClient}
+                    stabilityApiKey={stabilityApiKey}
                     managedTarget={managedTarget}
                     linkedInstagramTarget={linkedInstagramTarget}
                     includeInstagram={includeInstagram}
                     onIncludeInstagramChange={setIncludeInstagram}
                     pageProfile={pageProfile}
-                    selectedImage={selectedImage}
                 />
                 <PostPreview
                   type={includeInstagram ? 'instagram' : 'facebook'}
