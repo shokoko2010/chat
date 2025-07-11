@@ -121,12 +121,7 @@ const InboxPage: React.FC<InboxPageProps> = ({
         setReplyDisabledReason('لقد تم الرد على هذه المحادثة بالفعل.');
     } else if (selectedItem.type === 'message' && ageInHours > 24) {
         setReplyDisabledReason('لا يمكن الرد على الرسائل التي مر عليها أكثر من 24 ساعة.');
-    } else if (selectedItem.type === 'comment' && ageInHours > (7 * 24)) {
-        setReplyDisabledReason('لا يمكن الرد على التعليقات التي مر عليها أكثر من 7 أيام.');
-    } else if (selectedItem.type === 'comment' && selectedItem.can_reply_privately === false) {
-        setReplyDisabledReason('لا يمكن إرسال رد خاص لهذا التعليق بسبب إعدادات الخصوصية للمستخدم.');
-    }
-     else {
+    } else {
         setReplyDisabledReason(null);
     }
   }, [selectedItem, onFetchMessageHistory]);
