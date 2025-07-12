@@ -6,7 +6,6 @@ import SettingsModal from './components/SettingsModal';
 import { GoogleGenAI } from '@google/genai';
 import { initializeGoogleGenAI } from './services/geminiService';
 import { Target, Business, PublishedPost, InboxItem } from './types';
-import PrivacyPolicyPage from './components/PrivacyPolicyPage';
 
 const isSimulation = window.location.protocol === 'http:';
 
@@ -21,7 +20,6 @@ const MOCK_BUSINESSES: Business[] = [
 ];
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'main' | 'privacy'>('main');
   const [authStatus, setAuthStatus] = useState<'loading' | 'connected' | 'not_authorized'>(
     isSimulation ? 'connected' : 'loading'
   );
@@ -48,13 +46,6 @@ const App: React.FC = () => {
     }
     return 'light';
   });
-
-  useEffect(() => {
-    const path = window.location.pathname;
-    if (path.startsWith('/home/privacy-policy') || path.startsWith('/privacy-policy') || path.startsWith('/privacy')) {
-      setCurrentView('privacy');
-    }
-  }, []);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -545,9 +536,6 @@ const App: React.FC = () => {
   const handleChangePage = () => setSelectedTarget(null);
 
   const renderContent = () => {
-      if (currentView === 'privacy') {
-        return <PrivacyPolicyPage />;
-      }
       if (authStatus === 'loading') {
         return <div className="flex items-center justify-center min-h-screen">جاري التحميل...</div>;
       }
