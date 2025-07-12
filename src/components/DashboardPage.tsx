@@ -1440,7 +1440,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                             return postComments.map((comment: any): InboxItem => {
                                 const authorId = comment.from?.id;
                                 const authorPictureUrl = comment.from?.picture?.data?.url || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
-                                const pageHasReplied = !!comment.comments?.data?.some((c: any) => c.from.id === pageTarget.id);
+                                const pageHasReplied = !!comment.comments?.data?.some((c: any) => c && c.from && c.from.id === pageTarget.id);
                                 return {
                                     id: comment.id, platform: 'facebook', type: 'comment', text: comment.message || '',
                                     authorName: comment.from?.name || 'مستخدم فيسبوك',
@@ -1476,7 +1476,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         if (post.comments_count > 0) {
                             const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100&since=${sinceTimestamp}`, igAccessToken);
                             return postComments.map((comment: any): InboxItem => {
-                                const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === pageTarget.id);
+                                const pageHasReplied = !!comment.replies?.data?.some((c: any) => c && c.from && c.from.id === pageTarget.id);
                                 return {
                                     id: comment.id, platform: 'instagram', type: 'comment', text: comment.text || '',
                                     authorName: comment.from?.username || 'مستخدم انستجرام',

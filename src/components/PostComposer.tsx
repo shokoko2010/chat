@@ -8,6 +8,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Target, PageProfile } from '../types';
 import InstagramIcon from './icons/InstagramIcon';
 import HashtagIcon from './icons/HashtagIcon';
+import CanvaIcon from './icons/CanvaIcon';
 
 
 interface PostComposerProps {
@@ -323,6 +324,14 @@ const PostComposer: React.FC<PostComposerProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
             <input type="file" id="imageUpload" className="hidden" accept="image/*" onChange={onImageChange}/>
             <Button variant="secondary" onClick={() => document.getElementById('imageUpload')?.click()}><PhotoIcon className="w-5 h-5 ml-2" />أضف صورة</Button>
+            <Button 
+                variant="secondary"
+                onClick={() => window.open('https://canva.com', '_blank', 'noopener,noreferrer')}
+                className="!bg-[#00C4CC] !text-white hover:!bg-[#00A7B0] focus:!ring-[#00C4CC]"
+            >
+                <CanvaIcon className="w-5 h-5 ml-2" />
+                صمم بـ Canva
+            </Button>
         </div>
         <div className="flex items-center gap-2">
              <Button variant="secondary" onClick={onSaveDraft} disabled={isPublishing || (!postText.trim() && !imagePreview)}>حفظ كمسودة</Button>

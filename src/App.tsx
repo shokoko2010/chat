@@ -6,6 +6,7 @@ import SettingsModal from './components/SettingsModal';
 import { GoogleGenAI } from '@google/genai';
 import { initializeGoogleGenAI } from './services/geminiService';
 import { Target, Business, PublishedPost, InboxItem } from './types';
+import PrivacyPolicyPage from './components/PrivacyPolicyPage';
 
 const isSimulation = window.location.protocol === 'http:';
 
@@ -20,6 +21,7 @@ const MOCK_BUSINESSES: Business[] = [
 ];
 
 const App: React.FC = () => {
+  const [currentView, setCurrentView] = useState<'main' | 'privacy'>('main');
   const [authStatus, setAuthStatus] = useState<'loading' | 'connected' | 'not_authorized'>(
     isSimulation ? 'connected' : 'loading'
   );
@@ -46,6 +48,13 @@ const App: React.FC = () => {
     }
     return 'light';
   });
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path.startsWith('/home/privacy-policy') || path.startsWith('/privacy-policy') || path.startsWith('/privacy')) {
+      setCurrentView('privacy');
+    }
+  }, []);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -349,7 +358,7 @@ const App: React.FC = () => {
                 return postComments.map((comment: any): InboxItem => {
                       const authorId = comment.from?.id;
                       const authorPictureUrl = comment.from?.picture?.data?.url || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
-                      const pageHasReplied = !!comment.comments?.data?.some((c: any) => c.from.id === pageTarget.id);
+                      const pageHasReplied = !!comment.comments?.data?.some((c: any) => c && c.from && c.from.id === pageTarget.id);
                       return {
                         id: comment.id,
                         platform: 'facebook',
@@ -421,7 +430,7 @@ const App: React.FC = () => {
                 if (post.comments_count > 0) {
                     const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100`, igAccessToken);
                     return postComments.map((comment: any): InboxItem => {
-                        const pageHasReplied = !!comment.replies?.data?.some((c: any) => c.from.id === pageTarget.id);
+                        const pageHasReplied = !!comment.replies?.data?.some((c: any) => c && c.from && c.from.id === pageTarget.id);
                         return {
                             id: comment.id,
                             platform: 'instagram',
@@ -516,7 +525,7 @@ const App: React.FC = () => {
         if (response.authResponse) setAuthStatus('connected');
         else setAuthStatus('not_authorized');
       }, { 
-        scope: 'business_management,email,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_manage_posts,pages_messaging,pages_read_engagement,pages_read_user_content,pages_show_list,public_profile,read_insights',
+        scope: 'business_management,email,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,instagram_manage_messages,pages_manage_posts,pages_messaging,pages_read_engagement,pages_read_user_content,pages_show_list,public_profile,read_insights',
         auth_type: 'rerequest'
       });
   }, [isSimulationMode]);
@@ -536,6 +545,9 @@ const App: React.FC = () => {
   const handleChangePage = () => setSelectedTarget(null);
 
   const renderContent = () => {
+      if (currentView === 'privacy') {
+        return <PrivacyPolicyPage />;
+      }
       if (authStatus === 'loading') {
         return <div className="flex items-center justify-center min-h-screen">جاري التحميل...</div>;
       }
