@@ -50,7 +50,23 @@
       };
     </script>
     <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
-    <script src="https://sdk.canva.com/v3/beta/button.js"></script>
+    
+    <!-- Canva SDK -->
+    <script id="canva-sdk-script" src="https://sdk.canva.com/v3/api.js" async></script>
+    <script>
+      const canvaScript = document.getElementById('canva-sdk-script');
+      if (canvaScript) {
+        canvaScript.onload = () => {
+          // The script has loaded, window.Canva should be available now.
+          // Dispatch our custom event that the PostComposer component is listening for.
+          window.dispatchEvent(new CustomEvent('canva:sdk:ready'));
+        };
+        canvaScript.onerror = () => {
+          console.error('The Canva SDK script failed to load.');
+        };
+      }
+    </script>
+
     <script type="module" src="/src/index.tsx"></script>
 </body>
 </html>
