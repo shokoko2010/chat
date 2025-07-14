@@ -26,6 +26,7 @@ const App: React.FC = () => {
   
   const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('gemini-api-key'));
   const [stabilityApiKey, setStabilityApiKey] = useState<string | null>(localStorage.getItem('stability-api-key'));
+  const [canvaApiKey, setCanvaApiKey] = useState<string | null>(localStorage.getItem('canva-api-key'));
   const [aiClient, setAiClient] = useState<GoogleGenAI | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
@@ -89,11 +90,13 @@ const App: React.FC = () => {
     }
   }, [apiKey]);
 
-  const handleSaveKeys = (keys: { gemini: string; stability: string; }) => {
+  const handleSaveKeys = (keys: { gemini: string; stability: string; canva: string; }) => {
     setApiKey(keys.gemini);
     localStorage.setItem('gemini-api-key', keys.gemini);
     setStabilityApiKey(keys.stability);
     localStorage.setItem('stability-api-key', keys.stability);
+    setCanvaApiKey(keys.canva);
+    localStorage.setItem('canva-api-key', keys.canva);
   };
 
   const isSimulationMode = isSimulation;
@@ -552,6 +555,7 @@ const App: React.FC = () => {
             isSimulationMode={isSimulationMode}
             aiClient={aiClient}
             stabilityApiKey={stabilityApiKey}
+            canvaApiKey={canvaApiKey}
             onSettingsClick={() => setIsSettingsModalOpen(true)}
             fetchWithPagination={fetchWithPagination}
             onSyncHistory={handleFullHistorySync}
@@ -589,6 +593,7 @@ const App: React.FC = () => {
         onSave={handleSaveKeys}
         currentApiKey={apiKey}
         currentStabilityApiKey={stabilityApiKey}
+        currentCanvaApiKey={canvaApiKey}
       />
       {renderContent()}
     </div>

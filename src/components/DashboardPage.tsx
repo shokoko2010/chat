@@ -36,6 +36,7 @@ interface DashboardPageProps {
   isSimulationMode: boolean;
   aiClient: GoogleGenAI | null;
   stabilityApiKey: string | null;
+  canvaApiKey: string | null;
   onSettingsClick: () => void;
   fetchWithPagination: (path: string, accessToken?: string) => Promise<any[]>;
   onSyncHistory: (target: Target) => Promise<void>;
@@ -90,7 +91,7 @@ const initialPageProfile: PageProfile = {
 };
 
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, stabilityApiKey, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId, theme, onToggleTheme }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, stabilityApiKey, canvaApiKey, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId, theme, onToggleTheme }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'inbox' | 'profile'>('composer');
   
   // Composer state
@@ -1586,6 +1587,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                     error={composerError}
                     aiClient={aiClient}
                     stabilityApiKey={stabilityApiKey}
+                    canvaApiKey={canvaApiKey}
                     managedTarget={managedTarget}
                     linkedInstagramTarget={linkedInstagramTarget}
                     includeInstagram={includeInstagram}

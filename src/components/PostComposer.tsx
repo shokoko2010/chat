@@ -29,6 +29,7 @@ interface PostComposerProps {
   error: string;
   aiClient: GoogleGenAI | null;
   stabilityApiKey: string | null;
+  canvaApiKey: string | null;
   managedTarget: Target;
   linkedInstagramTarget: Target | null;
   includeInstagram: boolean;
@@ -76,6 +77,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   error,
   aiClient,
   stabilityApiKey,
+  canvaApiKey,
   managedTarget,
   linkedInstagramTarget,
   includeInstagram,
@@ -190,6 +192,32 @@ const PostComposer: React.FC<PostComposerProps> = ({
         setAiHashtagError(e.message || 'حدث خطأ غير متوقع.');
     } finally {
         setIsGeneratingHashtags(false);
+    }
+  };
+
+  const handleDesignWithCanva = async () => {
+    if (!canvaApiKey) {
+      alert('يرجى إضافة مفتاح Canva API في الإعدادات لتفعيل هذه الميزة.');
+      return;
+    }
+    if (typeof window.Canva === 'undefined') {
+      alert('لم يتم تحميل عدة تطوير برامج كانفا (SDK). يرجى تحديث الصفحة.');
+      return;
+    }
+    try {
+      const canvaApi = await window.Canva.init({ apiKey: canvaApiKey });
+      canvaApi.createDesign({
+        design: { type: 'SocialMedia' },
+        onPublish: async (opts: { exportUrl: string }) => {
+          const response = await fetch(opts.exportUrl);
+          const blob = await response.blob();
+          const file = new File([blob], `canva-design-${Date.now()}.jpeg`, { type: 'image/jpeg' });
+          onImageGenerated(file);
+        },
+      });
+    } catch (error: any) {
+      console.error("Canva API error:", error);
+      alert(`حدث خطأ أثناء الاتصال بـ Canva: ${error.message}`);
     }
   };
 
@@ -324,10 +352,12 @@ const PostComposer: React.FC<PostComposerProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
             <input type="file" id="imageUpload" className="hidden" accept="image/*" onChange={onImageChange}/>
             <Button variant="secondary" onClick={() => document.getElementById('imageUpload')?.click()}><PhotoIcon className="w-5 h-5 ml-2" />أضف صورة</Button>
-            <Button 
+            <Button
                 variant="secondary"
-                onClick={() => window.open('https://canva.com', '_blank', 'noopener,noreferrer')}
+                onClick={handleDesignWithCanva}
+                disabled={!canvaApiKey}
                 className="!bg-[#00C4CC] !text-white hover:!bg-[#00A7B0] focus:!ring-[#00C4CC]"
+                title={!canvaApiKey ? 'يرجى إضافة مفتاح Canva API في الإعدادات' : 'صمم بـ Canva'}
             >
                 <CanvaIcon className="w-5 h-5 ml-2" />
                 صمم بـ Canva
