@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
 import SparklesIcon from './icons/SparklesIcon';
@@ -98,6 +98,28 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const [aiTimeError, setAiTimeError] = useState('');
   const [isGeneratingHashtags, setIsGeneratingHashtags] = useState(false);
   const [aiHashtagError, setAiHashtagError] = useState('');
+  const [isCanvaSdkReady, setIsCanvaSdkReady] = useState(false);
+
+  useEffect(() => {
+    // Check for Canva SDK readiness. Poll for a few seconds.
+    if (window.Canva?.init) {
+      setIsCanvaSdkReady(true);
+      return;
+    }
+
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      if (window.Canva?.init) {
+        setIsCanvaSdkReady(true);
+        clearInterval(interval);
+      } else if (attempts > 10) { // Stop after 5 seconds
+        clearInterval(interval);
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, []);
   
   const handleGenerateTextWithAI = async () => {
       if (!aiClient) return;
@@ -200,10 +222,11 @@ const PostComposer: React.FC<PostComposerProps> = ({
       alert('يرجى إضافة مفتاح Canva API في الإعدادات لتفعيل هذه الميزة.');
       return;
     }
-    if (typeof window.Canva === 'undefined') {
-      alert('لم يتم تحميل عدة تطوير برامج كانفا (SDK). يرجى تحديث الصفحة.');
+    // The button is disabled if the SDK is not ready, so no alert needed here.
+    if (!isCanvaSdkReady || !window.Canva?.init) {
       return;
     }
+
     try {
       const canvaApi = await window.Canva.init({ apiKey: canvaApiKey });
       canvaApi.createDesign({
@@ -355,12 +378,12 @@ const PostComposer: React.FC<PostComposerProps> = ({
             <Button
                 variant="secondary"
                 onClick={handleDesignWithCanva}
-                disabled={!canvaApiKey}
+                disabled={!canvaApiKey || !isCanvaSdkReady}
                 className="!bg-[#00C4CC] !text-white hover:!bg-[#00A7B0] focus:!ring-[#00C4CC]"
-                title={!canvaApiKey ? 'يرجى إضافة مفتاح Canva API في الإعدادات' : 'صمم بـ Canva'}
+                title={!canvaApiKey ? 'يرجى إضافة مفتاح Canva API في الإعدادات' : !isCanvaSdkReady ? 'جاري تحميل Canva SDK...' : 'صمم بـ Canva'}
             >
                 <CanvaIcon className="w-5 h-5 ml-2" />
-                صمم بـ Canva
+                {isCanvaSdkReady ? 'صمم بـ Canva' : 'تحميل Canva...'}
             </Button>
         </div>
         <div className="flex items-center gap-2">
