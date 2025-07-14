@@ -237,15 +237,20 @@ export const generateHashtags = async (ai: GoogleGenAI, postText: string, pagePr
   }
 };
 
-export const generateImageFromPrompt = async (ai: GoogleGenAI, prompt: string): Promise<string> => {
+export const generateImageFromPrompt = async (ai: GoogleGenAI, prompt: string, style: string, aspectRatio: string): Promise<string> => {
   if (!prompt.trim()) {
     throw new Error("يرجى إدخال وصف لإنشاء الصورة.");
   }
   try {
+    const enhancedPrompt = `A high-quality, ${style.toLowerCase()} image of: ${prompt}`;
     const response = await ai.models.generateImages({
       model: 'imagen-3.0-generate-002',
-      prompt: `صورة فوتوغرافية سينمائية عالية الجودة لـ: ${prompt}`,
-      config: { numberOfImages: 1, outputMimeType: 'image/jpeg' },
+      prompt: enhancedPrompt,
+      config: { 
+        numberOfImages: 1, 
+        outputMimeType: 'image/jpeg',
+        aspectRatio: aspectRatio,
+      },
     });
 
     if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image && response.generatedImages[0].image.imageBytes) {
@@ -276,13 +281,12 @@ export const translateText = async (ai: GoogleGenAI, text: string, targetLang: s
     }
 }
 
-export const generateImageWithStabilityAI = async (apiKey: string, prompt: string, aiClient?: GoogleGenAI | null): Promise<string> => {
+export const generateImageWithStabilityAI = async (apiKey: string, prompt: string, style: string, aspectRatio: string, aiClient?: GoogleGenAI | null): Promise<string> => {
     if (!apiKey.trim()) {
         throw new Error("مفتاح Stability AI API غير متوفر. يرجى إضافته في الإعدادات.");
     }
 
     let finalPrompt = prompt;
-    // Check if the prompt contains Arabic characters
     if (/[\u0600-\u06FF]/.test(prompt)) {
         if (!aiClient) {
             throw new Error("الترجمة التلقائية تتطلب مفتاح Gemini API. يرجى إضافته في الإعدادات للمتابعة.");
@@ -294,9 +298,12 @@ export const generateImageWithStabilityAI = async (apiKey: string, prompt: strin
         }
     }
 
+    const enhancedPrompt = `A high-quality, ${style.toLowerCase()} image of: ${finalPrompt}`;
+
     const formData = new FormData();
-    formData.append('prompt', `cinematic photo, high quality photography of: ${finalPrompt}`);
+    formData.append('prompt', enhancedPrompt);
     formData.append('output_format', 'jpeg');
+    formData.append('aspect_ratio', aspectRatio);
     
     const response = await fetch(
         'https://api.stability.ai/v2beta/stable-image/generate/core',
@@ -332,11 +339,9 @@ export const generateImageWithStabilityAI = async (apiKey: string, prompt: strin
         if (artifact.finishReason === 'CONTENT_FILTERED') {
             throw new Error("خطأ Stability AI: تم حظر الموجه لأسباب تتعلق بالسلامة. حاول تغيير وصف الصورة.");
         }
-        // Handle other finishReasons like ERROR, etc.
         throw new Error(`فشل إنشاء الصورة. السبب من Stability AI: ${artifact.finishReason}`);
     }
 
-    // If we get here, something is wrong with the successful response
     console.error("Unexpected successful response from Stability AI:", responseJSON);
     throw new Error("فشل إنشاء الصورة. لم يتم العثور على بيانات الصورة في الاستجابة من Stability AI.");
 }

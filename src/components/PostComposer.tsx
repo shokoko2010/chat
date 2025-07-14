@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
 import SparklesIcon from './icons/SparklesIcon';
@@ -8,7 +8,6 @@ import { GoogleGenAI } from '@google/genai';
 import { Target, PageProfile } from '../types';
 import InstagramIcon from './icons/InstagramIcon';
 import HashtagIcon from './icons/HashtagIcon';
-import CanvaIcon from './icons/CanvaIcon';
 
 
 interface PostComposerProps {
@@ -29,7 +28,6 @@ interface PostComposerProps {
   error: string;
   aiClient: GoogleGenAI | null;
   stabilityApiKey: string | null;
-  canvaApiKey: string | null;
   managedTarget: Target;
   linkedInstagramTarget: Target | null;
   includeInstagram: boolean;
@@ -77,7 +75,6 @@ const PostComposer: React.FC<PostComposerProps> = ({
   error,
   aiClient,
   stabilityApiKey,
-  canvaApiKey,
   managedTarget,
   linkedInstagramTarget,
   includeInstagram,
@@ -93,51 +90,13 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [aiImageError, setAiImageError] = useState('');
   const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
+  const [imageStyle, setImageStyle] = useState('Photographic');
+  const [imageAspectRatio, setImageAspectRatio] = useState('1:1');
 
   const [isSuggestingTime, setIsSuggestingTime] = useState(false);
   const [aiTimeError, setAiTimeError] = useState('');
   const [isGeneratingHashtags, setIsGeneratingHashtags] = useState(false);
   const [aiHashtagError, setAiHashtagError] = useState('');
-  const [isCanvaSdkReady, setIsCanvaSdkReady] = useState(false);
-
-  useEffect(() => {
-    // This effect runs once on mount to check for and wait for the Canva SDK.
-    const checkAndSetReady = () => {
-      if (window.Canva?.init) {
-        setIsCanvaSdkReady(true);
-        return true; // SDK is ready
-      }
-      return false; // SDK not ready
-    };
-
-    // If SDK is already available (e.g., cached), set it and exit.
-    if (checkAndSetReady()) {
-      return;
-    }
-    
-    // Define the handler for our custom event.
-    const handleCanvaSdkReady = () => {
-      checkAndSetReady();
-    };
-    
-    // Listen for the custom event dispatched from index.html.
-    window.addEventListener('canva:sdk:ready', handleCanvaSdkReady);
-
-    // Also poll for a few seconds as a fallback mechanism.
-    let attempts = 0;
-    const intervalId = setInterval(() => {
-      if (checkAndSetReady() || attempts >= 10) {
-        clearInterval(intervalId);
-      }
-      attempts++;
-    }, 500);
-
-    // Cleanup function to remove the event listener and interval.
-    return () => {
-      window.removeEventListener('canva:sdk:ready', handleCanvaSdkReady);
-      clearInterval(intervalId);
-    };
-  }, []);
   
   const handleGenerateTextWithAI = async () => {
       if (!aiClient) return;
@@ -183,10 +142,10 @@ const PostComposer: React.FC<PostComposerProps> = ({
       let base64Bytes: string;
       if (imageService === 'stability') {
         if (!stabilityApiKey) throw new Error("مفتاح Stability AI API غير مكوّن. يرجى إضافته في الإعدادات.");
-        base64Bytes = await generateImageWithStabilityAI(stabilityApiKey, aiImagePrompt, aiClient);
+        base64Bytes = await generateImageWithStabilityAI(stabilityApiKey, aiImagePrompt, imageStyle, imageAspectRatio, aiClient);
       } else { // 'gemini'
         if (!aiClient) throw new Error("مفتاح Gemini API غير مكوّن. يرجى إضافته في الإعدادات.");
-        base64Bytes = await generateImageFromPrompt(aiClient, aiImagePrompt);
+        base64Bytes = await generateImageFromPrompt(aiClient, aiImagePrompt, imageStyle, imageAspectRatio);
       }
       const imageFile = base64ToFile(base64Bytes, `${aiImagePrompt.substring(0, 20).replace(/\s/g, '_')}.jpeg`);
       onImageGenerated(imageFile);
@@ -235,33 +194,6 @@ const PostComposer: React.FC<PostComposerProps> = ({
     }
   };
 
-  const handleDesignWithCanva = async () => {
-    if (!canvaApiKey) {
-      alert('يرجى إضافة مفتاح Canva API في الإعدادات لتفعيل هذه الميزة.');
-      return;
-    }
-    // The button is disabled if the SDK is not ready, so no alert needed here.
-    if (!isCanvaSdkReady || !window.Canva?.init) {
-      return;
-    }
-
-    try {
-      const canvaApi = await window.Canva.init({ apiKey: canvaApiKey });
-      canvaApi.createDesign({
-        design: { type: 'SocialMedia' },
-        onPublish: async (opts: { exportUrl: string }) => {
-          const response = await fetch(opts.exportUrl);
-          const blob = await response.blob();
-          const file = new File([blob], `canva-design-${Date.now()}.jpeg`, { type: 'image/jpeg' });
-          onImageGenerated(file);
-        },
-      });
-    } catch (error: any) {
-      console.error("Canva API error:", error);
-      alert(`حدث خطأ أثناء الاتصال بـ Canva: ${error.message}`);
-    }
-  };
-
   const aiHelperText = !aiClient ? (
     <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">
       ميزات الذكاء الاصطناعي معطلة. يرجى إدخال مفتاح Gemini API في الإعدادات لتفعيلها.
@@ -275,6 +207,21 @@ const PostComposer: React.FC<PostComposerProps> = ({
     }
     return 'انشر الآن';
   };
+
+  const imageStyles = [
+    { value: 'Photographic', label: 'فوتوغرافي' },
+    { value: 'Cinematic', label: 'سينمائي' },
+    { value: 'Digital Art', label: 'فن رقمي' },
+    { value: 'Anime', label: 'أنمي' },
+    { value: 'Fantasy', label: 'خيالي' },
+    { value: 'Neon Punk', label: 'نيون بانك' },
+  ];
+
+  const aspectRatios = [
+    { value: '1:1', label: 'مربع (1:1)' },
+    { value: '16:9', label: 'عريض (16:9)' },
+    { value: '9:16', label: 'طولي (9:16)' },
+  ];
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg space-y-6">
@@ -294,7 +241,6 @@ const PostComposer: React.FC<PostComposerProps> = ({
 
       <textarea value={postText} onChange={(e) => onPostTextChange(e.target.value)} placeholder="بماذا تفكر؟ اكتب منشورك هنا..." className="w-full h-48 p-3 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition" />
         
-        {/* New Hashtag Generator */}
         <div className="flex flex-col sm:flex-row gap-2">
             <Button 
                 onClick={handleGenerateHashtags} 
@@ -337,13 +283,29 @@ const PostComposer: React.FC<PostComposerProps> = ({
       
       <div className="p-4 border border-purple-200 dark:border-purple-900 rounded-lg bg-purple-50 dark:bg-gray-700/50 space-y-3">
           <label htmlFor="ai-image-prompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300">مولّد الصور بالذكاء الاصطناعي 🤖</label>
-          <div className="flex bg-gray-200 dark:bg-gray-600 rounded-lg p-1 max-w-xs">
-              <button onClick={() => setImageService('gemini')} disabled={!aiClient} className={`w-1/2 p-2 rounded-md text-sm font-semibold transition-colors ${imageService === 'gemini' ? 'bg-white dark:bg-gray-900 shadow text-purple-600' : 'text-gray-600 dark:text-gray-300'} disabled:opacity-50 disabled:cursor-not-allowed`}>
-                  Gemini
-              </button>
-              <button onClick={() => setImageService('stability')} disabled={!stabilityApiKey} className={`w-1/2 p-2 rounded-md text-sm font-semibold transition-colors ${imageService === 'stability' ? 'bg-white dark:bg-gray-900 shadow text-purple-600' : 'text-gray-600 dark:text-gray-300'} disabled:opacity-50 disabled:cursor-not-allowed`}>
-                  Stability AI
-              </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="flex bg-gray-200 dark:bg-gray-600 rounded-lg p-1">
+                <button onClick={() => setImageService('gemini')} disabled={!aiClient} className={`w-1/2 p-2 rounded-md text-sm font-semibold transition-colors ${imageService === 'gemini' ? 'bg-white dark:bg-gray-900 shadow text-purple-600' : 'text-gray-600 dark:text-gray-300'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                    Gemini
+                </button>
+                <button onClick={() => setImageService('stability')} disabled={!stabilityApiKey} className={`w-1/2 p-2 rounded-md text-sm font-semibold transition-colors ${imageService === 'stability' ? 'bg-white dark:bg-gray-900 shadow text-purple-600' : 'text-gray-600 dark:text-gray-300'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                    Stability AI
+                </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label htmlFor="aspect-ratio" className="sr-only">نسبة الأبعاد</label>
+                  <select id="aspect-ratio" value={imageAspectRatio} onChange={e => setImageAspectRatio(e.target.value)} className="w-full h-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-purple-500 focus:border-purple-500 text-sm">
+                    {aspectRatios.map(ar => <option key={ar.value} value={ar.value}>{ar.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                   <label htmlFor="image-style" className="sr-only">نمط الصورة</label>
+                   <select id="image-style" value={imageStyle} onChange={e => setImageStyle(e.target.value)} className="w-full h-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-purple-500 focus:border-purple-500 text-sm">
+                    {imageStyles.map(style => <option key={style.value} value={style.value}>{style.label}</option>)}
+                   </select>
+                </div>
+            </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <input id="ai-image-prompt" type="text" value={aiImagePrompt} onChange={(e) => setAiImagePrompt(e.target.value)} placeholder="وصف الصورة، مثلاً: رائد فضاء يقرأ على المريخ" className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-purple-500 focus:border-purple-500" disabled={isGeneratingImage || (!aiClient && !stabilityApiKey)}/>
@@ -393,16 +355,6 @@ const PostComposer: React.FC<PostComposerProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
             <input type="file" id="imageUpload" className="hidden" accept="image/*" onChange={onImageChange}/>
             <Button variant="secondary" onClick={() => document.getElementById('imageUpload')?.click()}><PhotoIcon className="w-5 h-5 ml-2" />أضف صورة</Button>
-            <Button
-                variant="secondary"
-                onClick={handleDesignWithCanva}
-                disabled={!canvaApiKey || !isCanvaSdkReady}
-                className="!bg-[#00C4CC] !text-white hover:!bg-[#00A7B0] focus:!ring-[#00C4CC]"
-                title={!canvaApiKey ? 'يرجى إضافة مفتاح Canva API في الإعدادات' : !isCanvaSdkReady ? 'جاري تحميل Canva SDK...' : 'صمم بـ Canva'}
-            >
-                <CanvaIcon className="w-5 h-5 ml-2" />
-                {isCanvaSdkReady ? 'صمم بـ Canva' : 'تحميل Canva...'}
-            </Button>
         </div>
         <div className="flex items-center gap-2">
              <Button variant="secondary" onClick={onSaveDraft} disabled={isPublishing || (!postText.trim() && !imagePreview)}>حفظ كمسودة</Button>

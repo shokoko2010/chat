@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+
+import React, { useState, useEffect, useMemo, useCallback, useRef, SetStateAction, Dispatch } from 'react';
 import { Target, PublishedPost, Draft, ScheduledPost, BulkPostItem, ContentPlanItem, StrategyRequest, WeeklyScheduleSettings, PageProfile, PerformanceSummaryData, StrategyHistoryItem, InboxItem, AutoResponderSettings, AutoResponderRule, AutoResponderAction } from '../types';
 import Header from './Header';
 import PostComposer from './PostComposer';
@@ -11,7 +12,7 @@ import ContentPlannerPage from './ContentPlannerPage';
 import ReminderCard from './ReminderCard';
 import InboxPage from './InboxPage';
 import { GoogleGenAI } from '@google/genai';
-import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData, generateSmartReplies, generateAutoReply, generatePostSuggestion } from '../services/geminiService';
+import { generateDescriptionForImage, generateContentPlan, generatePerformanceSummary, generateOptimalSchedule, generatePostInsights, enhanceProfileFromFacebookData, generateSmartReplies, generateAutoReply, generatePostSuggestion, generateHashtags } from '../services/geminiService';
 import PageProfilePage from './PageProfilePage';
 import Button from './ui/Button';
 
@@ -36,7 +37,6 @@ interface DashboardPageProps {
   isSimulationMode: boolean;
   aiClient: GoogleGenAI | null;
   stabilityApiKey: string | null;
-  canvaApiKey: string | null;
   onSettingsClick: () => void;
   fetchWithPagination: (path: string, accessToken?: string) => Promise<any[]>;
   onSyncHistory: (target: Target) => Promise<void>;
@@ -91,7 +91,7 @@ const initialPageProfile: PageProfile = {
 };
 
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, stabilityApiKey, canvaApiKey, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId, theme, onToggleTheme }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets, onChangePage, onLogout, isSimulationMode, aiClient, stabilityApiKey, onSettingsClick, fetchWithPagination, onSyncHistory, syncingTargetId, theme, onToggleTheme }) => {
   const [view, setView] = useState<'composer' | 'calendar' | 'drafts' | 'analytics' | 'bulk' | 'planner' | 'inbox' | 'profile'>('composer');
   
   // Composer state
@@ -1156,10 +1156,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
   };
     
     const handleSaveDraft = () => {
-        if (!postText && !selectedImage) {
-            setComposerError('لا يمكن حفظ مسودة فارغة.');
-            return;
-        }
+        if (!postText.trim() && !imagePreview) return;
         const newDraft: Draft = {
             id: `draft_${Date.now()}`,
             text: postText,
@@ -1171,620 +1168,356 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
             includeInstagram: includeInstagram,
         };
         setDrafts(prev => [newDraft, ...prev]);
-        showNotification('success', 'تم حفظ المسودة بنجاح.');
         clearComposer();
+        showNotification('success', 'تم حفظ المنشور كمسودة.');
     };
+
+    const handleFetchPostAnalytics = useCallback(async (postId: string) => {
+      if (isSimulationMode) return;
+      setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, loading: true } } : p));
+      try {
+          const fields = 'likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}';
+          const response: any = await new Promise(resolve => window.FB.api(`/${postId}?fields=${fields}`, { access_token: managedTarget.access_token }, (res: any) => resolve(res)));
+          if (response && !response.error) {
+              const updatedAnalytics = {
+                  likes: response.likes?.summary?.total_count ?? 0,
+                  comments: response.comments?.summary?.total_count ?? 0,
+                  shares: response.shares?.count ?? 0,
+                  reach: response.insights?.data?.[0]?.values?.[0]?.value ?? 0,
+                  loading: false,
+                  lastUpdated: new Date(),
+              };
+              setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, ...updatedAnalytics } } : p));
+              showNotification('success', 'تم تحديث إحصائيات المنشور.');
+          } else {
+              throw new Error(response.error?.message || 'Failed to fetch post analytics.');
+          }
+      } catch (e: any) {
+          console.error(`Failed to fetch analytics for post ${postId}:`, e);
+          showNotification('error', `فشل تحديث الإحصائيات: ${e.message}`);
+          setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, loading: false } } : p));
+      }
+    }, [isSimulationMode, managedTarget.access_token, showNotification]);
+
+    const handleGeneratePostInsights = useCallback(async (postId: string) => {
+        if (!aiClient) return;
+        const post = publishedPosts.find(p => p.id === postId);
+        if (!post) return;
+
+        setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: true } } : p));
+        try {
+            let comments: { message: string }[] = [];
+            if (post.analytics.comments && post.analytics.comments > 0) {
+                const fetchedComments = await fetchWithPagination(`/${postId}/comments?fields=message&limit=100`, managedTarget.access_token);
+                comments = fetchedComments.map(c => ({ message: c.message }));
+            }
+            
+            const insights = await generatePostInsights(aiClient, post.text, post.analytics, comments);
+            
+            setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: false, aiSummary: insights.performanceSummary, sentiment: insights.sentiment } } : p));
+        } catch (e: any) {
+            console.error(`Failed to generate insights for post ${postId}:`, e);
+            showNotification('error', `فشل تحليل المنشور: ${e.message}`);
+            setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: false, aiSummary: `فشل التحليل: ${e.message}` } } : p));
+        }
+    }, [aiClient, publishedPosts, fetchWithPagination, managedTarget.access_token, showNotification]);
     
-    const onBulkAdd = (files: FileList) => {
-        const newItems: BulkPostItem[] = Array.from(files).map((file, index) => ({
-            id: `bulk_${Date.now()}_${index}`,
+    const handleAddBulkPosts = useCallback((files: FileList) => {
+        const newItems: BulkPostItem[] = Array.from(files).map(file => ({
+            id: `bulk_${Date.now()}_${Math.random()}`,
             imageFile: file,
             imagePreview: URL.createObjectURL(file),
             text: '',
             scheduleDate: '',
-            targetIds: bulkSchedulerTargets.map(t => t.id),
+            targetIds: [managedTarget.id],
         }));
         
-        const combinedPosts = [...bulkPosts, ...newItems];
-        const rescheduled = rescheduleBulkPosts(combinedPosts, schedulingStrategy, weeklyScheduleSettings);
+        const postsToSchedule = [...bulkPosts, ...newItems];
+        const rescheduled = rescheduleBulkPosts(postsToSchedule, schedulingStrategy, weeklyScheduleSettings);
         setBulkPosts(rescheduled);
-        showNotification('success', `تمت إضافة ${files.length} صورة بنجاح وجدولتها مبدئيًا.`);
+
+    }, [bulkPosts, managedTarget.id, rescheduleBulkPosts, schedulingStrategy, weeklyScheduleSettings]);
+
+    const handleUpdateBulkPost = (id: string, updates: Partial<BulkPostItem>) => {
+        setBulkPosts(prev => prev.map(p => (p.id === id ? { ...p, ...updates } : p)));
     };
 
-    const onBulkUpdate = (id: string, updates: Partial<BulkPostItem>) => {
-        setBulkPosts(prev => prev.map(p => p.id === id ? { ...p, ...updates, error: undefined } : p));
-    };
-
-    const onBulkRemove = (id: string) => {
+    const handleRemoveBulkPost = (id: string) => {
         setBulkPosts(prev => prev.filter(p => p.id !== id));
     };
 
-    const handleGenerateBulkDescription = async (id: string) => {
+    const handleGenerateBulkDescription = useCallback(async (id: string) => {
+        if (!aiClient) return;
         const item = bulkPosts.find(p => p.id === id);
-        if (!item || !item.imageFile || !aiClient) return;
-        
-        onBulkUpdate(id, { isGeneratingDescription: true });
+        if (!item || !item.imageFile) return;
+
+        handleUpdateBulkPost(id, { isGeneratingDescription: true });
         try {
             const description = await generateDescriptionForImage(aiClient, item.imageFile, pageProfile);
-            onBulkUpdate(id, { text: description });
+            handleUpdateBulkPost(id, { text: description, isGeneratingDescription: false });
         } catch(e: any) {
-            showNotification('error', `فشل توليد الوصف: ${e.message}`);
-        } finally {
-            onBulkUpdate(id, { isGeneratingDescription: false });
+            handleUpdateBulkPost(id, { error: e.message, isGeneratingDescription: false });
         }
-    };
-    
-    const handleGenerateBulkPostFromText = async (id: string) => {
+    }, [aiClient, bulkPosts, pageProfile]);
+
+    const handleGenerateBulkPostFromText = useCallback(async (id: string) => {
+        if (!aiClient) return;
         const item = bulkPosts.find(p => p.id === id);
-        if (!item || !item.text.trim() || !aiClient) return;
+        if (!item || !item.text) return;
         
-        onBulkUpdate(id, { isGeneratingDescription: true });
+        handleUpdateBulkPost(id, { isGeneratingDescription: true }); // Using same loading state
         try {
             const suggestion = await generatePostSuggestion(aiClient, item.text, pageProfile);
-            onBulkUpdate(id, { text: suggestion });
+            handleUpdateBulkPost(id, { text: suggestion, isGeneratingDescription: false });
         } catch(e: any) {
-            showNotification('error', `فشل توليد المنشور: ${e.message}`);
-        } finally {
-            onBulkUpdate(id, { isGeneratingDescription: false });
+            handleUpdateBulkPost(id, { error: e.message, isGeneratingDescription: false });
         }
-    };
+    }, [aiClient, bulkPosts, pageProfile]);
 
-    const onBulkScheduleAll = async () => {
-        let hasError = false;
-        const postsToSchedule: ScheduledPost[] = [];
-        let updatedBulkPosts = [...bulkPosts];
 
-        for (const item of bulkPosts) {
-            if (!item.imageFile || item.targetIds.length === 0 || !item.scheduleDate) {
-                updatedBulkPosts = updatedBulkPosts.map(p => p.id === item.id ? { ...p, error: 'الرجاء إضافة صورة وتاريخ وجهة واحدة على الأقل.' } : p);
-                hasError = true;
-                continue;
-            }
-            if (new Date(item.scheduleDate).getTime() < Date.now()) {
-                updatedBulkPosts = updatedBulkPosts.map(p => p.id === item.id ? { ...p, error: 'تاريخ الجدولة يجب أن يكون في المستقبل.' } : p);
-                hasError = true;
-                continue;
-            }
-        }
-
-        setBulkPosts(updatedBulkPosts);
-
-        if (hasError) {
-            showNotification('error', 'يرجى إصلاح الأخطاء في القائمة قبل المتابعة.');
-            return;
-        }
-
+    const handleScheduleAllBulk = useCallback(async () => {
         setIsSchedulingAll(true);
-        let scheduledItemsCount = 0;
-        let finalBulkPosts = [...bulkPosts];
+        const postsToSchedule = bulkPosts.filter(p => !p.error);
+        const newScheduledPosts: ScheduledPost[] = [];
+        
+        for (const item of postsToSchedule) {
+            if (!item.scheduleDate || item.targetIds.length === 0) {
+                handleUpdateBulkPost(item.id, { error: "الرجاء تحديد تاريخ النشر ووجهة واحدة على الأقل."});
+                continue;
+            }
 
-        for (const item of bulkPosts) {
-            const fbTarget = bulkSchedulerTargets.find(t => t.type === 'page' && item.targetIds.includes(t.id));
-            const igTarget = bulkSchedulerTargets.find(t => t.type === 'instagram' && item.targetIds.includes(t.id));
-
-            let itemError: string | null = null;
-            let itemSuccess = false;
-
-            // Schedule on Facebook if selected
-            if (fbTarget) {
-                const postData: any = {
-                    message: item.text,
-                    source: item.imageFile,
-                    scheduled_publish_time: Math.floor(new Date(item.scheduleDate).getTime() / 1000),
-                    published: false,
-                    access_token: fbTarget.access_token
-                };
-
-                const response: any = await new Promise(resolve => window.FB.api(`/${fbTarget.id}/photos`, 'POST', postData, (res: any) => resolve(res)));
-
-                if (response && !response.error) {
-                    const fbPostId = response.id;
-                    postsToSchedule.push({
-                        id: fbPostId, postId: fbPostId, isSynced: true, text: item.text, imageUrl: item.imagePreview, imageFile: item.imageFile,
-                        scheduledAt: new Date(item.scheduleDate), isReminder: false, targetId: fbTarget.id,
-                        targetInfo: { name: fbTarget.name, avatarUrl: fbTarget.picture.data.url, type: 'page' }
+            // This is a simplified local scheduling. A real app would hit the API.
+            item.targetIds.forEach(targetId => {
+                const target = allTargets.find(t => t.id === targetId);
+                if (target) {
+                    newScheduledPosts.push({
+                        id: `scheduled_${item.id}_${targetId}`,
+                        text: item.text,
+                        imageUrl: item.imagePreview,
+                        imageFile: item.imageFile,
+                        scheduledAt: new Date(item.scheduleDate),
+                        isReminder: target.type === 'instagram',
+                        targetId: target.id,
+                        isSynced: false,
+                        targetInfo: {
+                            name: target.name,
+                            avatarUrl: target.picture.data.url,
+                            type: target.type
+                        }
                     });
-                    itemSuccess = true;
-                } else {
-                    itemError = `(فيسبوك) ${response.error?.message || 'فشل غير معروف'}`;
-                    hasError = true;
                 }
-            }
-
-            // Create reminder for Instagram if selected
-            if (igTarget) {
-                postsToSchedule.push({
-                    id: `reminder_ig_${item.id}`, text: item.text, imageUrl: item.imagePreview, imageFile: item.imageFile,
-                    scheduledAt: new Date(item.scheduleDate), isReminder: true, targetId: igTarget.id,
-                    targetInfo: { name: igTarget.name, avatarUrl: igTarget.picture.data.url, type: 'instagram' }
-                });
-                itemSuccess = true;
-            }
-
-            if (itemError) {
-                finalBulkPosts = finalBulkPosts.map(p => p.id === item.id ? { ...p, error: itemError } : p);
-            } else if (itemSuccess) {
-                scheduledItemsCount++;
-                finalBulkPosts = finalBulkPosts.filter(p => p.id !== item.id);
-            }
+            });
         }
 
-        setScheduledPosts(prev => [...prev, ...postsToSchedule].sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()));
-        setBulkPosts(finalBulkPosts);
+        setScheduledPosts(prev => [...prev, ...newScheduledPosts].sort((a,b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()));
+        setBulkPosts(prev => prev.filter(p => p.error));
         setIsSchedulingAll(false);
-
-        if (hasError) {
-            showNotification('partial', `تم جدولة ${scheduledItemsCount} منشورًا بنجاح، لكن بعضها فشل. يرجى مراجعة القائمة.`);
+        if(newScheduledPosts.length > 0) {
+            showNotification('success', `تمت إضافة ${postsToSchedule.length} منشورًا إلى تقويم المحتوى.`);
+            setView('calendar');
         } else {
-            showNotification('success', `تمت جدولة جميع المنشورات (${scheduledItemsCount}) بنجاح!`);
-            setBulkPosts([]);
+             showNotification('error', `لم يتم جدولة أي منشور. يرجى مراجعة الأخطاء.`);
+        }
+    }, [bulkPosts, allTargets, showNotification]);
+
+    const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (event.target.files && event.target.files[0]) {
+          const file = event.target.files[0];
+          setSelectedImage(file);
+          setImagePreview(URL.createObjectURL(file));
         }
     };
     
-    const handleGenerateInsights = async (postId: string) => {
-        const post = publishedPosts.find(p => p.id === postId);
-        if (!post || !aiClient || post.analytics.comments === 0) return;
-
-        setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: true } } : p));
-        try {
-            const commentsResponse: any = await fetchWithPagination(`/${postId}/comments?fields=message&limit=100`, managedTarget.access_token);
-            const comments = commentsResponse.map((c: any) => ({ message: c.message }));
-            const insights = await generatePostInsights(aiClient, post.text, post.analytics, comments);
-            setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, aiSummary: insights.performanceSummary, sentiment: insights.sentiment } } : p));
-        } catch(e:any) {
-            showNotification('error', `فشل تحليل المنشور: ${e.message}`);
-        } finally {
-            setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, isGeneratingInsights: false } } : p));
-        }
+    const handleImageGenerated = (file: File) => {
+        setSelectedImage(file);
+        setImagePreview(URL.createObjectURL(file));
     };
-    
-    const handleFetchPostAnalytics = async (postId: string) => {
-        setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, loading: true } } : p));
-        try {
-            const fields = 'likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique){values}';
-            const response: any = await new Promise(resolve => window.FB.api(`/${postId}?fields=${fields}`, { access_token: managedTarget.access_token }, (res: any) => resolve(res)));
-            if(response && !response.error) {
-                setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: {
-                    ...p.analytics,
-                    likes: response.likes?.summary?.total_count ?? 0,
-                    comments: response.comments?.summary?.total_count ?? 0,
-                    shares: response.shares?.count ?? 0,
-                    reach: response.insights?.data?.[0]?.values?.[0]?.value ?? 0,
-                    lastUpdated: new Date()
-                } } : p));
-                showNotification('success', 'تم تحديث إحصائيات المنشور.');
-            } else {
-                throw new Error(response?.error?.message || 'فشل جلب الإحصائيات');
-            }
-        } catch(e: any) {
-            showNotification('error', `فشل تحديث الإحصائيات: ${e.message}`);
-        } finally {
-            setPublishedPosts(prev => prev.map(p => p.id === postId ? { ...p, analytics: { ...p.analytics, loading: false } } : p));
-        }
+
+    const handleImageRemove = () => {
+        setSelectedImage(null);
+        setImagePreview(null);
     };
-    
-    const unreadCount = useMemo(() => inboxItems.filter(item => !item.isReplied).length, [inboxItems]);
-    
-    const handleQuickRefresh = useCallback(async () => {
-        if (isSimulationMode || !managedTarget.access_token) return;
 
-        setIsPolling(true);
-        try {
-            const sinceTimestamp = lastSyncTimestamp.current;
-            const pageTarget = managedTarget;
-            const linkedIgTarget = allTargets.find(t => t.type === 'instagram' && t.parentPageId === pageTarget.id);
+    const handleGeneratePlan = useCallback(async (request: StrategyRequest, images?: File[]) => {
+      if (!aiClient) return;
+      setIsGeneratingPlan(true);
+      setPlanError(null);
+      try {
+        const plan = await generateContentPlan(aiClient, request, pageProfile, images);
+        setContentPlan(plan);
 
-            let newInboxItems: InboxItem[] = [];
-            const defaultPicture = 'https://via.placeholder.com/40/cccccc/ffffff?text=?';
-            const pageAccessToken = pageTarget.access_token;
-            
-            // --- 1. Fetch Facebook Messages ---
-            if (pageAccessToken) {
-                try {
-                    const convosPath = `/${pageTarget.id}/conversations?fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
-                    const recentConvosData = await fetchWithPagination(convosPath, pageAccessToken);
-                    const recentMessages: InboxItem[] = recentConvosData.map((convo: any) => {
-                        const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
-                        const participantId = participant?.id;
-                        const lastMessage = convo.messages?.data?.[0];
-                        const pageSentLastMessage = lastMessage?.from?.id === pageTarget.id;
-                        return {
-                            id: convo.id, platform: 'facebook', type: 'message', text: convo.snippet,
-                            authorName: participant?.name || 'مستخدم غير معروف',
-                            authorId: participantId || 'Unknown',
-                            authorPictureUrl: participantId ? `https://graph.facebook.com/${participantId}/picture?type=normal` : defaultPicture,
-                            timestamp: new Date(convo.updated_time).toISOString(),
-                            conversationId: convo.id, isReplied: pageSentLastMessage
-                        };
-                    });
-                    newInboxItems.push(...recentMessages);
-                } catch (error) {
-                    console.warn("Auto-sync failed for Facebook Messages:", error);
-                }
-            }
-
-            // Fetch Instagram Messages
-            if (linkedIgTarget && pageAccessToken) {
-                try {
-                    const igConvosPath = `/${pageTarget.id}/conversations?platform=instagram&fields=id,snippet,updated_time,participants,messages.limit(1){from}&limit=50&since=${sinceTimestamp}`;
-                    const recentIgConvosData = await fetchWithPagination(igConvosPath, pageAccessToken);
-                    const recentIgMessages: InboxItem[] = recentIgConvosData.map((convo: any) => {
-                        const participant = convo.participants.data.find((p: any) => p.id !== pageTarget.id);
-                        const participantId = participant?.id;
-                        const lastMessage = convo.messages?.data?.[0];
-                        const pageSentLastMessage = lastMessage?.from?.id === pageTarget.id;
-                        return {
-                            id: convo.id, platform: 'instagram', type: 'message', text: convo.snippet,
-                            authorName: participant?.name || 'مستخدم انستجرام',
-                            authorId: participantId || 'Unknown',
-                            authorPictureUrl: defaultPicture,
-                            timestamp: new Date(convo.updated_time).toISOString(),
-                            conversationId: convo.id, isReplied: pageSentLastMessage
-                        };
-                    });
-                    newInboxItems.push(...recentIgMessages);
-                } catch (error) {
-                    console.warn("Auto-sync failed for Instagram Messages:", error);
-                }
-            }
-            
-            // --- 2. Fetch Facebook Comments ---
-            if (pageAccessToken) {
-                try {
-                    // Fetch comments on the last 5 posts to catch recent activity
-                    const feedPath = `/${pageTarget.id}/published_posts?fields=id,message,full_picture,created_time,comments.summary(true)&limit=5`;
-                    const recentFeedData = await fetchWithPagination(feedPath, pageAccessToken);
-                    const fbCommentFields = 'id,from{id,name,picture{url}},message,created_time,parent{id},comments{from{id}},can_reply_privately';
-                    const fbCommentPromises = recentFeedData.map(async (post) => {
-                        if (post.comments?.summary?.total_count > 0) {
-                            const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${fbCommentFields}&limit=100&since=${sinceTimestamp}`, pageAccessToken);
-                            return postComments.map((comment: any): InboxItem => {
-                                const authorId = comment.from?.id;
-                                const authorPictureUrl = comment.from?.picture?.data?.url || (authorId ? `https://graph.facebook.com/${authorId}/picture?type=normal` : defaultPicture);
-                                const pageHasReplied = !!comment.comments?.data?.some((c: any) => c && c.from && c.from.id === pageTarget.id);
-                                return {
-                                    id: comment.id, platform: 'facebook', type: 'comment', text: comment.message || '',
-                                    authorName: comment.from?.name || 'مستخدم فيسبوك',
-                                    authorId: authorId || 'Unknown',
-                                    authorPictureUrl: authorPictureUrl,
-                                    timestamp: new Date(comment.created_time).toISOString(),
-                                    post: { id: post.id, message: post.message, picture: post.full_picture },
-                                    parentId: comment.parent?.id,
-                                    isReplied: pageHasReplied, can_reply_privately: comment.can_reply_privately,
-                                };
-                            });
-                        }
-                        return [];
-                    });
-                    const fbCommentBatches = await Promise.all(fbCommentPromises);
-                    fbCommentBatches.forEach(batch => newInboxItems.push(...batch));
-                } catch (error) {
-                     console.warn("Auto-sync failed for Facebook Comments:", error);
-                }
-            }
-            
-            // --- 3. Fetch Instagram Comments ---
-            if (linkedIgTarget) {
-                try {
-                    const igAccessToken = linkedIgTarget.access_token;
-                    // Fetch comments on last 5 IG media items
-                    const igPostFields = 'id,caption,media_url,timestamp,comments_count';
-                    const igPostsPath = `/${linkedIgTarget.id}/media?fields=${igPostFields}&limit=5`;
-                    const igRecentPostsData = await fetchWithPagination(igPostsPath, igAccessToken);
-
-                    const igCommentFields = 'id,from{id,username},text,timestamp,replies{from{id}}';
-                    const igCommentPromises = igRecentPostsData.map(async (post) => {
-                        if (post.comments_count > 0) {
-                            const postComments = await fetchWithPagination(`/${post.id}/comments?fields=${igCommentFields}&limit=100&since=${sinceTimestamp}`, igAccessToken);
-                            return postComments.map((comment: any): InboxItem => {
-                                const pageHasReplied = !!comment.replies?.data?.some((c: any) => c && c.from && c.from.id === pageTarget.id);
-                                return {
-                                    id: comment.id, platform: 'instagram', type: 'comment', text: comment.text || '',
-                                    authorName: comment.from?.username || 'مستخدم انستجرام',
-                                    authorId: comment.from?.id || 'Unknown',
-                                    authorPictureUrl: defaultPicture,
-                                    timestamp: new Date(comment.timestamp).toISOString(),
-                                    post: { id: post.id, message: post.caption, picture: post.media_url },
-                                    parentId: comment.parent?.id, isReplied: pageHasReplied
-                                };
-                            });
-                        }
-                        return [];
-                    });
-                    const igCommentBatches = await Promise.all(igCommentPromises);
-                    igCommentBatches.forEach(batch => newInboxItems.push(...batch));
-                } catch (error) {
-                    console.warn("Auto-sync failed for Instagram Comments:", error);
-                }
-            }
-
-            // --- 4. Combine and Update State ---
-            if (newInboxItems.length > 0) {
-                setInboxItems(prevItems => {
-                    const existingIds = new Set(prevItems.map(i => i.id));
-                    const uniqueNewItems = newInboxItems.filter(i => !existingIds.has(i.id));
-                    if (uniqueNewItems.length === 0) return prevItems;
-                    
-                    const combined = [...uniqueNewItems, ...prevItems];
-                    combined.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                    showNotification('success', `تم جلب ${uniqueNewItems.length} عنصر جديد.`);
-                    return combined;
-                });
-            }
-            
-            lastSyncTimestamp.current = Math.floor(Date.now() / 1000);
-        } finally {
-            setIsPolling(false);
-        }
-    }, [managedTarget, allTargets, isSimulationMode, fetchWithPagination, showNotification]);
-
-    useEffect(() => {
-        if (isSimulationMode) return;
-        
-        const initialSync = async () => {
-            await handleQuickRefresh();
-            await syncScheduledPosts();
-        }
-
-        initialSync();
-        
-        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-
-        pollingIntervalRef.current = setInterval(handleQuickRefresh, 15000); // Poll every 15 seconds
-
-        return () => {
-            if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+        const newHistoryItem: StrategyHistoryItem = {
+            id: `hist_${Date.now()}`,
+            request,
+            plan,
+            summary: request.type === 'standard' ? `خطة قياسية لـ ${request.duration}` :
+                     request.type === 'campaign' ? `حملة: ${request.campaignName}` :
+                     request.type === 'occasion' ? `حملة مناسبة: ${request.occasion}` :
+                     request.type === 'pillar' ? `محتوى محوري: ${request.pillarTopic}` :
+                     `خطة من ${images?.length || 0} صور`,
+            createdAt: new Date().toISOString(),
         };
-    }, [isSimulationMode, handleQuickRefresh, syncScheduledPosts]);
+        setStrategyHistory(prev => [newHistoryItem, ...prev].slice(0, 20)); // Limit history
 
+      } catch (e: any) {
+        setPlanError(e.message);
+        showNotification('error', `فشل إنشاء الخطة: ${e.message}`);
+      } finally {
+        setIsGeneratingPlan(false);
+      }
+    }, [aiClient, pageProfile, showNotification]);
 
+    const handleLoadStrategyFromHistory = useCallback((plan: ContentPlanItem[]) => {
+        setContentPlan(plan);
+        showNotification('success', 'تم تحميل الخطة من السجل.');
+    }, [showNotification]);
+
+    const handleDeleteStrategyFromHistory = useCallback((id: string) => {
+        setStrategyHistory(prev => prev.filter(item => item.id !== id));
+        showNotification('success', 'تم حذف الاستراتيجية من السجل.');
+    }, [showNotification]);
+
+    const handleGenerateSmartReplies = useCallback(async (commentText: string): Promise<string[]> => {
+        if (!aiClient) return [];
+        try {
+            const replies = await generateSmartReplies(aiClient, commentText, pageProfile);
+            return replies;
+        } catch (e: any) {
+            showNotification('error', `فشل اقتراح الردود: ${e.message}`);
+            return [];
+        }
+    }, [aiClient, pageProfile, showNotification]);
+    
+    const prevSyncingTargetId = useRef<string | null>(null);
     useEffect(() => {
-        const interval = setInterval(() => {
-           const reminders = scheduledPosts.filter(p => p.isReminder && new Date(p.scheduledAt) <= new Date());
-           reminders.forEach(r => {
-               showNotification('success', `🔔 حان وقت نشر تذكير انستجرام: "${r.text.substring(0,20)}..."`);
-           });
-        }, 60 * 1000); // Check every minute
-        return () => clearInterval(interval);
-    }, [scheduledPosts, showNotification]);
+        if(prevSyncingTargetId.current && syncingTargetId === null) {
+            // Sync just finished, let's reload data from storage
+            const dataKey = `zex-pages-data-${managedTarget.id}`;
+            const rawData = localStorage.getItem(dataKey);
+            const data = rawData ? JSON.parse(rawData) : {};
+            if (data.inboxItems) {
+                setInboxItems(data.inboxItems.map((i:any) => ({
+                    ...i,
+                    platform: i.platform || 'facebook',
+                    timestamp: new Date(i.timestamp).toISOString(),
+                    isReplied: i.isReplied,
+                })));
+            }
+             if (data.publishedPosts) {
+                setPublishedPosts(data.publishedPosts.map((p:any) => ({...p, publishedAt: new Date(p.publishedAt)})));
+            }
+            showNotification('success', 'تم تحديث البيانات بعد المزامنة.');
+        }
+        prevSyncingTargetId.current = syncingTargetId;
+    }, [syncingTargetId, managedTarget.id, showNotification]);
 
-    useEffect(() => {
-        const processor = setTimeout(() => {
-            processAutoReplies();
-        }, 3000); // Wait 3 seconds before processing
-        return () => clearTimeout(processor);
-    }, [inboxItems, processAutoReplies]);
+    const unreadCount = useMemo(() => inboxItems.filter(i => !i.isReplied).length, [inboxItems]);
+
+    const navItems = [
+        { view: 'composer', label: 'إنشاء منشور', icon: <PencilSquareIcon className="w-5 h-5" /> },
+        { view: 'planner', label: 'استراتيجيات المحتوى', icon: <BrainCircuitIcon className="w-5 h-5" /> },
+        { view: 'bulk', label: 'الجدولة المجمعة', icon: <QueueListIcon className="w-5 h-5" /> },
+        { view: 'calendar', label: 'تقويم المحتوى', icon: <CalendarIcon className="w-5 h-5" /> },
+        { view: 'drafts', label: 'المسودات', icon: <ArchiveBoxIcon className="w-5 h-5" /> },
+        { view: 'analytics', label: 'التحليلات', icon: <ChartBarIcon className="w-5 h-5" /> },
+        { view: 'inbox', label: 'صندوق الوارد', icon: <InboxArrowDownIcon className="w-5 h-5" />, notificationCount: unreadCount, isPolling: isPolling },
+        { view: 'profile', label: 'ملف الصفحة', icon: <UserCircleIcon className="w-5 h-5" /> },
+    ];
     
     const renderView = () => {
-    switch (view) {
-      case 'composer':
-        return (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <PostComposer 
-                    onPublish={handlePublish}
-                    onSaveDraft={handleSaveDraft}
-                    isPublishing={isPublishing}
-                    postText={postText}
-                    onPostTextChange={setPostText}
-                    onImageChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                            const file = e.target.files[0];
-                            setSelectedImage(file);
-                            setImagePreview(URL.createObjectURL(file));
-                        }
-                    }}
-                    onImageGenerated={(file) => {
-                        setSelectedImage(file);
-                        setImagePreview(URL.createObjectURL(file));
-                    }}
-                    onImageRemove={() => { setSelectedImage(null); setImagePreview(null); }}
-                    imagePreview={imagePreview}
-                    selectedImage={selectedImage}
-                    isScheduled={isScheduled}
-                    onIsScheduledChange={setIsScheduled}
-                    scheduleDate={scheduleDate}
-                    onScheduleDateChange={setScheduleDate}
-                    error={composerError}
-                    aiClient={aiClient}
-                    stabilityApiKey={stabilityApiKey}
-                    canvaApiKey={canvaApiKey}
-                    managedTarget={managedTarget}
-                    linkedInstagramTarget={linkedInstagramTarget}
-                    includeInstagram={includeInstagram}
-                    onIncludeInstagramChange={setIncludeInstagram}
-                    pageProfile={pageProfile}
-                />
-                <PostPreview
-                  type={includeInstagram ? 'instagram' : 'facebook'}
-                  postText={postText}
-                  imagePreview={imagePreview}
-                  pageName={includeInstagram ? linkedInstagramTarget?.name : managedTarget.name}
-                  pageAvatar={includeInstagram ? linkedInstagramTarget?.picture.data.url : managedTarget.picture.data.url}
-                />
-            </div>
-        );
-      case 'drafts':
-        return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;
-      case 'calendar':
-        const now = new Date();
-        const reminders = scheduledPosts.filter(p => p.isReminder && new Date(p.scheduledAt).toDateString() === now.toDateString());
-        return (
-            <div className="space-y-6">
-                {reminders.length > 0 && (
-                    <div>
-                        <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-4">تذكيرات النشر لهذا اليوم</h3>
-                        <div className="space-y-4">
-                            {reminders.map(post => (
-                                <ReminderCard 
-                                    key={post.id}
-                                    post={post}
-                                    onPublish={() => {
-                                        setPublishingReminderId(post.id);
-                                        // Simplified publish logic here, could be expanded
-                                        showNotification('success', `جاري محاولة نشر "${post.text.substring(0, 20)}..."`);
-                                        // This would ideally trigger the full publish flow
-                                        setTimeout(() => setPublishingReminderId(null), 2000);
-                                    }}
-                                    isPublishing={publishingReminderId === post.id}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                )}
-                <ContentCalendar 
-                    posts={scheduledPosts}
-                    onDelete={handleDeleteScheduledPost}
-                    onEdit={handleEditFromCalendar}
-                    onSync={syncScheduledPosts}
-                    isSyncing={isSyncingScheduled}
-                />
-            </div>
-        );
-      case 'analytics':
-        return <AnalyticsPage 
-                    period={analyticsPeriod} 
-                    onPeriodChange={setAnalyticsPeriod}
-                    summaryData={summaryData}
-                    aiSummary={performanceSummaryText}
-                    isGeneratingSummary={isGeneratingSummary}
-                    posts={filteredPosts}
-                    isLoading={publishedPostsLoading}
-                    onFetchAnalytics={handleFetchPostAnalytics}
-                    onGenerateInsights={handleGenerateInsights}
-                />;
-      case 'bulk':
-        return <BulkSchedulerPage
-                    bulkPosts={bulkPosts}
-                    onAddPosts={onBulkAdd}
-                    onUpdatePost={onBulkUpdate}
-                    onRemovePost={onBulkRemove}
-                    onScheduleAll={onBulkScheduleAll}
-                    isSchedulingAll={isSchedulingAll}
-                    targets={bulkSchedulerTargets}
-                    aiClient={aiClient}
-                    onGenerateDescription={handleGenerateBulkDescription}
-                    onGeneratePostFromText={handleGenerateBulkPostFromText}
-                    schedulingStrategy={schedulingStrategy}
-                    onSchedulingStrategyChange={setSchedulingStrategy}
-                    weeklyScheduleSettings={weeklyScheduleSettings}
-                    onWeeklyScheduleSettingsChange={setWeeklyScheduleSettings}
-                    onReschedule={handleReschedule}
-                />;
-      case 'planner':
-        return <ContentPlannerPage 
-                  aiClient={aiClient}
-                  isGenerating={isGeneratingPlan}
-                  error={planError}
-                  plan={contentPlan}
-                  onGeneratePlan={async (request, images) => {
-                      setIsGeneratingPlan(true);
-                      setPlanError(null);
-                      try {
-                          const plan = await generateContentPlan(aiClient!, request, pageProfile, images);
-                          setContentPlan(plan);
-                          const historyItem: StrategyHistoryItem = {
-                              id: `hist_${Date.now()}`,
-                              request,
-                              plan,
-                              summary: `خطة ${request.type} - ${new Date().toLocaleString()}`,
-                              createdAt: new Date().toISOString()
-                          };
-                          setStrategyHistory(prev => [historyItem, ...prev.slice(0, 19)]);
-                      } catch (e: any) {
-                          setPlanError(e.message);
-                      } finally {
-                          setIsGeneratingPlan(false);
-                      }
-                  }}
-                  isSchedulingStrategy={isSchedulingStrategy}
-                  onScheduleStrategy={handleScheduleStrategy}
-                  onStartPost={handleStartPostFromPlan}
-                  pageProfile={pageProfile}
-                  strategyHistory={strategyHistory}
-                  onLoadFromHistory={(plan) => { setContentPlan(plan); showNotification('success', 'تم تحميل الخطة من السجل.'); }}
-                  onDeleteFromHistory={(id) => setStrategyHistory(prev => prev.filter(h => h.id !== id))}
-              />
-      case 'inbox':
-        return <InboxPage 
-                  items={inboxItems}
-                  isLoading={isInboxLoading}
-                  onReply={handleSmartReply}
-                  onMarkAsDone={handleMarkAsDone}
-                  onGenerateSmartReplies={(text) => generateSmartReplies(aiClient!, text, pageProfile)}
-                  onFetchMessageHistory={fetchMessageHistory}
-                  autoResponderSettings={autoResponderSettings}
-                  onAutoResponderSettingsChange={setAutoResponderSettings}
-                  onSync={handleQuickRefresh}
-                  isSyncing={!!syncingTargetId || isPolling}
-                  aiClient={aiClient}
-               />;
-      case 'profile':
-        return <PageProfilePage 
-                    profile={pageProfile} 
-                    onProfileChange={setPageProfile}
-                    onFetchProfile={handleFetchProfile}
-                    isFetchingProfile={isFetchingProfile}
-                />;
-      default:
-        return null;
-    }
-  };
+        switch (view) {
+          case 'composer': return <PostComposer onPublish={handlePublish} onSaveDraft={handleSaveDraft} isPublishing={isPublishing} postText={postText} onPostTextChange={setPostText} onImageChange={handleImageChange} onImageGenerated={handleImageGenerated} onImageRemove={handleImageRemove} imagePreview={imagePreview} selectedImage={selectedImage} isScheduled={isScheduled} onIsScheduledChange={setIsScheduled} scheduleDate={scheduleDate} onScheduleDateChange={setScheduleDate} error={composerError} aiClient={aiClient} stabilityApiKey={stabilityApiKey} managedTarget={managedTarget} linkedInstagramTarget={linkedInstagramTarget} includeInstagram={includeInstagram} onIncludeInstagramChange={setIncludeInstagram} pageProfile={pageProfile} />;
+          case 'calendar': return <ContentCalendar posts={scheduledPosts} onDelete={handleDeleteScheduledPost} onEdit={handleEditFromCalendar} onSync={syncScheduledPosts} isSyncing={isSyncingScheduled} />;
+          case 'drafts': return <DraftsList drafts={drafts} onLoad={handleLoadDraft} onDelete={handleDeleteDraft} />;
+          case 'analytics': return <AnalyticsPage period={analyticsPeriod} onPeriodChange={setAnalyticsPeriod as Dispatch<SetStateAction<"7d" | "30d">> } summaryData={summaryData} aiSummary={performanceSummaryText} isGeneratingSummary={isGeneratingSummary} posts={filteredPosts} isLoading={publishedPostsLoading} onFetchAnalytics={handleFetchPostAnalytics} onGenerateInsights={handleGeneratePostInsights} />;
+          case 'bulk': return <BulkSchedulerPage bulkPosts={bulkPosts} onAddPosts={handleAddBulkPosts} onUpdatePost={handleUpdateBulkPost} onRemovePost={handleRemoveBulkPost} onScheduleAll={handleScheduleAllBulk} isSchedulingAll={isSchedulingAll} targets={bulkSchedulerTargets} aiClient={aiClient} onGenerateDescription={handleGenerateBulkDescription} onGeneratePostFromText={handleGenerateBulkPostFromText} schedulingStrategy={schedulingStrategy} onSchedulingStrategyChange={setSchedulingStrategy} weeklyScheduleSettings={weeklyScheduleSettings} onWeeklyScheduleSettingsChange={setWeeklyScheduleSettings} onReschedule={handleReschedule} />;
+          case 'planner': return <ContentPlannerPage aiClient={aiClient} isGenerating={isGeneratingPlan} error={planError} plan={contentPlan} onGeneratePlan={handleGeneratePlan} isSchedulingStrategy={isSchedulingStrategy} onScheduleStrategy={handleScheduleStrategy} onStartPost={handleStartPostFromPlan} pageProfile={pageProfile} strategyHistory={strategyHistory} onLoadFromHistory={handleLoadStrategyFromHistory} onDeleteFromHistory={handleDeleteStrategyFromHistory} />;
+          case 'inbox': return <InboxPage items={inboxItems} isLoading={isInboxLoading} onReply={handleSmartReply} onMarkAsDone={handleMarkAsDone} onGenerateSmartReplies={handleGenerateSmartReplies} onFetchMessageHistory={fetchMessageHistory} autoResponderSettings={autoResponderSettings} onAutoResponderSettingsChange={setAutoResponderSettings} onSync={processAutoReplies} isSyncing={isReplying} aiClient={aiClient} />;
+          case 'profile': return <PageProfilePage profile={pageProfile} onProfileChange={setPageProfile} onFetchProfile={handleFetchProfile} isFetchingProfile={isFetchingProfile} />;
+          default: return <PostComposer onPublish={handlePublish} onSaveDraft={handleSaveDraft} isPublishing={isPublishing} postText={postText} onPostTextChange={setPostText} onImageChange={handleImageChange} onImageGenerated={handleImageGenerated} onImageRemove={handleImageRemove} imagePreview={imagePreview} selectedImage={selectedImage} isScheduled={isScheduled} onIsScheduledChange={setIsScheduled} scheduleDate={scheduleDate} onScheduleDateChange={setScheduleDate} error={composerError} aiClient={aiClient} stabilityApiKey={stabilityApiKey} managedTarget={managedTarget} linkedInstagramTarget={linkedInstagramTarget} includeInstagram={includeInstagram} onIncludeInstagramChange={setIncludeInstagram} pageProfile={pageProfile} />;
+        }
+    };
 
-  return (
-    <div className="min-h-screen">
-      <Header
-        onLogout={onLogout}
-        isSimulationMode={isSimulationMode}
-        pageName={managedTarget.name}
-        onChangePage={onChangePage}
-        onSettingsClick={onSettingsClick}
-        theme={theme}
-        onToggleTheme={onToggleTheme}
-      />
-      <div className="relative">
-         {notification && (
-            <div className={`fixed top-20 right-5 p-4 rounded-lg shadow-lg z-50 text-white animate-fadeIn flex items-center justify-between gap-4 ${notification.type === 'success' ? 'bg-green-500' : notification.type === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}>
-                <span>{notification.message}</span>
-                <div className="flex items-center gap-3 mr-2">
-                    {notification.onUndo && (
-                        <button
-                            onClick={notification.onUndo}
-                            className="font-bold hover:underline p-1 text-sm bg-black/20 rounded-md"
-                        >
-                            تراجع
-                        </button>
-                    )}
-                    <button onClick={() => setNotification(null)} className="font-bold text-xl leading-none">&times;</button>
+    return (
+        <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
+          <Header
+            pageName={managedTarget.name}
+            onChangePage={onChangePage}
+            onLogout={onLogout}
+            isSimulationMode={isSimulationMode}
+            onSettingsClick={onSettingsClick}
+            theme={theme}
+            onToggleTheme={onToggleTheme}
+          />
+          {publishingReminderId && (
+            <ReminderCard
+              post={scheduledPosts.find(p => p.id === publishingReminderId)!}
+              onPublish={handlePublish}
+              isPublishing={isPublishing}
+            />
+          )}
+          {notification && (
+            <div
+              className={`relative px-4 py-3 leading-normal ${
+                notification.type === 'success'
+                  ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+                  : notification.type === 'error'
+                  ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300'
+                  : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
+              }`}
+              role="alert"
+            >
+              <div className="flex justify-between items-center">
+                <p>{notification.message}</p>
+                <div>
+                  {notification.onUndo && (
+                    <Button variant="secondary" size="sm" onClick={notification.onUndo} className="mr-4">
+                      تراجع
+                    </Button>
+                  )}
+                  <button
+                    className="font-bold"
+                    onClick={() => setNotification(null)}
+                  >
+                    &times;
+                  </button>
                 </div>
+              </div>
             </div>
-        )}
-      </div>
-      
-      <main className="flex flex-col md:flex-row">
-        <aside className="w-full md:w-64 bg-white dark:bg-gray-800 p-4 border-l dark:border-gray-700/50 flex-shrink-0">
-          <nav className="space-y-2">
-            <NavItem icon={<PencilSquareIcon className="w-5 h-5"/>} label="إنشاء منشور" active={view === 'composer'} onClick={() => setView('composer')} />
-            <NavItem icon={<CalendarIcon className="w-5 h-5"/>} label="تقويم المحتوى" active={view === 'calendar'} onClick={() => { setView('calendar'); syncScheduledPosts(); }} />
-            <NavItem icon={<ArchiveBoxIcon className="w-5 h-5"/>} label="المسودات" active={view === 'drafts'} onClick={() => setView('drafts')} />
-            <NavItem icon={<QueueListIcon className="w-5 h-5"/>} label="الجدولة المجمعة" active={view === 'bulk'} onClick={() => setView('bulk')} />
-            <NavItem icon={<ChartBarIcon className="w-5 h-5"/>} label="التحليلات" active={view === 'analytics'} onClick={() => setView('analytics')} />
-            <NavItem icon={<BrainCircuitIcon className="w-5 h-5"/>} label="استراتيجيات المحتوى" active={view === 'planner'} onClick={() => setView('planner')} />
-            <NavItem icon={<InboxArrowDownIcon className="w-5 h-5"/>} label="البريد الوارد" active={view === 'inbox'} onClick={() => setView('inbox')} notificationCount={unreadCount} isPolling={isPolling}/>
-            <NavItem icon={<UserCircleIcon className="w-5 h-5"/>} label="ملف الصفحة" active={view === 'profile'} onClick={() => setView('profile')} />
-            <div className="pt-4 border-t dark:border-gray-700">
-                <Button variant="secondary" onClick={() => onSyncHistory(managedTarget)} isLoading={!!syncingTargetId} className="w-full">
-                    {syncingTargetId === managedTarget.id ? <TrashIcon className="w-5 h-5 ml-2"/> : <ArrowPathIcon className="w-5 h-5 ml-2"/>}
-                    {syncingTargetId === managedTarget.id ? 'جاري المزامنة...' : 'مزامنة السجل الكامل'}
+          )}
+          <div className="flex flex-1 overflow-hidden">
+            <aside className="w-64 flex-shrink-0 bg-white dark:bg-gray-800 p-4 space-y-2 border-l border-gray-200 dark:border-gray-700 overflow-y-auto">
+              {navItems.map(item => (
+                <NavItem
+                  key={item.view}
+                  icon={item.icon}
+                  label={item.label}
+                  active={view === item.view}
+                  onClick={() => setView(item.view as any)}
+                  notificationCount={item.notificationCount}
+                  isPolling={item.isPolling}
+                />
+              ))}
+              <div className="pt-4 border-t dark:border-gray-700">
+                <Button
+                  variant="secondary"
+                  onClick={() => onSyncHistory(managedTarget)}
+                  isLoading={!!syncingTargetId}
+                  disabled={!!syncingTargetId}
+                  className="w-full"
+                  title="مزامنة كاملة للتعليقات والمنشورات. قد يستغرق بعض الوقت."
+                >
+                  <ArrowPathIcon className="w-5 h-5 ml-2" />
+                  مزامنة السجل الكامل
                 </Button>
-            </div>
-          </nav>
-        </aside>
-        <div className="flex-grow p-4 sm:p-8 bg-gray-50 dark:bg-gray-900 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 64px)' }}>
-            {renderView()}
+              </div>
+            </aside>
+            <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+              {renderView()}
+            </main>
+          </div>
         </div>
-      </main>
-    </div>
-  );
+      );
 };
 
 export default DashboardPage;

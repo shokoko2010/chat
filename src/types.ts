@@ -3,7 +3,6 @@
 declare global {
   interface Window {
     FB: any;
-    Canva: any;
   }
 }
 
