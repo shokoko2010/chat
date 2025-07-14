@@ -101,24 +101,42 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const [isCanvaSdkReady, setIsCanvaSdkReady] = useState(false);
 
   useEffect(() => {
-    // Check for Canva SDK readiness. Poll for a few seconds.
-    if (window.Canva?.init) {
-      setIsCanvaSdkReady(true);
-      return;
-    }
-
-    let attempts = 0;
-    const interval = setInterval(() => {
-      attempts++;
+    // This effect runs once on mount to check for and wait for the Canva SDK.
+    const checkAndSetReady = () => {
       if (window.Canva?.init) {
         setIsCanvaSdkReady(true);
-        clearInterval(interval);
-      } else if (attempts > 10) { // Stop after 5 seconds
-        clearInterval(interval);
+        return true; // SDK is ready
       }
+      return false; // SDK not ready
+    };
+
+    // If SDK is already available (e.g., cached), set it and exit.
+    if (checkAndSetReady()) {
+      return;
+    }
+    
+    // Define the handler for our custom event.
+    const handleCanvaSdkReady = () => {
+      checkAndSetReady();
+    };
+    
+    // Listen for the custom event dispatched from index.html.
+    window.addEventListener('canva:sdk:ready', handleCanvaSdkReady);
+
+    // Also poll for a few seconds as a fallback mechanism.
+    let attempts = 0;
+    const intervalId = setInterval(() => {
+      if (checkAndSetReady() || attempts >= 10) {
+        clearInterval(intervalId);
+      }
+      attempts++;
     }, 500);
 
-    return () => clearInterval(interval);
+    // Cleanup function to remove the event listener and interval.
+    return () => {
+      window.removeEventListener('canva:sdk:ready', handleCanvaSdkReady);
+      clearInterval(intervalId);
+    };
   }, []);
   
   const handleGenerateTextWithAI = async () => {
