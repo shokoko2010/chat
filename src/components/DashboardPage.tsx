@@ -1153,7 +1153,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                 id: comment.id, platform: 'facebook', type: 'comment', text: comment.message || '',
                 authorName: comment.from?.name || 'مستخدم فيسبوك', authorId: authorId || 'Unknown',
                 authorPictureUrl: authorPictureUrl, timestamp: new Date(comment.created_time).toISOString(),
-                post: { id: comment.post.id, message: comment.post.message },
+                post: comment.post ? { id: comment.post.id, message: comment.post.message } : undefined,
                 parentId: comment.parent?.id, isReplied: pageHasReplied, can_reply_privately: comment.can_reply_privately,
             };
         }));
