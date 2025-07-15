@@ -563,7 +563,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     const dataToStore = {
         pageProfile,
         drafts: drafts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imagePreview: imageFile ? rest.imagePreview : null })), 
-        scheduledPosts: scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imageUrl: imageFile ? rest.imageUrl : null })),
+        scheduledPosts: scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imageUrl: imageFile ? rest.imageUrl : undefined })),
         contentPlan,
         strategyHistory: strategyHistory.slice(0, MAX_STRATEGY_HISTORY_TO_STORE),
         publishedPosts: publishedPosts.slice(0, MAX_PUBLISHED_POSTS_TO_STORE),
@@ -718,7 +718,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         message: postText,
                         scheduled_publish_time: Math.floor(scheduleTime.getTime() / 1000),
                         access_token: target.access_token,
-                    }, res => resolve(res)));
+                    }, (res: any) => resolve(res)));
 
                     if (response && response.id) {
                         newPost.postId = response.id;
@@ -750,7 +750,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
                         const data = await response.json();
                         if (!response.ok) throw new Error(data.error?.message || 'فشل نشر الصورة.');
                     } else {
-                        const response: any = await new Promise(resolve => window.FB.api(`/${target.id}/feed`, 'POST', { message: postText, access_token: target.access_token }, res => resolve(res)));
+                        const response: any = await new Promise(resolve => window.FB.api(`/${target.id}/feed`, 'POST', { message: postText, access_token: target.access_token }, (res: any) => resolve(res)));
                         if (!response || response.error) throw new Error(response?.error?.message || 'فشل نشر المنشور.');
                     }
                     if (igTarget) {
@@ -827,7 +827,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
         
         if (postToDelete.isSynced && !postToDelete.isReminder && !isSimulationMode) {
             try {
-                const response: any = await new Promise(resolve => window.FB.api(`/${postToDelete.postId}`, 'DELETE', { access_token: managedTarget.access_token }, res => resolve(res)));
+                const response: any = await new Promise(resolve => window.FB.api(`/${postToDelete.postId}`, 'DELETE', { access_token: managedTarget.access_token }, (res: any) => resolve(res)));
                 if (!response || response.error) {
                     throw new Error(response?.error?.message || "فشل الحذف من فيسبوك.");
                 }
