@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { PublishedPost } from '../types';
 import Button from './ui/Button';
@@ -20,7 +19,7 @@ interface PublishedPostsListProps {
 const StatCard: React.FC<{ icon: React.ReactNode, value?: number, label: string }> = ({ icon, value, label }) => (
     <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
         {icon}
-        <span className="font-bold">{value ?? '-'}</span>
+        <span className="font-bold">{value?.toLocaleString('ar-EG') ?? '-'}</span>
         <span>{label}</span>
     </div>
 );

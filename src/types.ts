@@ -1,5 +1,4 @@
 
-
 declare global {
   interface Window {
     FB: any;
@@ -26,6 +25,7 @@ export interface ScheduledPost {
   text: string;
   imageUrl?: string;
   imageFile?: File; // For reminder re-publishing
+  hasImage?: boolean; // To track if an image exists, even if preview is gone
   scheduledAt: Date;
   isReminder: boolean;
   targetId: string; // ID of the target (page/group/ig)
@@ -43,6 +43,7 @@ export interface Draft {
   text: string;
   imageFile: File | null;
   imagePreview: string | null;
+  hasImage?: boolean; // To track if an image exists, even if preview is gone
   targetId: string; // The managed target this draft was saved for
   isScheduled: boolean;
   scheduleDate: string;
@@ -94,6 +95,7 @@ export interface BulkPostItem {
   id:string;
   imageFile?: File;
   imagePreview?: string;
+  hasImage?: boolean;
   text: string;
   scheduleDate: string; // ISO string format
   targetIds: string[]; // List of target IDs to post to

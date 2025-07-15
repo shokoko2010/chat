@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { ScheduledPost } from '../types';
 import PhotoIcon from './icons/PhotoIcon';
@@ -108,7 +109,7 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ posts, onDelete, onEd
                                                     {post.isSynced && !hasBeenPublished && <span title="تمت المزامنة مع فيسبوك"><CloudIcon className="w-4 h-4 text-blue-400" /></span>}
                                                     {hasBeenPublished && <span title="تم النشر"><CheckCircleIcon className="w-4 h-4 text-green-500" /></span>}
                                                     {post.isReminder && !hasBeenPublished && <span title="تذكير لنشر انستجرام"><BellIcon className="w-4 h-4 text-yellow-500" /></span>}
-                                                    {post.imageUrl && <PhotoIcon className="w-4 h-4" />}
+                                                    {(post.imageUrl || post.hasImage) && <PhotoIcon className="w-4 h-4" />}
                                                     {post.targetInfo && <img className="inline-block h-5 w-5 rounded-full ring-2 ring-white dark:ring-gray-700" src={post.targetInfo.avatarUrl} alt={post.targetInfo.name}/>}
                                                 </div>
                                             </div>

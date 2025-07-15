@@ -25,16 +25,19 @@ const DraftsList: React.FC<DraftsListProps> = ({ drafts, onLoad, onDelete }) => 
       {drafts.map(draft => (
         <div key={draft.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-lg flex flex-col">
           <div className="p-5 flex-grow">
-            {draft.imagePreview && (
-                <div className="h-40 mb-3 rounded-md overflow-hidden bg-gray-200 dark:bg-gray-700">
+            <div className="h-40 mb-3 rounded-md overflow-hidden bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center">
+                {draft.imagePreview ? (
                     <img src={draft.imagePreview} alt="Draft preview" className="w-full h-full object-cover" />
-                </div>
-            )}
-             {!draft.imagePreview && (
-                 <div className="h-40 mb-3 rounded-md flex items-center justify-center bg-gray-100 dark:bg-gray-700/50">
+                ) : draft.hasImage ? (
+                    <p className="text-gray-400 dark:text-gray-500 text-center text-xs p-2">
+                        تم إرفاق صورة
+                        <br/>
+                        (المعاينة غير متاحة بعد إعادة تحميل الصفحة)
+                    </p>
+                ) : (
                     <p className="text-gray-400 dark:text-gray-500">لا توجد صورة</p>
-                 </div>
-             )}
+                )}
+            </div>
 
             <p className="text-gray-700 dark:text-gray-300 h-24 overflow-hidden text-ellipsis">
               {draft.text || <span className="text-gray-400">لا يوجد نص...</span>}

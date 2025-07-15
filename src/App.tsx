@@ -4,6 +4,7 @@ import PageSelectorPage from './components/PageSelectorPage';
 import DashboardPage from './components/DashboardPage';
 import HomePage from './components/HomePage';
 import SettingsModal from './components/SettingsModal';
+import PrivacyPolicyPage from './components/PrivacyPolicyPage';
 import { GoogleGenAI } from '@google/genai';
 import { initializeGoogleGenAI } from './services/geminiService';
 import { Target, Business, PublishedPost, InboxItem } from './types';
@@ -40,9 +41,11 @@ const App: React.FC = () => {
   const [loadingBusinessId, setLoadingBusinessId] = useState<string | null>(null);
   const [loadedBusinessIds, setLoadedBusinessIds] = useState<Set<string>>(new Set());
   const [syncingTargetId, setSyncingTargetId] = useState<string | null>(null);
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
         return 'dark';
     }
     return 'light';
@@ -58,6 +61,12 @@ const App: React.FC = () => {
     }
   }, [theme]);
   
+  useEffect(() => {
+    const handlePopState = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   useEffect(() => {
     const savedFavorites = localStorage.getItem('zex-pages-favorites');
     if (savedFavorites) {
@@ -517,7 +526,7 @@ const App: React.FC = () => {
         if (response.authResponse) setAuthStatus('connected');
         else setAuthStatus('not_authorized');
       }, { 
-        scope: 'email,public_profile,business_management,pages_show_list,read_insights,pages_manage_posts,pages_read_engagement,pages_manage_engagement,pages_messaging,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_messages',
+        scope: 'email,public_profile,business_management,pages_show_list,read_insights,pages_manage_posts,pages_read_engagement,pages_manage_engagement,pages_messaging,instagram_basic,instagram_manage_comments,instagram_manage_messages',
         auth_type: 'rerequest'
       });
   }, [isSimulationMode]);
@@ -537,6 +546,9 @@ const App: React.FC = () => {
   const handleChangePage = () => setSelectedTarget(null);
 
   const renderContent = () => {
+      if (currentPath === '/privacy-policy.html') {
+        return <PrivacyPolicyPage />;
+      }
       if (authStatus === 'loading') {
         return <div className="flex items-center justify-center min-h-screen">جاري التحميل...</div>;
       }

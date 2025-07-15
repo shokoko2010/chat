@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import Button from './ui/Button';
 import PhotoIcon from './icons/PhotoIcon';
@@ -8,6 +9,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Target, PageProfile } from '../types';
 import InstagramIcon from './icons/InstagramIcon';
 import HashtagIcon from './icons/HashtagIcon';
+import CanvaIcon from './icons/CanvaIcon';
 
 
 interface PostComposerProps {
@@ -33,6 +35,7 @@ interface PostComposerProps {
   includeInstagram: boolean;
   onIncludeInstagramChange: (checked: boolean) => void;
   pageProfile: PageProfile;
+  editingScheduledPostId: string | null;
 }
 
 
@@ -80,6 +83,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   includeInstagram,
   onIncludeInstagramChange,
   pageProfile,
+  editingScheduledPostId,
 }) => {
   const [aiTopic, setAiTopic] = useState('');
   const [isGeneratingText, setIsGeneratingText] = useState(false);
@@ -194,6 +198,10 @@ const PostComposer: React.FC<PostComposerProps> = ({
     }
   };
 
+  const handleCanvaClick = () => {
+    window.open('https://canva.com', '_blank');
+  };
+
   const aiHelperText = !aiClient ? (
     <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2">
       ميزات الذكاء الاصطناعي معطلة. يرجى إدخال مفتاح Gemini API في الإعدادات لتفعيلها.
@@ -203,7 +211,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const getPublishButtonText = () => {
     if (isPublishing) return 'جاري العمل...';
     if (isScheduled) {
-        return includeInstagram ? 'حفظ كتذكير' : 'جدولة الآن';
+        return editingScheduledPostId ? 'تحديث الجدولة' : 'جدولة الآن';
     }
     return 'انشر الآن';
   };
@@ -225,7 +233,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg space-y-6">
-      <h2 className="text-2xl font-bold text-gray-800 dark:text-white">إنشاء منشور جديد</h2>
+      <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{editingScheduledPostId ? 'تعديل المنشور المجدول' : 'إنشاء منشور جديد'}</h2>
       
       <div className="p-4 border border-blue-200 dark:border-blue-900 rounded-lg bg-blue-50 dark:bg-gray-700/50">
           <label htmlFor="ai-topic" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -253,7 +261,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
                 {isGeneratingHashtags ? 'جاري...' : 'اقترح هاشتاجات'}
             </Button>
         </div>
-        {aiHashtagError && <p className="text-red-500 text-sm">{aiHashtagError}</p>}
+        {aiHashtagError && <p className="text-red-500 text-sm mt-2">{aiHashtagError}</p>}
 
 
       {imagePreview && (
@@ -338,9 +346,9 @@ const PostComposer: React.FC<PostComposerProps> = ({
       <div className="p-4 border rounded-lg dark:border-gray-700">
         <div className="flex items-center">
             <input id="schedule-checkbox" type="checkbox" checked={isScheduled} onChange={e => onIsScheduledChange(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"/>
-            <label htmlFor="schedule-checkbox" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300">{includeInstagram ? 'جدولة كتذكير' : 'جدولة المنشور'}</label>
+            <label htmlFor="schedule-checkbox" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300">{isScheduled ? "جدولة المنشور" : "النشر الآن"}</label>
         </div>
-        {includeInstagram && isScheduled && <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-2"><b>ملاحظة:</b> سيتم جدولة المنشور على فيسبوك وحفظ تذكير للنشر على انستجرام.</p>}
+        
         {isScheduled && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
                 <input type="datetime-local" value={scheduleDate} onChange={e => onScheduleDateChange(e.target.value)} className="p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500"/>
@@ -355,6 +363,10 @@ const PostComposer: React.FC<PostComposerProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
             <input type="file" id="imageUpload" className="hidden" accept="image/*" onChange={onImageChange}/>
             <Button variant="secondary" onClick={() => document.getElementById('imageUpload')?.click()}><PhotoIcon className="w-5 h-5 ml-2" />أضف صورة</Button>
+            <Button variant="secondary" onClick={handleCanvaClick} className="bg-[#00c4cc] hover:bg-[#00a2a8] text-white focus:ring-[#00c4cc]">
+                <CanvaIcon className="w-5 h-5 ml-2" />
+                صمم على Canva
+            </Button>
         </div>
         <div className="flex items-center gap-2">
              <Button variant="secondary" onClick={onSaveDraft} disabled={isPublishing || (!postText.trim() && !imagePreview)}>حفظ كمسودة</Button>
