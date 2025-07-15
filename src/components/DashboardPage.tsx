@@ -511,7 +511,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     setPageProfile({ ...initialPageProfile, ...loadedProfile });
 
     setDrafts(savedData.drafts?.map((d: any) => ({...d, imageFile: null})) || []);
-    setScheduledPosts(savedData.scheduledPosts?.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt), imageFile: null })) || []);
+    setScheduledPosts(savedData.scheduledPosts?.map((p: any) => ({...p, scheduledAt: new Date(p.scheduledAt), imageFile: undefined })) || []);
     setContentPlan(savedData.contentPlan || null);
     setStrategyHistory(savedData.strategyHistory || []);
     setPublishedPosts(savedData.publishedPosts?.map((p:any) => ({...p, publishedAt: new Date(p.publishedAt)})) || []);
@@ -563,7 +563,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ managedTarget, allTargets
     const dataToStore = {
         pageProfile,
         drafts: drafts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imagePreview: imageFile ? rest.imagePreview : null })), 
-        scheduledPosts: scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: null, imageUrl: imageFile ? rest.imageUrl : undefined })),
+        scheduledPosts: scheduledPosts.map(({ imageFile, ...rest }) => ({...rest, imageFile: undefined })),
         contentPlan,
         strategyHistory: strategyHistory.slice(0, MAX_STRATEGY_HISTORY_TO_STORE),
         publishedPosts: publishedPosts.slice(0, MAX_PUBLISHED_POSTS_TO_STORE),
