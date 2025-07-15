@@ -10,6 +10,8 @@ import { initializeGoogleGenAI } from './services/geminiService';
 import { Target, Business, PublishedPost, InboxItem } from './types';
 
 const isSimulation = window.location.protocol === 'http:';
+const MAX_PUBLISHED_POSTS_TO_STORE_SYNC = 100;
+const MAX_INBOX_ITEMS_TO_STORE_SYNC = 200;
 
 const MOCK_TARGETS: Target[] = [
     { id: '1', name: 'صفحة تجريبية 1', type: 'page', access_token: 'DUMMY_TOKEN_1', picture: { data: { url: 'https://via.placeholder.com/150/4B79A1/FFFFFF?text=Page1' } } },
@@ -497,13 +499,33 @@ const App: React.FC = () => {
 
         const updatedData = {
           ...data,
-          publishedPosts: sortedPosts,
-          inboxItems: sortedInboxItems,
+          publishedPosts: sortedPosts.slice(0, MAX_PUBLISHED_POSTS_TO_STORE_SYNC),
+          inboxItems: sortedInboxItems.slice(0, MAX_INBOX_ITEMS_TO_STORE_SYNC),
           syncedAt: new Date().toISOString()
         };
-        localStorage.setItem(dataKey, JSON.stringify(updatedData));
 
-        alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${combinedInboxItems.length} عنصرًا في البريد الوارد بنجاح للهدف ${pageTarget.name}${linkedIgTarget ? ` و ${linkedIgTarget.name}`: ''}.`);
+        try {
+            localStorage.setItem(dataKey, JSON.stringify(updatedData));
+            alert(`تمت مزامنة ${fetchedPosts.length} منشورًا و ${combinedInboxItems.length} عنصرًا في البريد الوارد بنجاح للهدف ${pageTarget.name}${linkedIgTarget ? ` و ${linkedIgTarget.name}`: ''}.\n\nملاحظة: يتم تخزين أحدث ${MAX_PUBLISHED_POSTS_TO_STORE_SYNC} منشور و ${MAX_INBOX_ITEMS_TO_STORE_SYNC} عنصر بريد وارد فقط للحفاظ على الأداء.`);
+        } catch (error: any) {
+            console.error("Error during full history sync save:", error);
+            if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+                alert(`فشلت المزامنة الكاملة بسبب امتلاء مساحة التخزين. سيتم محاولة حفظ نسخة مصغرة من البيانات.`);
+                try {
+                    const prunedData = {
+                        ...updatedData,
+                        publishedPosts: updatedData.publishedPosts.slice(0, Math.floor(MAX_PUBLISHED_POSTS_TO_STORE_SYNC / 2)),
+                        inboxItems: updatedData.inboxItems.slice(0, Math.floor(MAX_INBOX_ITEMS_TO_STORE_SYNC / 2)),
+                    };
+                    localStorage.setItem(dataKey, JSON.stringify(prunedData));
+                    alert(`تم حفظ نسخة مصغرة من البيانات بنجاح. قد لا تظهر بعض البيانات القديمة.`);
+                } catch (retryError) {
+                    alert(`فشلت محاولة الحفظ المصغرة أيضًا. مساحة التخزين ممتلئة تمامًا. يرجى مسح بيانات الموقع يدويًا من إعدادات المتصفح.`);
+                }
+            } else {
+                throw error; // Re-throw other errors
+            }
+        }
 
     } catch(error: any) {
       console.error("Error during full history sync:", error);
