@@ -90,7 +90,7 @@ const App: React.FC = () => {
     }
   }, [apiKey]);
 
-  const handleSaveKeys = (keys: { gemini: string; stability: string }) => {
+  const handleSaveKeys = (keys: { gemini: string; stability: string; }) => {
     setApiKey(keys.gemini);
     localStorage.setItem('gemini-api-key', keys.gemini);
     setStabilityApiKey(keys.stability);
@@ -517,7 +517,7 @@ const App: React.FC = () => {
         if (response.authResponse) setAuthStatus('connected');
         else setAuthStatus('not_authorized');
       }, { 
-        scope: 'business_management,email,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,instagram_manage_messages,pages_manage_posts,pages_messaging,pages_read_engagement,pages_read_user_content,pages_show_list,public_profile,read_insights',
+        scope: 'business_management,email,public_profile,pages_show_list,pages_read_user_content,pages_manage_engagement,pages_messaging,read_insights,instagram_basic,instagram_content_publish,instagram_manage_engagement,instagram_manage_messages',
         auth_type: 'rerequest'
       });
   }, [isSimulationMode]);
